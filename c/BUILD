@@ -84,7 +84,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = ENGINE_COMMON_DEPS + [
-        "//runtime/core:engine_impl_cpu_only",
+        "//runtime/core:engine_advanced_impl_cpu_only",
     ],
 )
 

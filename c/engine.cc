@@ -63,6 +63,9 @@ absl::AnyInvocable<void(absl::StatusOr<litert::lm::Responses>)> CreateCallback(
                litert::lm::TaskState::kMaxNumTokensReached) {
       callback(callback_data, /*text=*/nullptr, /*is_final=*/true,
                "Max number of tokens reached.");
+    } else if (responses->GetTaskState() == litert::lm::TaskState::kCancelled) {
+      callback(callback_data, /*text=*/nullptr, /*is_final=*/true,
+               "CANCELLED.");
     } else {
       for (const auto& text : responses->GetTexts()) {
         callback(callback_data, text.data(), /*is_final=*/false,

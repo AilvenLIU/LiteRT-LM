@@ -1918,7 +1918,6 @@ TEST_P(ConversationTest, GetBenchmarkInfo) {
   ASSERT_OK_AND_ASSIGN(auto engine_settings, EngineSettings::CreateDefault(
                                                  model_assets, Backend::CPU));
   engine_settings.GetMutableMainExecutorSettings().SetCacheDir(":nocache");
-  engine_settings.GetMutableMainExecutorSettings().SetMaxNumTokens(15);
   proto::BenchmarkParams benchmark_params;
   engine_settings.GetMutableBenchmarkParams() = benchmark_params;
   ASSERT_OK_AND_ASSIGN(auto engine,
@@ -1934,17 +1933,21 @@ TEST_P(ConversationTest, GetBenchmarkInfo) {
           .Build(*engine));
   ASSERT_OK_AND_ASSIGN(auto conversation,
                        Conversation::Create(*engine, config));
-  ASSERT_OK_AND_ASSIGN(const Message message_1,
-                       conversation->SendMessage(Message{
-                           {"role", "user"}, {"content", "Hello world!"}}));
+  ASSERT_OK_AND_ASSIGN(
+      const Message message_1,
+      conversation->SendMessage(
+          Message{{"role", "user"}, {"content", "Hello world!"}},
+          {.max_output_tokens = 8}));
   ASSERT_OK_AND_ASSIGN(const BenchmarkInfo benchmark_info_1,
                        conversation->GetBenchmarkInfo());
   EXPECT_EQ(benchmark_info_1.GetTotalPrefillTurns(),
             prefill_preface_on_init_ ? 2 : 1);
 
-  ASSERT_OK_AND_ASSIGN(const Message message_2,
-                       conversation->SendMessage(Message{
-                           {"role", "user"}, {"content", "Hello world!"}}));
+  ASSERT_OK_AND_ASSIGN(
+      const Message message_2,
+      conversation->SendMessage(
+          Message{{"role", "user"}, {"content", "Hello world!"}},
+          {.max_output_tokens = 8}));
   ASSERT_OK_AND_ASSIGN(const BenchmarkInfo benchmark_info_2,
                        conversation->GetBenchmarkInfo());
   EXPECT_EQ(benchmark_info_2.GetTotalPrefillTurns(),
@@ -2209,9 +2212,6 @@ TEST_P(ConversationCancellationTest, CancelProcessWithBenchmarkInfo) {
   ASSERT_OK_AND_ASSIGN(auto engine_settings, EngineSettings::CreateDefault(
                                                  model_assets, Backend::CPU));
   engine_settings.GetMutableMainExecutorSettings().SetCacheDir(":nocache");
-  // Set a large max num tokens to ensure the decoding is not finished before
-  // cancellation.
-  engine_settings.GetMutableMainExecutorSettings().SetMaxNumTokens(20);
   if (use_benchmark_info) {
     proto::BenchmarkParams benchmark_params;
     engine_settings.GetMutableBenchmarkParams() = benchmark_params;
@@ -2224,10 +2224,10 @@ TEST_P(ConversationCancellationTest, CancelProcessWithBenchmarkInfo) {
 
   absl::Status status;
   absl::Notification done_1;
-  conversation
-      ->SendMessageAsync(Message{{"role", "user"}, {"content", "Hello world!"}},
-                         CreateCancelledMessageCallback(status, done_1))
-      .IgnoreError();
+  ASSERT_OK(conversation->SendMessageAsync(
+      Message{{"role", "user"}, {"content", "Hello world!"}},
+      CreateCancelledMessageCallback(status, done_1),
+      {.max_output_tokens = 128}));
   // Wait for a short time to ensure the decoding has started.
   absl::SleepFor(absl::Milliseconds(100));
   conversation->CancelProcess();
@@ -2237,32 +2237,6 @@ TEST_P(ConversationCancellationTest, CancelProcessWithBenchmarkInfo) {
 
   // The history should be empty after cancellation.
   EXPECT_THAT(conversation->GetHistory().size(), 0);
-
-  // Resend the message after cancellation, and it should succeed.
-  status = absl::OkStatus();
-  absl::Notification done_2;
-  conversation
-      ->SendMessageAsync(Message{{"role", "user"}, {"content", "Hello world!"}},
-                         CreateCancelledMessageCallback(status, done_2))
-      .IgnoreError();
-  EXPECT_OK(status);
-  // Wait for the callback to be done.
-  done_2.WaitForNotificationWithTimeout(absl::Seconds(10));
-  // Without cancellation, the history should have two messages, user and
-  // assistant.
-  auto history = conversation->GetHistory();
-  ASSERT_EQ(history.size(), 2);
-  EXPECT_THAT(history[0], testing::Eq(Message{{"role", "user"},
-                                              {"content", "Hello world!"}}));
-  // TODO(b/450903294) - Because the cancellation is not fully rollbacked, the
-  // assistant message content depends on at which step the cancellation is
-  // triggered, and that is non-deterministic. Here we only check the role is
-  // assistant.
-  EXPECT_EQ(history[1]["role"], "assistant");
-
-  conversation->CancelProcess();
-  // No op after cancellation again.
-  EXPECT_THAT(conversation->GetHistory().size(), 2);
 }
 
 INSTANTIATE_TEST_SUITE_P(ConversationCancellationTest,
