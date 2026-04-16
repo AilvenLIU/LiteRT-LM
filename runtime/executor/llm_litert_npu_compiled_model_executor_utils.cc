@@ -30,6 +30,8 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"  // from @litert
 #include "litert/cc/litert_layout.h"  // from @litert
+#include "runtime/util/status_macros.h"  // IWYU pragma: keep NOLINT
+#include "tflite/types/half.h"  // from @litert
 
 #if defined(__ANDROID__) && defined(__ARM_NEON)
 #include <arm_neon.h>
@@ -50,7 +52,6 @@
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "litert/cc/litert_ranked_tensor_type.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
-#include "runtime/util/status_macros.h"
 
 namespace litert::lm {
 
@@ -1141,7 +1142,8 @@ absl::Status HWPerLayerEmbeddingLookup(
         for (int i = 0; i < ple_embedding_dim; ++i) {
           float fval = row_float[i];
           int32_t qval = std::round(fval / output_scale) + final_zero_point;
-          qval = std::max(-32768, std::min(32767, qval));
+          qval = std::clamp<int32_t>(qval, std::numeric_limits<int16_t>::min(),
+                                     std::numeric_limits<int16_t>::max());
           int16_output[i] = static_cast<int16_t>(qval);
         }
       } else if (output_type == litert::ElementType::Float32) {
@@ -1223,6 +1225,11 @@ absl::Status WritePleEmbeddingsToPtr(void* dest_ptr,
       int16_ptr[i] =
           Quantize<int16_t>(ple_embeddings[i], final_scale, final_zero_point);
     }
+  } else if (output_type == litert::ElementType::Float16) {
+    tflite::half* fp16_ptr = static_cast<tflite::half*>(dest_ptr);
+    for (size_t i = 0; i < ple_embeddings.size(); ++i) {
+      fp16_ptr[i] = tflite::half(ple_embeddings[i]);
+    }
   } else if (output_type == litert::ElementType::Float32 ||
              output_type == litert::ElementType::None) {
     float* float_ptr = static_cast<float*>(dest_ptr);
@@ -1243,6 +1250,8 @@ absl::Status WritePleEmbeddings(::litert::TensorBuffer& buffer,
   size_t element_size = 0;
   if (output_type == litert::ElementType::Int16) {
     element_size = sizeof(int16_t);
+  } else if (output_type == litert::ElementType::Float16) {
+    element_size = sizeof(tflite::half);
   } else if (output_type == litert::ElementType::Float32 ||
              output_type == litert::ElementType::None) {
     element_size = sizeof(float);
@@ -1276,7 +1285,9 @@ absl::Status WriteAndPadPleEmbeddings(::litert::TensorBuffer& buffer,
   size_t num_tokens_to_fill =
       buffer_size /
       (ple_dim * (output_type == litert::ElementType::Int16 ? sizeof(int16_t)
-                                                            : sizeof(float)));
+                  : output_type == litert::ElementType::Float16
+                      ? sizeof(tflite::half)
+                      : sizeof(float)));
   RET_CHECK_LE(seq_pos_size, num_tokens_to_fill);
 
   LITERT_RETURN_IF_ERROR(
@@ -1302,6 +1313,20 @@ absl::Status WriteAndPadPleEmbeddings(::litert::TensorBuffer& buffer,
     for (size_t i = seq_pos_size; i < num_tokens_to_fill; ++i) {
       std::memcpy(padding_ptr, quantized_default_ple_emb.data(),
                   ple_dim * sizeof(int16_t));
+      padding_ptr += ple_dim;
+    }
+  } else if (output_type == litert::ElementType::Float16) {
+    tflite::half* fp16_ptr = static_cast<tflite::half*>(lock_and_addr.second);
+    std::vector<tflite::half> fp16_default_ple_emb(ple_dim, tflite::half(0.0f));
+    if (default_ple_emb.size() == ple_dim) {
+      for (size_t i = 0; i < ple_dim; ++i) {
+        fp16_default_ple_emb[i] = tflite::half(default_ple_emb[i]);
+      }
+    }
+    tflite::half* padding_ptr = fp16_ptr + seq_pos_size * ple_dim;
+    for (size_t i = seq_pos_size; i < num_tokens_to_fill; ++i) {
+      std::memcpy(padding_ptr, fp16_default_ple_emb.data(),
+                  ple_dim * sizeof(tflite::half));
       padding_ptr += ple_dim;
     }
   } else if (output_type == litert::ElementType::Float32 ||

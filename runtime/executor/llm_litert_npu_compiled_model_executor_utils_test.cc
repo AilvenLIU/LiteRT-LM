@@ -23,7 +23,6 @@
 #include <utility>
 #include <vector>
 
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
@@ -1604,5 +1603,26 @@ TEST(ExecutorUtilsQuantizeTest, QuantizeInt8) {
   EXPECT_EQ(Quantize<int8_t>(-1000.0f, 1.0f, 0), -128);
 }
 
+TEST(ExecutorUtilsFormatFirstNTest, FormatFirstNEmpty) {
+  std::vector<int> empty;
+  EXPECT_EQ(FormatFirstN<int>(empty), "[]");
+}
+
+TEST(ExecutorUtilsFormatFirstNTest, FormatFirstNLessOrEqualThanLimit) {
+  std::vector<int> data = {1, 2, 3, 4, 5};
+  EXPECT_EQ(FormatFirstN<int>(data, 5), "[1, 2, 3, 4, 5]");
+  EXPECT_EQ(FormatFirstN<int>(data, 10), "[1, 2, 3, 4, 5]");
+}
+
+TEST(ExecutorUtilsFormatFirstNTest, FormatFirstNMoreThanLimit) {
+  std::vector<int> data = {1, 2, 3, 4, 5, 6};
+  EXPECT_EQ(FormatFirstN<int>(data, 3), "[1, 2, 3, ...]");
+  EXPECT_EQ(FormatFirstN<int>(data, 5), "[1, 2, 3, 4, 5, ...]");
+}
+
+TEST(ExecutorUtilsFormatFirstNTest, FormatFirstNFloat) {
+  std::vector<float> data = {1.5f, 2.5f, 3.5f};
+  EXPECT_EQ(FormatFirstN<float>(data, 2), "[1.5, 2.5, ...]");
+}
 }  // namespace
 }  // namespace litert::lm

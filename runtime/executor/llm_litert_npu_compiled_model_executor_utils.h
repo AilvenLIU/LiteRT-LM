@@ -19,12 +19,16 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <string>
 #include <type_traits>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_element_type.h"  // from @litert
@@ -34,21 +38,24 @@
 
 namespace litert::lm {
 
+// Formats the first N elements of a span as a comma-separated list inside
+// brackets, e.g., "[1, 2, 3, ...]".
+template <typename T>
+std::string FormatFirstN(absl::Span<const T> span, size_t n = 10) {
+  return absl::StrFormat("[%s%s]", absl::StrJoin(span.subspan(0, n), ", "),
+                         span.size() > n ? ", ..." : "");
+}
+
 // Quantizes a float value to a quantized type T.
 template <typename T>
 T Quantize(float value, float scale, int32_t zero_point) {
+  static_assert(std::is_same_v<T, int16_t> || std::is_same_v<T, int8_t>,
+                "Unsupported quantization type.");
   int32_t qval = std::round(value / scale) + zero_point;
-  if constexpr (std::is_same_v<T, int16_t>) {
-    return static_cast<T>(std::clamp(qval, -32768, 32767));
-  } else if constexpr (std::is_same_v<T, int8_t>) {
-    return static_cast<T>(std::clamp(qval, -128, 127));
-  } else {
-    static_assert(std::is_same_v<T, int16_t> || std::is_same_v<T, int8_t>,
-                  "Unsupported quantization type.");
-  }
+  return static_cast<T>(
+      std::clamp(qval, static_cast<int32_t>(std::numeric_limits<T>::min()),
+                 static_cast<int32_t>(std::numeric_limits<T>::max())));
 }
-
-
 #if defined(__ANDROID__) && defined(__ARM_NEON)
 int FindMaxIndexFloatNeon(const float* data, int size);
 int FindMaxIndexInt16Neon(const int16_t* data, int size);

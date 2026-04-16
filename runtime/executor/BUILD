@@ -128,6 +128,7 @@ cc_library(
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
@@ -266,6 +267,7 @@ cc_library(
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
@@ -498,6 +500,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
         "@litert//litert/c:litert_layout",
         "@litert//litert/cc:litert_element_type",
@@ -506,6 +509,7 @@ cc_library(
         "@litert//litert/cc:litert_ranked_tensor_type",
         "@litert//litert/cc:litert_tensor_buffer",
         "//runtime/util:litert_status_util",
+        "@litert//tflite/types:half",
     ],
 )
 
@@ -548,6 +552,7 @@ cc_library(
         "@com_google_absl//absl/log:absl_vlog_is_on",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
@@ -571,6 +576,7 @@ cc_library(
         "@litert//litert/cc/options:litert_google_tensor_options",
         "@litert//litert/cc/options:litert_mediatek_options",
         "@litert//litert/cc/options:litert_qualcomm_options",
+        "@litert//support/util:litert_status_util",
         "//runtime/components:model_resources",
         "//runtime/components:model_resources_litert_lm",
         "//runtime/components:model_resources_task",
@@ -1080,7 +1086,7 @@ cc_library(
 )
 
 # ==================================================================================================
-# Common Utils shared accross all implementations
+# Common Utils shared across all implementations
 # ==================================================================================================
 
 cc_library(

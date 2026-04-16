@@ -30,6 +30,7 @@
 #include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -46,6 +47,7 @@
 #include "runtime/components/embedding_lookup/embedding_lookup_manager.h"
 #include "runtime/components/embedding_lookup/embedding_lookup_text.h"
 #include "runtime/components/model_resources.h"
+#include "runtime/util/status_macros.h"  // IWYU pragma: keep NOLINT
 #include "runtime/components/model_resources_litert_lm.h"  // IWYU pragma: keep
 #include "runtime/components/model_resources_task.h"
 #include "runtime/executor/executor_settings_base.h"
@@ -435,6 +437,9 @@ absl::Status GenericComputeTokenEmbeddings(
 
   RETURN_IF_ERROR(embedding_lookup_manager->LookupPrefill(
       input_tokens_span, &wrapped_embeddings.buffer, 0 /*token_offset=*/));
+  if (!wrapped_embeddings.wrapped) {
+    LITERT_RETURN_IF_ERROR(wrapped_embeddings.buffer.Read(output_embeddings));
+  }
 
   if (per_layer_embedding_lookup_manager != nullptr &&
       !output_ple_embeddings.empty()) {
@@ -458,6 +463,10 @@ absl::Status GenericComputeTokenEmbeddings(
     RETURN_IF_ERROR(per_layer_embedding_lookup_manager->LookupPrefill(
         input_tokens_span, &wrapped_ple_embeddings.buffer,
         0 /*token_offset=*/));
+    if (!wrapped_ple_embeddings.wrapped) {
+      LITERT_RETURN_IF_ERROR(
+          wrapped_ple_embeddings.buffer.Read(output_ple_embeddings));
+    }
   }
   return absl::OkStatus();
 }

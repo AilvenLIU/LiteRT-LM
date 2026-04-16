@@ -64,6 +64,7 @@
 #include "runtime/util/convert_tensor_buffer.h"
 #include "runtime/util/log_tensor_buffer.h"
 #include "runtime/util/lora_util.h"
+#include "runtime/util/scoped_file.h"
 #include "runtime/util/status_macros.h"  // IWYU pragma: keep
 #include "runtime/util/tensor_buffer_util.h"
 #include "tflite/types/half.h"  // from @litert
@@ -1577,7 +1578,7 @@ absl::Status LlmLiteRtCompiledModelExecutorStatic::Prefill(
           prefill_signature, prefill_length, prefill_length,
           prefill_input_buffers_[prefill_signature]));
     }
-    // TODO(b/494284915): Switch to use async prefill for Metal backend.
+    // TODO: b/494284915 - Switch to use async prefill for Metal backend.
     if (!do_prefill_sync_.has_value()) {
       do_prefill_sync_ = std::any_of(
           prefill_input_buffers_[prefill_signature].begin(),
@@ -1611,7 +1612,7 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
                    resources.GetTFLiteModel(ModelType::kTfLitePrefillDecode));
   std::string cache_path = executor_settings.GetCacheDir();
   auto activation_data_type = ActivationDataType::FLOAT16;
-  // TODO(b/433590109): Some GPUs do not support FP16, so we need to check the
+  // TODO: b/433590109 - Some GPUs do not support FP16, so we need to check the
   // capabilities of the GPU and set the activation data type accordingly.
   if (executor_settings.GetActivationDataType().has_value()) {
     activation_data_type = executor_settings.GetActivationDataType().value();

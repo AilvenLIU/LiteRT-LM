@@ -21,15 +21,18 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/internal/scoped_file.h"  // from @litert
 #include "litert/cc/litert_common.h"  // from @litert
 #include "litert/cc/litert_compiled_model.h"  // from @litert
 #include "litert/cc/litert_element_type.h"  // from @litert
@@ -63,7 +66,8 @@ absl::Status EmbeddingLookupText::LookupInternal(int token,
   // The input tensor size was verified when the model was loaded.
   input_buffers_[0].Write(absl::MakeSpan(const_cast<const int*>(&token), 1));
 
-  compiled_model_->Run(signature_key_.value(), input_buffers_, output_buffers_);
+  LITERT_RETURN_IF_ERROR(compiled_model_->Run(signature_key_.value(),
+                                              input_buffers_, output_buffers_));
 
   LITERT_ASSIGN_OR_RETURN(auto output_buffer_size, output_buffers_[0].Size());
 

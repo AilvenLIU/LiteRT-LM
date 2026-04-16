@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_LM_RUNTIME_EXECUTOR_LITERT_NPU_COMPILED_MODEL_EXECUTOR_H_
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -55,7 +56,7 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
   };
 
   // Holds the latency breakdown stats for the executor.
-  // TODO(b/405424188): Use 'litert::lm::BenchmarkInfo' instead.
+  // TODO: b/405424188 - Use 'litert::lm::BenchmarkInfo' instead.
   struct LatencyStats {
     // Prefill latency stats.
     uint64_t prefill_e2e_latency_us = 0;
@@ -328,6 +329,8 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
       InferenceContext cache_update_inference_context,
       SortedPrefillSignatureMap prefill_signature_map,
       std::unique_ptr<EmbeddingLookupManager> embedding_lookup_manager,
+      std::unique_ptr<EmbeddingLookupManager>
+          per_layer_embedding_lookup_manager,
       std::optional<EmbedderPerLayerContext> embedder_per_layer_context,
       LogitsQuantizationParams quantization_params,
       std::vector<const uint8_t*> ple_table_ptrs = {},
@@ -352,6 +355,8 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
         rope_context_(std::move(rope_context)),
         llm_compiled_model_(std::move(llm_compiled_model)),
         embedding_lookup_manager_(std::move(embedding_lookup_manager)),
+        per_layer_embedding_lookup_manager_(
+            std::move(per_layer_embedding_lookup_manager)),
         embedder_per_layer_context_(std::move(embedder_per_layer_context)),
         llm_inference_context_(std::move(llm_inference_context)),
         cache_update_inference_context_(
@@ -402,6 +407,18 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
   absl::Status PrefillInternal(absl::string_view prefill_signature,
                                absl::Span<const int> ids);
 
+  // Prefill internal implementation using embeddings as input.
+  absl::Status PrefillInternalFromEmbeddings(
+      absl::string_view prefill_signature,
+      absl::Span<const int32_t> sliced_tokens,
+      absl::Span<const float> embeddings,
+      absl::Span<const float> ple_embeddings,
+      absl::Span<const int32_t> seq_positions);
+
+  // Runs the common downstream prefill pipeline (RoPE, Masking, LLM execution,
+  // and KV Cache updates) using the pre-populated active buffers.
+  absl::Status PrefillCommonPipeline(absl::string_view prefill_signature);
+
   // Decode internal implementation. Uses the specified 'token' as the input
   // token and uses the specified 'step' as the current time step.  The
   // logits from the decode step are stored in the 'logits' output buffer of
@@ -411,6 +428,16 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
   // - step: The current time step.
   // - token: The input token to decode.
   absl::Status DecodeInternal(int step, std::shared_ptr<TokenData> token);
+
+  // Helper to extract token data and execute DecodeInternal for a single token
+  // index.
+  absl::Status DecodeSingleToken(size_t idx,
+                                 absl::Span<const int32_t> seq_pos_span,
+                                 absl::Span<const int32_t> tokens_span,
+                                 absl::Span<const float> embeddings,
+                                 size_t embedding_dim,
+                                 absl::Span<const float> ple_embeddings,
+                                 size_t ple_dim);
 
   // Run the drafter loop for MTP.
   // Persistent buffer to store the sliced activations from the last verifier
@@ -644,6 +671,7 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
   InferenceContext rope_context_;
   ::litert::CompiledModel llm_compiled_model_;
   std::unique_ptr<EmbeddingLookupManager> embedding_lookup_manager_;
+  std::unique_ptr<EmbeddingLookupManager> per_layer_embedding_lookup_manager_;
   std::optional<EmbedderPerLayerContext> embedder_per_layer_context_;
   InferenceContext llm_inference_context_;
   InferenceContext cache_update_inference_context_;
