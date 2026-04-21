@@ -1,13 +1,14 @@
 name: fork-sync-all-branches
 
-permissions:
-  contents: write  # Allow GitHub Actions to write to the repository
-
 on:
   schedule:
     - cron: '*/30 * * * *' # every 30 minutes
   workflow_dispatch: # on button click
 
+permissions:
+  contents: write
+  actions: write
+  
 jobs:
   sync:
     runs-on: ubuntu-latest
