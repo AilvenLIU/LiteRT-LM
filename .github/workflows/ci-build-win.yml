@@ -121,8 +121,12 @@ jobs:
           bazel --output_base="$env:BAZEL_OUTPUT_BASE" `
             build --disk_cache=~/.cache/bazel-windows `
             --build_tag_filters='-nowindows' `
+            -- `
             //... `
+            -swift/... `
             //runtime/engine:litert_lm_main
+
+
 
       - name: Update litert_lm_main prebuilt for Windows if new version tag is pushed.
         if: github.ref_type == 'tag'
@@ -135,7 +139,9 @@ jobs:
           bazel --output_base="$env:BAZEL_OUTPUT_BASE" `
             test --disk_cache=~/.cache/bazel-windows --test_output=errors `
             --test_tag_filters='-requires-mac-inputs:hard,-nowindows' `
-            '--' //... -//runtime/executor/litert:kv_cache_test
+            '--' //... -//runtime/executor/litert:kv_cache_test -swift/...
+
+
 
       - name: Install pytest
         run: python3 -m pip install --break-system-packages pytest==8.3.4

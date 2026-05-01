@@ -230,7 +230,8 @@ jobs:
             -- `
             //... `
             //runtime/engine:litert_lm_main `
-            -//kotlin/...
+            -//kotlin/... `
+            -swift/...
 
       - name: Update litert_lm_main prebuilt for Windows if new version tag is pushed
         if: github.ref_type == 'tag'
@@ -252,7 +253,8 @@ jobs:
             --linkopt="/MANIFESTINPUT:C:\TMP\longpath.manifest" `
             -- `
             //... `
-            -//kotlin/...
+            -//kotlin/... `
+            -swift/...
 
       - name: Upload Bazel Test Logs
         if: always() 
