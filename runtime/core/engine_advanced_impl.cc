@@ -36,7 +36,7 @@
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "runtime/components/model_resources.h"
 #include "runtime/components/tokenizer.h"
-#include "runtime/core/session_factory.h"
+#include "runtime/core/session_advanced.h"
 #include "runtime/engine/engine.h"
 #include "runtime/engine/engine_factory.h"
 #include "runtime/engine/engine_settings.h"
@@ -184,8 +184,8 @@ class EngineAdvancedImpl : public Engine {
 
     ASSIGN_OR_RETURN(
         auto session,
-        InitializeSessionAdvanced(execution_manager_, tokenizer_.get(), config,
-                                  std::move(session_benchmark_info)));
+        SessionAdvanced::Create(execution_manager_, tokenizer_.get(), config,
+                                std::move(session_benchmark_info)));
 
     if (benchmark_info_.has_value()) {
       auto session_benchmark_info_or = session->GetMutableBenchmarkInfo();

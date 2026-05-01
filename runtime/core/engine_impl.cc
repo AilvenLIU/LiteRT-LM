@@ -36,7 +36,7 @@
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "runtime/components/model_resources.h"
 #include "runtime/components/tokenizer.h"
-#include "runtime/core/session_factory.h"
+#include "runtime/core/session_basic.h"
 #include "runtime/engine/engine.h"
 #include "runtime/engine/engine_factory.h"
 #include "runtime/engine/engine_settings.h"
@@ -187,11 +187,11 @@ class EngineImpl : public Engine {
     }
     ASSIGN_OR_RETURN(
         auto session,
-        InitializeSessionBasic(executor_.get(), tokenizer_.get(),
-                               /*vision_executor=*/vision_executor_.get(),
-                               /*audio_executor=*/audio_executor_.get(), config,
-                               std::move(session_benchmark_info),
-                               worker_thread_pool_.get()));
+        SessionBasic::Create(executor_.get(), tokenizer_.get(),
+                             /*vision_executor=*/vision_executor_.get(),
+                             /*audio_executor=*/audio_executor_.get(), config,
+                             std::move(session_benchmark_info),
+                             worker_thread_pool_.get()));
     if (benchmark_info_.has_value()) {
       auto session_benchmark_info_or = session->GetMutableBenchmarkInfo();
       if (session_benchmark_info_or.ok()) {
