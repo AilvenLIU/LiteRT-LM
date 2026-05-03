@@ -489,6 +489,9 @@ class Model:
 
     try:
       backend_val = _parse_backend(backend)
+      cache_dir_val = (
+          ":memory" if backend_val == litert_lm.Backend.CPU else ":nocache"
+      )
 
       if is_android:
         if not _HAS_ADB:
@@ -498,7 +501,6 @@ class Model:
             backend=backend_val,
             prefill_tokens=prefill_tokens,
             decode_tokens=decode_tokens,
-            cache_dir=":nocache",
         )
       else:
         benchmark_obj = litert_lm.Benchmark(
@@ -506,7 +508,7 @@ class Model:
             backend=backend_val,
             prefill_tokens=prefill_tokens,
             decode_tokens=decode_tokens,
-            cache_dir=":nocache",
+            cache_dir=cache_dir_val,
             enable_speculative_decoding=enable_speculative_decoding,
         )
 
