@@ -26,8 +26,8 @@ import litert_lm
 
 # Map string backend to litert_lm.Backend enum.
 _BACKEND_MAP = {
-    "CPU": litert_lm.Backend.CPU,
-    "GPU": litert_lm.Backend.GPU,
+    "CPU": litert_lm.Backend.CPU(),
+    "GPU": litert_lm.Backend.GPU(),
 }
 
 # Define the placeholder used by the evaluation harness.
