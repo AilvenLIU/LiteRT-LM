@@ -17,7 +17,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
@@ -87,11 +86,17 @@ absl::StatusOr<int> FindMaxIndex(::litert::TensorBuffer& decoded_logits,
 absl::StatusOr<int> ApplyGreedySampling(::litert::TensorBuffer& decoded_logits,
                                         bool use_neon_sampling);
 
+struct HWQuantParams {
+  float scale = 1.0f;
+  int64_t zero_point = 0;
+};
+
 // Performs manual KV cache update.
 absl::Status HWKVCacheUpdate(
     absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>& in_buffers,
-    absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
-        out_buffers);
+    absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>& out_buffers,
+    const absl::flat_hash_map<absl::string_view, HWQuantParams>& quant_params =
+        {});
 
 // Performs manual attention mask update.
 absl::Status HWMaskUpdate(

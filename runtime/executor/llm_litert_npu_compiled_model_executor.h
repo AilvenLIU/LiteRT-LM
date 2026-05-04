@@ -310,6 +310,8 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
       std::vector<float> ple_per_tensor_scales = {}, int num_tables = 0,
       litert::ElementType output_type = litert::ElementType::None,
       float final_scale = 1.0f, int32_t final_zero_point = 0,
+      absl::flat_hash_map<absl::string_view, HWQuantParams> kv_quant_params =
+          {},
       SpeculativeDecodingType speculative_decoding_type =
           SpeculativeDecodingType::kNone,
       std::optional<DrafterContext> drafter_context = std::nullopt,
@@ -327,6 +329,7 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
         cache_update_inference_context_(
             std::move(cache_update_inference_context)),
         prefill_signature_map_(std::move(prefill_signature_map)),
+        kv_quant_params_(std::move(kv_quant_params)),
         ple_table_ptrs_(std::move(ple_table_ptrs)),
         ple_quant_params_(std::move(ple_quant_params)),
         ple_per_tensor_scales_(std::move(ple_per_tensor_scales)),
@@ -575,7 +578,8 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
       absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
           decode_output_kv_cache_slice_buffers,
       absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
-          verify_output_kv_cache_slice_buffers);
+          verify_output_kv_cache_slice_buffers,
+      absl::flat_hash_map<absl::string_view, HWQuantParams>& kv_quant_params);
 
   // Create the executor for Gemma3n, with multi-modality support.
   static absl::StatusOr<std::unique_ptr<LlmLiteRtNpuCompiledModelExecutor>>
@@ -616,6 +620,7 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
   InferenceContext cache_update_inference_context_;
   SortedPrefillSignatureMap prefill_signature_map_;
 
+  absl::flat_hash_map<absl::string_view, HWQuantParams> kv_quant_params_;
   bool use_hw_ple_for_npu_ = false;
   std::vector<const uint8_t*> ple_table_ptrs_;
   std::vector<HWQuantizationParams> ple_quant_params_;

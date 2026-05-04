@@ -845,8 +845,27 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::AllocateTransformerBuffers(
     absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
         decode_output_kv_cache_slice_buffers,
     absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
-        verify_output_kv_cache_slice_buffers) {
+        verify_output_kv_cache_slice_buffers,
+    absl::flat_hash_map<absl::string_view, HWQuantParams>& kv_quant_params) {
   auto prefill_signature = transformer_model->FindSignature(kPrefillSignature);
+
+  if (prefill_signature.HasValue()) {
+    for (auto output_name : prefill_signature->OutputNames()) {
+      if (absl::StartsWith(output_name, kv_cache_slice_k_root_name) ||
+          absl::StartsWith(output_name, kv_cache_slice_v_root_name)) {
+        auto tensor_expected = prefill_signature->OutputTensor(output_name);
+        if (tensor_expected.HasValue()) {
+          HWQuantParams q_params;
+          if (tensor_expected->HasQuantization()) {
+            auto pq = tensor_expected->PerTensorQuantization();
+            q_params.scale = pq.scale;
+            q_params.zero_point = pq.zero_point;
+          }
+          kv_quant_params[output_name] = q_params;
+        }
+      }
+    }
+  }
 
   // Create input buffers for prefill signature.
   for (auto input_name : prefill_signature->InputNames()) {
@@ -1986,7 +2005,8 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::PrefillInternal(
     if (prefill_kv_cache_update_method_ == KVCacheUpdateMethod::kWH) {
       RETURN_IF_ERROR(HWKVCacheUpdate(
           cache_update_inference_context_.prefill_input_buffers,
-          cache_update_inference_context_.prefill_output_buffers));
+          cache_update_inference_context_.prefill_output_buffers,
+          kv_quant_params_));
     } else {
       auto res = npu_auxiliary_context_.npu_auxiliary_compiled_model.Run(
           CacheUpdateSignatures::kPrefillCacheUpdate,
@@ -2162,9 +2182,10 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::DecodeInternal(
   {
     auto start = absl::Now();
     if (decode_kv_cache_update_method_ == KVCacheUpdateMethod::kWH) {
-      RETURN_IF_ERROR(HWKVCacheUpdate(
-          cache_update_inference_context_.decode_input_buffers,
-          cache_update_inference_context_.decode_output_buffers));
+      RETURN_IF_ERROR(
+          HWKVCacheUpdate(cache_update_inference_context_.decode_input_buffers,
+                          cache_update_inference_context_.decode_output_buffers,
+                          kv_quant_params_));
     } else {
       auto res = npu_auxiliary_context_.npu_auxiliary_compiled_model.Run(
           CacheUpdateSignatures::kDecodeCacheUpdate,
@@ -2628,7 +2649,8 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::CommitVerifiedKVCache(
   if (prefill_kv_cache_update_method_ == KVCacheUpdateMethod::kWH) {
     RETURN_IF_ERROR(
         HWKVCacheUpdate(cache_update_inference_context_.verify_input_buffers,
-                        cache_update_inference_context_.verify_output_buffers));
+                        cache_update_inference_context_.verify_output_buffers,
+                        kv_quant_params_));
   } else {
     LITERT_RETURN_IF_ERROR(
         npu_auxiliary_context_.npu_auxiliary_compiled_model.Run(
@@ -2742,12 +2764,13 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
   absl::flat_hash_map<absl::string_view, TensorBuffer>
       verify_output_kv_cache_slice_buffers;
 
+  absl::flat_hash_map<absl::string_view, HWQuantParams> kv_quant_params;
   RETURN_IF_ERROR(AllocateTransformerBuffers(
       env, transformer_model, llm_compiled_model, gemma_prefill_input_buffers,
       gemma_decode_input_buffers, gemma_verify_input_buffers,
       input_kv_cache_buffers, prefill_output_kv_cache_slice_buffers,
       decode_output_kv_cache_slice_buffers,
-      verify_output_kv_cache_slice_buffers));
+      verify_output_kv_cache_slice_buffers, kv_quant_params));
 
   // Gemma3n specific fix: KV cache buffer 19 of *prefill* is not connected
   // to any OPs in the model, making the LiteRT runtime allocate host memory
@@ -2978,8 +3001,8 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
       std::move(embedder_per_layer_context), quantization_params,
       std::move(ple_table_ptrs), std::move(ple_quant_params),
       std::move(ple_per_tensor_scales), table_count, output_type, final_scale,
-      final_zero_point, speculative_decoding_type, std::move(drafter_context),
-      std::move(drafter_aux_context)));
+      final_zero_point, std::move(kv_quant_params), speculative_decoding_type,
+      std::move(drafter_context), std::move(drafter_aux_context)));
   return executor;
 }
 
@@ -3013,12 +3036,13 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelWithoutPerLayerEmbedding(
   absl::flat_hash_map<absl::string_view, TensorBuffer>
       verify_output_kv_cache_slice_buffers;
 
+  absl::flat_hash_map<absl::string_view, HWQuantParams> kv_quant_params;
   RETURN_IF_ERROR(AllocateTransformerBuffers(
       env, transformer_model, llm_compiled_model, gemma_prefill_input_buffers,
       gemma_decode_input_buffers, gemma_verify_input_buffers,
       input_kv_cache_buffers, prefill_output_kv_cache_slice_buffers,
       decode_output_kv_cache_slice_buffers,
-      verify_output_kv_cache_slice_buffers));
+      verify_output_kv_cache_slice_buffers, kv_quant_params));
   LITERT_ASSIGN_OR_RETURN(
       auto llm_inference_context,
       CreateLlmInferenceContextWithBufferSharing(
@@ -3182,8 +3206,9 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelWithoutPerLayerEmbedding(
       std::move(cache_update_inference_context), std::move(prefill_runner_set),
       std::move(maybe_embedding_lookup_manager),
       /*embedder_per_layer_context=*/std::nullopt, quantization_params, {}, {},
-      {}, 0, litert::ElementType::None, 1.0f, 0, speculative_decoding_type,
-      std::move(drafter_context), std::move(drafter_aux_context)));
+      {}, 0, litert::ElementType::None, 1.0f, 0, std::move(kv_quant_params),
+      speculative_decoding_type, std::move(drafter_context),
+      std::move(drafter_aux_context)));
   return executor;
 }
 

@@ -20,12 +20,15 @@
 #include <cstdio>
 #include <cstring>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/base/prefetch.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/base/prefetch.h"  // from @com_google_absl
+#include "litert/c/litert_layout.h"  // from @litert
+#include "litert/cc/litert_layout.h"  // from @litert
 
 #if defined(__ANDROID__) && defined(__ARM_NEON)
 #include <arm_neon.h>
@@ -43,6 +46,7 @@
 
 namespace litert::lm {
 
+static constexpr int kSliceOuterRank = 2;
 #if defined(__ANDROID__) && defined(__ARM_NEON)
 int FindMaxIndexFloatNeon(const float* data, int size) {
   if (size <= 0) return 0;
@@ -175,31 +179,69 @@ absl::StatusOr<int> ApplyGreedySampling(::litert::TensorBuffer& decoded_logits,
 
 absl::Status HWKVCacheUpdate(
     absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>& in_buffers,
-    absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
-        out_buffers) {
+    absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>& out_buffers,
+    const absl::flat_hash_map<absl::string_view, HWQuantParams>& quant_params) {
   static constexpr absl::string_view kInputPos = "input_pos";
+  if (!in_buffers.contains(kInputPos)) {
+    return absl::InvalidArgumentError("Missing input_pos buffer");
+  }
   auto& input_pos_buffer = in_buffers.at(kInputPos);
+
+  LITERT_ASSIGN_OR_RETURN(auto pos_type, input_pos_buffer.TensorType());
+  LITERT_ASSIGN_OR_RETURN(size_t pos_num_elements,
+                          pos_type.Layout().NumElements());
+  if (pos_num_elements == 0) {
+    return absl::InvalidArgumentError("input_pos buffer is empty");
+  }
 
   LITERT_ASSIGN_OR_RETURN(
       auto pos_lock,
       ::litert::TensorBufferScopedLock::Create(
           input_pos_buffer, ::litert::TensorBuffer::LockMode::kRead));
+  if (pos_lock.second == nullptr) {
+    return absl::InternalError("Failed to lock input_pos buffer");
+  }
   int start_pos = static_cast<const int32_t*>(pos_lock.second)[0];
+  if (start_pos < 0) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("input_pos must be non-negative: ", start_pos));
+  }
 
-  auto perform_update =
-      [&](::litert::TensorBuffer& cache,
-          const ::litert::TensorBuffer& slice) -> absl::Status {
+  auto perform_update = [&](::litert::TensorBuffer& cache,
+                            const ::litert::RankedTensorType& slice_type,
+                            const void* slice_ptr,
+                            size_t slice_bytes) -> absl::Status {
     LITERT_ASSIGN_OR_RETURN(auto cache_type, cache.TensorType());
-    LITERT_ASSIGN_OR_RETURN(auto slice_type, slice.TensorType());
-    auto cache_dims = cache_type.Layout().Dimensions();
-    auto slice_dims = slice_type.Layout().Dimensions();
+
     int cache_rank = cache_type.Layout().Rank();
     int slice_rank = slice_type.Layout().Rank();
+    if (cache_rank < 2 || slice_rank < 2) {
+      return absl::InvalidArgumentError("Cache and slice must have rank >= 2");
+    }
+
+    auto cache_dims = cache_type.Layout().Dimensions();
+    auto slice_dims = slice_type.Layout().Dimensions();
 
     LITERT_ASSIGN_OR_RETURN(size_t cache_bytes, cache.Size());
-    LITERT_ASSIGN_OR_RETURN(size_t num_elements,
+
+    if (cache_type.ElementType() != slice_type.ElementType()) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Cache and slice element types do not match: ",
+                       (int)cache_type.ElementType(), " vs ",
+                       (int)slice_type.ElementType()));
+    }
+
+    auto byte_width = ::litert::GetByteWidth(cache_type.ElementType());
+    if (!byte_width.has_value()) {
+      return absl::InvalidArgumentError("Unsupported cache element type");
+    }
+    size_t element_size = byte_width->NumBytes();
+
+    LITERT_ASSIGN_OR_RETURN(size_t cache_num_elements,
                             cache_type.Layout().NumElements());
-    size_t element_size = cache_bytes / num_elements;
+    if (cache_num_elements == 0) {
+      return absl::InvalidArgumentError("Cache layout has 0 elements");
+    }
 
     // Assume hidden_dim is the smaller of the last two dimensions of cache.
     int cache_last_dim = cache_dims[cache_rank - 1];
@@ -235,28 +277,55 @@ absl::Status HWKVCacheUpdate(
       return absl::OutOfRangeError("KV-cache update out of range");
     }
 
+    // static constexpr int kSliceOuterRank = 2;
+    int64_t cache_outer_size = 1;
+    for (int i = 0; i < cache_rank - kSliceOuterRank; ++i) {
+      cache_outer_size *= cache_dims[i];
+    }
+    int64_t slice_outer_size = 1;
+    for (int i = 0; i < slice_rank - kSliceOuterRank; ++i) {
+      slice_outer_size *= slice_dims[i];
+    }
+    if (cache_outer_size != slice_outer_size) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Cache and slice outer sizes do not match: ", cache_outer_size,
+          " vs ", slice_outer_size));
+    }
+
+    size_t expected_cache_size =
+        cache_outer_size * cache_seq * hidden_dim * element_size;
+    if (cache_bytes < expected_cache_size) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Cache buffer size is too small: ", cache_bytes,
+                       " vs expected ", expected_cache_size));
+    }
+    size_t expected_slice_size =
+        slice_outer_size * slice_seq * hidden_dim * element_size;
+    if (slice_bytes < expected_slice_size) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Slice buffer size is too small: ", slice_bytes,
+                       " vs expected ", expected_slice_size));
+    }
+
     LITERT_ASSIGN_OR_RETURN(
         auto cache_lock, ::litert::TensorBufferScopedLock::Create(
                              cache, ::litert::TensorBuffer::LockMode::kWrite));
-    LITERT_ASSIGN_OR_RETURN(
-        auto slice_lock, ::litert::TensorBufferScopedLock::Create(
-                             slice, ::litert::TensorBuffer::LockMode::kRead));
+
+    if (cache_lock.second == nullptr || slice_ptr == nullptr) {
+      return absl::InternalError(
+          "Failed to lock cache or slice pointer is null");
+    }
 
     uint8_t* cache_ptr = static_cast<uint8_t*>(cache_lock.second);
-    const uint8_t* slice_ptr = static_cast<const uint8_t*>(slice_lock.second);
+    const uint8_t* s_ptr_base = static_cast<const uint8_t*>(slice_ptr);
 
     bool cache_is_transposed = (cache_seq_dim == cache_rank - 1);
     bool slice_is_transposed = (slice_seq_dim == slice_rank - 1);
 
-    int64_t outer_size = 1;
-    for (int i = 0; i < cache_rank - 2; ++i) {
-      outer_size *= cache_dims[i];
-    }
-
-    for (int64_t o = 0; o < outer_size; ++o) {
+    for (int64_t o = 0; o < cache_outer_size; ++o) {
       uint8_t* c_ptr = cache_ptr + o * (cache_seq * hidden_dim * element_size);
       const uint8_t* s_ptr =
-          slice_ptr + o * (slice_seq * hidden_dim * element_size);
+          s_ptr_base + o * (slice_seq * hidden_dim * element_size);
 
       if (!cache_is_transposed) {
         if (!slice_is_transposed || slice_seq == 1) {
@@ -349,6 +418,80 @@ absl::Status HWKVCacheUpdate(
     return absl::OkStatus();
   };
 
+  std::vector<float> dequantized_slice_scratch;
+  auto run_single_update =
+      [&](::litert::TensorBuffer& cache, const ::litert::TensorBuffer& slice,
+          const RankedTensorType& cache_type,
+          const RankedTensorType& slice_type, absl::string_view cache_name,
+          absl::string_view slice_name) -> absl::Status {
+    LITERT_ASSIGN_OR_RETURN(auto slice_lock,
+                            ::litert::TensorBufferScopedLock::Create(
+                                const_cast<::litert::TensorBuffer&>(slice),
+                                ::litert::TensorBuffer::LockMode::kRead));
+    if (slice_lock.second == nullptr) {
+      return absl::InternalError(
+          absl::StrCat("Failed to lock slice buffer for ", slice_name));
+    }
+
+    LITERT_ASSIGN_OR_RETURN(size_t slice_bytes, slice.Size());
+
+    if (cache_type.ElementType() != slice_type.ElementType()) {
+      if (cache_type.ElementType() == ::litert::ElementType::Float32 &&
+          slice_type.ElementType() == ::litert::ElementType::Int16) {
+        // Dequantize Int16 to Float32
+        LITERT_ASSIGN_OR_RETURN(size_t num_elements,
+                                slice_type.Layout().NumElements());
+        dequantized_slice_scratch.resize(num_elements);
+
+        float scale = 1.0f;
+        int64_t zero_point = 0;
+        std::string s_name = std::string(slice_name);
+        if (quant_params.contains(s_name)) {
+          scale = quant_params.at(s_name).scale;
+          zero_point = quant_params.at(s_name).zero_point;
+        }
+
+        const int16_t* src = static_cast<const int16_t*>(slice_lock.second);
+        for (size_t i = 0; i < num_elements; ++i) {
+          dequantized_slice_scratch[i] =
+              (static_cast<float>(src[i]) - zero_point) * scale;
+        }
+
+        RankedTensorType dequantized_slice_type(
+            ::litert::ElementType::Float32,
+            ::litert::Layout(
+                static_cast<const LiteRtLayout&>(slice_type.Layout())));
+        size_t dequantized_slice_bytes = num_elements * sizeof(float);
+
+        auto status = perform_update(cache, dequantized_slice_type,
+                                     dequantized_slice_scratch.data(),
+                                     dequantized_slice_bytes);
+        if (!status.ok()) {
+          return absl::Status(
+              status.code(),
+              absl::StrCat("Failed updating ", cache_name, " with ", slice_name,
+                           " (dequantized): ", status.message()));
+        }
+      } else {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Unsupported type mismatch for ", cache_name, " vs ",
+                         slice_name, ": ", (int)cache_type.ElementType(),
+                         " vs ", (int)slice_type.ElementType()));
+      }
+    } else {
+      // Direct update
+      auto status =
+          perform_update(cache, slice_type, slice_lock.second, slice_bytes);
+      if (!status.ok()) {
+        return absl::Status(
+            status.code(),
+            absl::StrCat("Failed updating ", cache_name, " with ", slice_name,
+                         ": ", status.message()));
+      }
+    }
+    return absl::OkStatus();
+  };
+
   for (int layer_id = 0;; ++layer_id) {
     char k_cache_name[32];
     snprintf(k_cache_name, sizeof(k_cache_name), "kv_cache_k_%d", layer_id);
@@ -366,19 +509,32 @@ absl::Status HWKVCacheUpdate(
     const auto& k_slice = in_buffers.at(k_slice_name);
     const auto& v_slice = in_buffers.at(v_slice_name);
 
-    LITERT_RETURN_IF_ERROR(perform_update(in_k_cache, k_slice));
-    LITERT_RETURN_IF_ERROR(perform_update(in_v_cache, v_slice));
+    LITERT_ASSIGN_OR_RETURN(auto k_cache_type, in_k_cache.TensorType());
+    LITERT_ASSIGN_OR_RETURN(auto v_cache_type, in_v_cache.TensorType());
+    LITERT_ASSIGN_OR_RETURN(auto k_slice_type, k_slice.TensorType());
+    LITERT_ASSIGN_OR_RETURN(auto v_slice_type, v_slice.TensorType());
+
+    LITERT_RETURN_IF_ERROR(run_single_update(in_k_cache, k_slice, k_cache_type,
+                                             k_slice_type, k_cache_name,
+                                             k_slice_name));
+    LITERT_RETURN_IF_ERROR(run_single_update(in_v_cache, v_slice, v_cache_type,
+                                             v_slice_type, v_cache_name,
+                                             v_slice_name));
 
     if (out_buffers.contains(k_cache_name)) {
       auto& out_k_cache = out_buffers.at(k_cache_name);
       if (in_k_cache.Get() != out_k_cache.Get()) {
-        LITERT_RETURN_IF_ERROR(perform_update(out_k_cache, k_slice));
+        LITERT_RETURN_IF_ERROR(run_single_update(out_k_cache, k_slice,
+                                                 k_cache_type, k_slice_type,
+                                                 k_cache_name, k_slice_name));
       }
     }
     if (out_buffers.contains(v_cache_name)) {
       auto& out_v_cache = out_buffers.at(v_cache_name);
       if (in_v_cache.Get() != out_v_cache.Get()) {
-        LITERT_RETURN_IF_ERROR(perform_update(out_v_cache, v_slice));
+        LITERT_RETURN_IF_ERROR(run_single_update(out_v_cache, v_slice,
+                                                 v_cache_type, v_slice_type,
+                                                 v_cache_name, v_slice_name));
       }
     }
   }
