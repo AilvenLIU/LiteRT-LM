@@ -467,6 +467,7 @@ class Model:
       is_android: bool = False,
       backend: str = "cpu",
       enable_speculative_decoding: bool | None = None,
+      max_num_tokens: int | None = None,
   ):
     """Benchmarks the model.
 
@@ -477,6 +478,7 @@ class Model:
       backend: The backend to use (cpu or gpu).
       enable_speculative_decoding: Whether to enable speculative decoding. If
         None, use the model's default.
+      max_num_tokens: Maximum number of tokens for the KV cache.
     """
     if not self.exists():
       click.echo(
@@ -499,6 +501,7 @@ class Model:
             prefill_tokens=prefill_tokens,
             decode_tokens=decode_tokens,
             cache_dir=":nocache",
+            max_num_tokens=max_num_tokens,
         )
       else:
         benchmark_obj = litert_lm.Benchmark(
@@ -508,19 +511,22 @@ class Model:
             decode_tokens=decode_tokens,
             cache_dir=":nocache",
             enable_speculative_decoding=enable_speculative_decoding,
+            max_num_tokens=max_num_tokens,
         )
 
       click.echo(f"Benchmarking model: {self.to_str()} ({self.model_path})")
+      click.echo(f"Backend                    : {backend}")
       click.echo(f"Number of tokens in prefill: {prefill_tokens}")
       click.echo(f"Number of tokens in decode : {decode_tokens}")
-      click.echo(f"Backend                    : {backend}")
+      if max_num_tokens is not None:
+        click.echo(f"Max number of tokens       : {max_num_tokens}")
 
       spec_dec_str = "auto"
       if enable_speculative_decoding is True:
         spec_dec_str = "true"
       elif enable_speculative_decoding is False:
         spec_dec_str = "false"
-      print(f"Speculative decoding       : {spec_dec_str}")
+      click.echo(f"Speculative decoding       : {spec_dec_str}")
       if is_android:
         click.echo("Target                     : Android")
 

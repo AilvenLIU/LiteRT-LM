@@ -163,7 +163,6 @@ def huggingface_options(f):
   repo if --from-huggingface-repo is set.
   MODEL_REF: The ID to store the model as. Defaults to the filename of
   MODEL_FILE.
-
   \b
   Examples:
     # Import from a local path
@@ -332,7 +331,6 @@ Speculative decoding mode ("auto", "true", "false").
 
 @cli.command(
     help="""Benchmarks a LiteRT-LM model.
-
   \b
   Examples:
     # Benchmark using a model ID from 'litert-lm list'
@@ -359,6 +357,15 @@ Speculative decoding mode ("auto", "true", "false").
     type=int,
     help="The number of tokens to decode.",
 )
+@click.option(
+    "--max-num-tokens",
+    type=int,
+    default=None,
+    help=(
+        "Maximum number of tokens for the KV cache. If not set, it will be"
+        " chosen based on --prefill_tokens and --decode_tokens."
+    ),
+)
 @common_inference_options
 def benchmark(
     model_reference: str,
@@ -370,6 +377,7 @@ def benchmark(
     verbose: bool = False,
     from_huggingface_repo: str | None = None,
     huggingface_token: str | None = None,
+    max_num_tokens: int | None = None,
 ):
   """Benchmarks a LiteRT-LM model.
 
@@ -386,6 +394,7 @@ def benchmark(
     verbose: Whether to enable verbose logging.
     from_huggingface_repo: The HuggingFace repository ID.
     huggingface_token: The HuggingFace API token.
+    max_num_tokens: Maximum number of tokens for the KV cache.
   """
   if verbose:
     litert_lm.set_min_log_severity(litert_lm.LogSeverity.VERBOSE)
@@ -400,18 +409,23 @@ def benchmark(
   else:
     model_obj = model.Model.from_model_reference(model_reference)
 
+  if max_num_tokens is None:
+    # Replicates the logic from
+    # runtime/engine/engine_settings.cc
+    max_num_tokens = ((prefill_tokens + 1023) // 4096 + 1) * 4096
+
   model_obj.benchmark(
       prefill_tokens=prefill_tokens,
       decode_tokens=decode_tokens,
       is_android=android,
       backend=backend,
       enable_speculative_decoding=enable_speculative_decoding,
+      max_num_tokens=max_num_tokens,
   )
 
 
 @cli.command(
     help="""Runs a LiteRT-LM model interactively or with a single prompt.
-
   \b
   Examples:
     # Run interactively using a model ID from 'litert-lm list'
@@ -450,7 +464,10 @@ def benchmark(
     "--max-num-tokens",
     type=int,
     default=None,
-    help="Maximum number of tokens for the KV cache.",
+    help=(
+        "Maximum number of tokens for the KV cache. If not set, use the"
+        " default from the native engine."
+    ),
 )
 @click.option(
     "--filter-channel-content-from-kv-cache",

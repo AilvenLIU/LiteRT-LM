@@ -355,6 +355,8 @@ class AbstractBenchmark(abc.ABC):
       backend: The hardware backend used for inference.
       prefill_tokens: Number of tokens for the prefill phase.
       decode_tokens: Number of tokens for the decode phase.
+      max_num_tokens: Maximum number of tokens for the KV cache. If None, use
+        the engine/model's default.
       cache_dir: Directory for caching compiled model artifacts.
       enable_speculative_decoding: Whether to enable speculative decoding. If
         None, use the model's default. If True, enable speculative decoding; an
@@ -368,6 +370,7 @@ class AbstractBenchmark(abc.ABC):
   backend: Backend
   prefill_tokens: int = 256
   decode_tokens: int = 256
+  max_num_tokens: int | None = None
   cache_dir: str = ""
   enable_speculative_decoding: bool | None = None
 

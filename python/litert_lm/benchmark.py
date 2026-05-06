@@ -42,6 +42,10 @@ class Benchmark(interfaces.AbstractBenchmark):
       )
 
     lib.litert_lm_engine_settings_enable_benchmark(settings)
+    if self.max_num_tokens is not None:
+      lib.litert_lm_engine_settings_set_max_num_tokens(
+          settings, self.max_num_tokens
+      )
     lib.litert_lm_engine_settings_set_num_prefill_tokens(
         settings, self.prefill_tokens
     )
