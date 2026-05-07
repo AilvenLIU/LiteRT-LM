@@ -45,6 +45,7 @@ def run_benchmark(
     max_num_tokens: int | None = None,
     cache: str | None = None,
     cpu_thread_count: int | None = None,
+    activation_data_type: str | None = None,
 ) -> None:
   """Benchmarks the model."""
   if not model_obj.exists():
@@ -83,6 +84,7 @@ def run_benchmark(
           cache_dir=cache_dir_val,
           enable_speculative_decoding=enable_speculative_decoding,
           max_num_tokens=max_num_tokens,
+          activation_data_type=activation_data_type,
       )
 
     click.echo(
@@ -178,6 +180,7 @@ def benchmark(
     max_num_tokens: int | None = None,
     cache: str | None = None,
     cpu_thread_count: int | None = None,
+    activation_data_type: str | None = None,
 ) -> None:
   """Benchmarks a LiteRT-LM model.
 
@@ -197,6 +200,7 @@ def benchmark(
     max_num_tokens: Maximum number of tokens for the KV cache.
     cache: The cache mode to use (no, memory, or disk).
     cpu_thread_count: The number of threads to use for CPU backend.
+    activation_data_type: The activation data type to use for inference.
   """
   if verbose:
     litert_lm.set_min_log_severity(litert_lm.LogSeverity.VERBOSE)
@@ -231,6 +235,7 @@ def benchmark(
       max_num_tokens=max_num_tokens,
       cache=cache,
       cpu_thread_count=cpu_thread_count,
+      activation_data_type=activation_data_type,
   )
 
 

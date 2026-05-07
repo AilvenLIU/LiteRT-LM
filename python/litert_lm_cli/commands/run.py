@@ -190,6 +190,7 @@ def run_interactive(
     seed: int | None = None,
     cache: str | None = None,
     cpu_thread_count: int | None = None,
+    activation_data_type: str | None = None,
 ) -> None:
   """Runs the model interactively or with a single prompt."""
   if not model_obj.exists():
@@ -251,6 +252,7 @@ def run_interactive(
           vision_backend=vision_backend_val,
           audio_backend=audio_backend_val,
           cache_dir=cache_dir_val,
+          activation_data_type=activation_data_type,
       )
 
     with engine_cm as engine:
@@ -483,6 +485,7 @@ def run(
     seed: int | None = None,
     cache: str | None = None,
     cpu_thread_count: int | None = None,
+    activation_data_type: str | None = None,
 ) -> None:
   r"""Runs a LiteRT-LM model interactively or with a single prompt.
 
@@ -514,6 +517,7 @@ def run(
     seed: The seed to use for randomization.
     cache: The cache mode to use (no, memory, or disk).
     cpu_thread_count: The number of threads to use for CPU backend.
+    activation_data_type: The activation data type to use for inference.
   """
   if attachment and no_template:
     click.echo(
@@ -637,6 +641,7 @@ def run(
       seed=seed,
       cache=cache,
       cpu_thread_count=cpu_thread_count,
+      activation_data_type=activation_data_type,
   )
 
 

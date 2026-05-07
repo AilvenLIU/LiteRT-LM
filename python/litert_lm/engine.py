@@ -24,7 +24,8 @@ import warnings
 from . import interfaces
 from . import tools as litert_tools
 from ._ffi import _get_lib
-
+from ._ffi import ActivationDataType
+from ._ffi import TokenUnionType
 from ._messages import Message
 from .conversation import Conversation
 from .session import Session
@@ -63,11 +64,17 @@ class Engine(interfaces.AbstractEngine):
           interfaces.Backend | type[interfaces.Backend] | None
       ) = None,
       lora_rank_config: interfaces.LoraRankConfig | None = None,
+      activation_data_type: str | None = None,
       **kwargs,
   ):
     backend = _normalize_backend(backend)
     vision_backend = _normalize_backend(vision_backend)
     audio_backend = _normalize_backend(audio_backend)
+    resolved_activation_data_type = None
+    if activation_data_type:
+      resolved_activation_data_type = ActivationDataType.from_str(
+          activation_data_type
+      )
 
     super().__init__(
         model_path=model_path,
@@ -131,6 +138,10 @@ class Engine(interfaces.AbstractEngine):
     if self.enable_speculative_decoding is not None:
       self._lib.litert_lm_engine_settings_set_enable_speculative_decoding(
           settings, self.enable_speculative_decoding
+      )
+    if resolved_activation_data_type is not None:
+      self._lib.litert_lm_engine_settings_set_activation_data_type(
+          settings, resolved_activation_data_type.value
       )
     lora_rank = (
         self.lora_rank_config.lora_rank if self.lora_rank_config else None
