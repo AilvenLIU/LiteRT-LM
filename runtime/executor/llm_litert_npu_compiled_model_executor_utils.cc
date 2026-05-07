@@ -765,6 +765,20 @@ absl::Status HWMaskUpdate(
                              static_cast<float*>(global_ptr), seq_q, seq_k,
                              time_step, input_tokens,
                              /*valid_val=*/0.0f, /*masked_val=*/-1e9f);
+  } else if (mask_type.ElementType() == ::litert::ElementType::Float16) {
+    // Opaque uint16_t representation of IEEE 754 Float16.
+    // valid_val is 0.0f (0x0000) and masked_val is -infinity (0xFC00).
+    FillMasksInternal<uint16_t>(static_cast<uint16_t*>(local_ptr),
+                                static_cast<uint16_t*>(global_ptr), seq_q,
+                                seq_k, time_step, input_tokens,
+                                /*valid_val=*/0x0000, /*masked_val=*/0xFC00);
+  } else if (mask_type.ElementType() == ::litert::ElementType::BFloat16) {
+    // Opaque uint16_t representation of Brain Float16.
+    // valid_val is 0.0f (0x0000) and masked_val is -infinity (0xFF80).
+    FillMasksInternal<uint16_t>(static_cast<uint16_t*>(local_ptr),
+                                static_cast<uint16_t*>(global_ptr), seq_q,
+                                seq_k, time_step, input_tokens,
+                                /*valid_val=*/0x0000, /*masked_val=*/0xFF80);
   } else {
     return absl::InvalidArgumentError("Unsupported mask element type");
   }
