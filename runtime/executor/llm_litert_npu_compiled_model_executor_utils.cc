@@ -492,52 +492,101 @@ absl::Status HWKVCacheUpdate(
     return absl::OkStatus();
   };
 
-  for (int layer_id = 0;; ++layer_id) {
-    char k_cache_name[32];
-    snprintf(k_cache_name, sizeof(k_cache_name), "kv_cache_k_%d", layer_id);
-    if (!in_buffers.contains(k_cache_name)) break;
-
-    char v_cache_name[32];
-    snprintf(v_cache_name, sizeof(v_cache_name), "kv_cache_v_%d", layer_id);
-    char k_slice_name[32];
-    snprintf(k_slice_name, sizeof(k_slice_name), "kv_slice_k_%d", layer_id);
-    char v_slice_name[32];
-    snprintf(v_slice_name, sizeof(v_slice_name), "kv_slice_v_%d", layer_id);
-
-    auto& in_k_cache = in_buffers.at(k_cache_name);
-    auto& in_v_cache = in_buffers.at(v_cache_name);
-    const auto& k_slice = in_buffers.at(k_slice_name);
-    const auto& v_slice = in_buffers.at(v_slice_name);
-
-    LITERT_ASSIGN_OR_RETURN(auto k_cache_type, in_k_cache.TensorType());
-    LITERT_ASSIGN_OR_RETURN(auto v_cache_type, in_v_cache.TensorType());
-    LITERT_ASSIGN_OR_RETURN(auto k_slice_type, k_slice.TensorType());
-    LITERT_ASSIGN_OR_RETURN(auto v_slice_type, v_slice.TensorType());
-
-    LITERT_RETURN_IF_ERROR(run_single_update(in_k_cache, k_slice, k_cache_type,
-                                             k_slice_type, k_cache_name,
-                                             k_slice_name));
-    LITERT_RETURN_IF_ERROR(run_single_update(in_v_cache, v_slice, v_cache_type,
-                                             v_slice_type, v_cache_name,
-                                             v_slice_name));
-
-    if (out_buffers.contains(k_cache_name)) {
-      auto& out_k_cache = out_buffers.at(k_cache_name);
-      if (in_k_cache.Get() != out_k_cache.Get()) {
-        LITERT_RETURN_IF_ERROR(run_single_update(out_k_cache, k_slice,
-                                                 k_cache_type, k_slice_type,
-                                                 k_cache_name, k_slice_name));
-      }
+  auto perform_copy = [](::litert::TensorBuffer& dest,
+                         const ::litert::TensorBuffer& src) -> absl::Status {
+    LITERT_ASSIGN_OR_RETURN(size_t dest_bytes, dest.Size());
+    LITERT_ASSIGN_OR_RETURN(size_t src_bytes, src.Size());
+    if (dest_bytes != src_bytes) {
+      return absl::InvalidArgumentError("Buffer size mismatch for copy");
     }
-    if (out_buffers.contains(v_cache_name)) {
-      auto& out_v_cache = out_buffers.at(v_cache_name);
-      if (in_v_cache.Get() != out_v_cache.Get()) {
-        LITERT_RETURN_IF_ERROR(run_single_update(out_v_cache, v_slice,
-                                                 v_cache_type, v_slice_type,
-                                                 v_cache_name, v_slice_name));
+    LITERT_ASSIGN_OR_RETURN(
+        auto dest_lock, ::litert::TensorBufferScopedLock::Create(
+                            dest, ::litert::TensorBuffer::LockMode::kWrite));
+    LITERT_ASSIGN_OR_RETURN(auto src_lock,
+                            ::litert::TensorBufferScopedLock::Create(
+                                src, ::litert::TensorBuffer::LockMode::kRead));
+    std::memcpy(dest_lock.second, src_lock.second, dest_bytes);
+    return absl::OkStatus();
+  };
+
+  for (const auto& [name, buffer] : in_buffers) {
+    if (name.starts_with("kv_cache_k_")) {
+      int layer_id = std::stoi(std::string(name).substr(11));
+      char v_cache_name[32];
+      snprintf(v_cache_name, sizeof(v_cache_name), "kv_cache_v_%d", layer_id);
+      char k_slice_name[32];
+      snprintf(k_slice_name, sizeof(k_slice_name), "kv_slice_k_%d", layer_id);
+      char v_slice_name[32];
+      snprintf(v_slice_name, sizeof(v_slice_name), "kv_slice_v_%d", layer_id);
+
+      if (!in_buffers.contains(v_cache_name) ||
+          !in_buffers.contains(k_slice_name) ||
+          !in_buffers.contains(v_slice_name)) {
+        return absl::FailedPreconditionError(absl::StrCat(
+            "Missing matching K/V cache/slice buffers for layer ", layer_id));
+      }
+
+      auto& in_k_cache = in_buffers.at(name);
+      auto& in_v_cache = in_buffers.at(v_cache_name);
+      const auto& k_slice = in_buffers.at(k_slice_name);
+      const auto& v_slice = in_buffers.at(v_slice_name);
+
+      LITERT_ASSIGN_OR_RETURN(auto k_cache_type, in_k_cache.TensorType());
+      LITERT_ASSIGN_OR_RETURN(auto v_cache_type, in_v_cache.TensorType());
+      LITERT_ASSIGN_OR_RETURN(auto k_slice_type, k_slice.TensorType());
+      LITERT_ASSIGN_OR_RETURN(auto v_slice_type, v_slice.TensorType());
+
+      LITERT_RETURN_IF_ERROR(run_single_update(
+          in_k_cache, k_slice, k_cache_type, k_slice_type, name, k_slice_name));
+      LITERT_RETURN_IF_ERROR(run_single_update(in_v_cache, v_slice,
+                                               v_cache_type, v_slice_type,
+                                               v_cache_name, v_slice_name));
+
+      if (out_buffers.contains(name)) {
+        auto& out_k_cache = out_buffers.at(name);
+        if (in_k_cache.Get() != out_k_cache.Get()) {
+          LITERT_RETURN_IF_ERROR(run_single_update(out_k_cache, k_slice,
+                                                   k_cache_type, k_slice_type,
+                                                   name, k_slice_name));
+        }
+      }
+      if (out_buffers.contains(v_cache_name)) {
+        auto& out_v_cache = out_buffers.at(v_cache_name);
+        if (in_v_cache.Get() != out_v_cache.Get()) {
+          LITERT_RETURN_IF_ERROR(run_single_update(out_v_cache, v_slice,
+                                                   v_cache_type, v_slice_type,
+                                                   v_cache_name, v_slice_name));
+        }
       }
     }
   }
+
+  // Update C caches if exists.
+  for (const auto& [name, buffer] : in_buffers) {
+    if (name.starts_with("kv_cache_c_")) {
+      int layer_id = std::stoi(std::string(name).substr(11));
+      char c_slice_name[32];
+      snprintf(c_slice_name, sizeof(c_slice_name), "kv_slice_c_%d", layer_id);
+
+      if (!in_buffers.contains(c_slice_name)) {
+        return absl::FailedPreconditionError(absl::StrCat(
+            "Missing matching C slice buffer for layer ", layer_id));
+      }
+
+      auto& in_c_cache = in_buffers.at(name);
+      const auto& c_slice = in_buffers.at(c_slice_name);
+
+      LITERT_RETURN_IF_ERROR(perform_copy(in_c_cache, c_slice));
+
+      if (out_buffers.contains(name)) {
+        auto& out_c_cache = out_buffers.at(name);
+        if (in_c_cache.Get() != out_c_cache.Get()) {
+          LITERT_RETURN_IF_ERROR(perform_copy(out_c_cache, c_slice));
+        }
+      }
+    }
+  }
+
   return absl::OkStatus();
 }
 
@@ -711,6 +760,11 @@ absl::Status HWMaskUpdate(
                                static_cast<int16_t*>(global_ptr), seq_q, seq_k,
                                time_step, input_tokens,
                                /*valid_val=*/0, /*masked_val=*/-32767);
+  } else if (mask_type.ElementType() == ::litert::ElementType::Float32) {
+    FillMasksInternal<float>(static_cast<float*>(local_ptr),
+                             static_cast<float*>(global_ptr), seq_q, seq_k,
+                             time_step, input_tokens,
+                             /*valid_val=*/0.0f, /*masked_val=*/-1e9f);
   } else {
     return absl::InvalidArgumentError("Unsupported mask element type");
   }

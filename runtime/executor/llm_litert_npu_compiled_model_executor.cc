@@ -91,9 +91,11 @@ constexpr char cache_v17[] = "kv_cache_v_17";
 
 constexpr absl::string_view kv_cache_k_root_name = "kv_cache_k_";
 constexpr absl::string_view kv_cache_v_root_name = "kv_cache_v_";
+constexpr absl::string_view kv_cache_c_root_name = "kv_cache_c_";
 
 constexpr absl::string_view kv_cache_slice_k_root_name = "kv_slice_k_";
 constexpr absl::string_view kv_cache_slice_v_root_name = "kv_slice_v_";
+constexpr absl::string_view kv_cache_slice_c_root_name = "kv_slice_c_";
 
 namespace {
 
@@ -870,7 +872,8 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::AllocateTransformerBuffers(
   // Create input buffers for prefill signature.
   for (auto input_name : prefill_signature->InputNames()) {
     if (absl::StartsWith(input_name, kv_cache_k_root_name) ||
-        absl::StartsWith(input_name, kv_cache_v_root_name)) {
+        absl::StartsWith(input_name, kv_cache_v_root_name) ||
+        absl::StartsWith(input_name, kv_cache_c_root_name)) {
       LITERT_ASSIGN_OR_RETURN(
           input_kv_cache_buffers[input_name],
           llm_compiled_model.CreateInputBuffer(kPrefillSignature, input_name));
@@ -887,7 +890,8 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::AllocateTransformerBuffers(
   auto decode_signature = transformer_model->FindSignature(kDecodeSignature);
   for (auto input_name : decode_signature->InputNames()) {
     if (absl::StartsWith(input_name, kv_cache_k_root_name) ||
-        absl::StartsWith(input_name, kv_cache_v_root_name)) {
+        absl::StartsWith(input_name, kv_cache_v_root_name) ||
+        absl::StartsWith(input_name, kv_cache_c_root_name)) {
       // Create the input kv cache buffer for the decode signature if it is not
       // created in the prefill signature.
       if (!input_kv_cache_buffers.contains(input_name)) {
@@ -907,7 +911,8 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::AllocateTransformerBuffers(
   // Create output buffers for prefill signature.
   for (auto output_name : prefill_signature->OutputNames()) {
     if (absl::StartsWith(output_name, kv_cache_slice_k_root_name) ||
-        absl::StartsWith(output_name, kv_cache_slice_v_root_name)) {
+        absl::StartsWith(output_name, kv_cache_slice_v_root_name) ||
+        absl::StartsWith(output_name, kv_cache_slice_c_root_name)) {
       LITERT_ASSIGN_OR_RETURN(
           prefill_output_kv_cache_slice_buffers[output_name],
           llm_compiled_model.CreateOutputBuffer(kPrefillSignature,
@@ -917,7 +922,8 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::AllocateTransformerBuffers(
   // Create output buffers for decode signature.
   for (auto output_name : decode_signature->OutputNames()) {
     if (absl::StartsWith(output_name, kv_cache_slice_k_root_name) ||
-        absl::StartsWith(output_name, kv_cache_slice_v_root_name)) {
+        absl::StartsWith(output_name, kv_cache_slice_v_root_name) ||
+        absl::StartsWith(output_name, kv_cache_slice_c_root_name)) {
       LITERT_ASSIGN_OR_RETURN(
           decode_output_kv_cache_slice_buffers[output_name],
           llm_compiled_model.CreateOutputBuffer(kDecodeSignature, output_name));
@@ -936,7 +942,8 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::AllocateTransformerBuffers(
     }
     for (auto output_name : verify_signature->OutputNames()) {
       if (absl::StartsWith(output_name, kv_cache_slice_k_root_name) ||
-          absl::StartsWith(output_name, kv_cache_slice_v_root_name)) {
+          absl::StartsWith(output_name, kv_cache_slice_v_root_name) ||
+          absl::StartsWith(output_name, kv_cache_slice_c_root_name)) {
         LITERT_ASSIGN_OR_RETURN(
             verify_output_kv_cache_slice_buffers[output_name],
             llm_compiled_model.CreateOutputBuffer(LlmSignatures::kVerifyLlm,
@@ -3077,7 +3084,7 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelWithoutPerLayerEmbedding(
     LITERT_ASSIGN_OR_RETURN(auto buffer_v, llm_compiled_model.CreateInputBuffer(
                                                kDecodeSignature, cache_v23));
     llm_inference_context.decode_input_buffers[cache_v23] = std::move(buffer_v);
-  } else {
+  } else if (llm_inference_context.prefill_input_buffers.contains(cache_k17)) {
     // Tiny Gemma 270M specific fix:
     LITERT_ASSIGN_OR_RETURN(auto buffer_k, llm_compiled_model.CreateInputBuffer(
                                                kDecodeSignature, cache_k17));
@@ -3216,8 +3223,17 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::ClearKVCache(
     absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>& buffers) {
   for (auto& [buffer_name, buffer] : buffers) {
     if (buffer_name.starts_with(kv_cache_k_root_name) ||
-        buffer_name.starts_with(kv_cache_v_root_name)) {
-      LITERT_RETURN_IF_ERROR(buffer.Clear());
+        buffer_name.starts_with(kv_cache_v_root_name) ||
+        buffer_name.starts_with(kv_cache_c_root_name)) {
+      auto status = buffer.Clear();
+      if (!status) {
+        LITERT_ASSIGN_OR_RETURN(
+            auto lock_and_addr,
+            ::litert::TensorBufferScopedLock::Create(
+                buffer, ::litert::TensorBuffer::LockMode::kWrite));
+        LITERT_ASSIGN_OR_RETURN(size_t size, buffer.Size());
+        std::memset(lock_and_addr.second, 0, size);
+      }
     }
   }
   return absl::OkStatus();
