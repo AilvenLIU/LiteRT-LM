@@ -477,6 +477,11 @@ load("@litert//third_party/google_tensor:workspace.bzl", "google_tensor")
 
 google_tensor()
 
+# INTEL OPENVINO ---------------------------------------------------------------------------------
+load("@litert//third_party/intel_openvino:openvino.bzl", "openvino_configure")
+
+openvino_configure()
+
 http_archive(
     name = "nanobind_json",
     build_file = "@//:BUILD.nanobind_json",
