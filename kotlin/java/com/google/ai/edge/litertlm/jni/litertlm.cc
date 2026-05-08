@@ -34,6 +34,7 @@
 #include "runtime/components/prompt_template.h"
 #include "runtime/conversation/conversation.h"
 #include "runtime/conversation/io_types.h"
+#include "runtime/conversation/model_data_processor/gemma4_data_processor_config.h"
 #include "runtime/engine/engine.h"
 #include "runtime/engine/engine_factory.h"
 #include "runtime/engine/engine_settings.h"
@@ -327,6 +328,15 @@ nlohmann::ordered_json GetExtraContextJson(JNIEnv* env,
   }
   env->ReleaseStringUTFChars(extra_context_json_string, extra_context_chars);
   return extra_context_json;
+}
+
+std::optional<int> GetOptionalInt(JNIEnv* env, jobject integer_obj) {
+  if (integer_obj == nullptr) return std::nullopt;
+  jclass integer_class = env->FindClass("java/lang/Integer");
+  jmethodID int_value_mid = env->GetMethodID(integer_class, "intValue", "()I");
+  jint value = env->CallIntMethod(integer_obj, int_value_mid);
+  env->DeleteLocalRef(integer_class);
+  return value;
 }
 
 }  // namespace
@@ -927,8 +937,8 @@ LITERTLM_JNIEXPORT void JNICALL JNI_METHOD(nativeDeleteConversation)(
 
 LITERTLM_JNIEXPORT void JNICALL JNI_METHOD(nativeSendMessageAsync)(
     JNIEnv* env, jclass thiz, jlong conversation_pointer,
-    jstring messageJSONString, jstring extraContextJsonString,
-    jobject callback) {
+    jstring messageJSONString, jstring extraContextJsonString, jobject callback,
+    jobject visual_token_budget) {
   JavaVM* jvm = nullptr;
   if (env->GetJavaVM(&jvm) != JNI_OK) {
     ThrowLiteRtLmJniException(env, "Failed to get JavaVM");
@@ -947,6 +957,12 @@ LITERTLM_JNIEXPORT void JNICALL JNI_METHOD(nativeSendMessageAsync)(
       GetExtraContextJson(env, extraContextJsonString);
   if (!extra_context.is_null() && !extra_context.empty()) {
     optional_args.extra_context = extra_context;
+  }
+
+  std::optional<int> budget = GetOptionalInt(env, visual_token_budget);
+  if (budget.has_value()) {
+    optional_args.args =
+        litert::lm::Gemma4DataProcessorArguments{.visual_token_budget = budget};
   }
 
   jobject callback_global = env->NewGlobalRef(callback);
@@ -1031,7 +1047,8 @@ LITERTLM_JNIEXPORT void JNICALL JNI_METHOD(nativeSendMessageAsync)(
 
 LITERTLM_JNIEXPORT jstring JNICALL JNI_METHOD(nativeSendMessage)(
     JNIEnv* env, jclass thiz, jlong conversation_pointer,
-    jstring messageJSONString, jstring extraContextJsonString) {
+    jstring messageJSONString, jstring extraContextJsonString,
+    jobject visual_token_budget) {
   Conversation* conversation =
       reinterpret_cast<Conversation*>(conversation_pointer);
 
@@ -1044,6 +1061,12 @@ LITERTLM_JNIEXPORT jstring JNICALL JNI_METHOD(nativeSendMessage)(
       GetExtraContextJson(env, extraContextJsonString);
   if (!extra_context.is_null() && !extra_context.empty()) {
     optional_args.extra_context = extra_context;
+  }
+
+  std::optional<int> budget = GetOptionalInt(env, visual_token_budget);
+  if (budget.has_value()) {
+    optional_args.args =
+        litert::lm::Gemma4DataProcessorArguments{.visual_token_budget = budget};
   }
 
   auto response =
