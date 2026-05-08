@@ -24,6 +24,10 @@ load("@rules_python//python:defs.bzl", "py_test")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//:version.bzl", "VERSION")
 
+package(
+    default_visibility = ["//python/litert_lm_cli:__subpackages__"],
+)
+
 version = select({
     "//python:dev_build": VERSION + ".dev$(DEV_VERSION)",
     "//conditions:default": VERSION,
