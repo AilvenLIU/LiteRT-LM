@@ -46,7 +46,12 @@ class MainTest(absltest.TestCase):
   @unittest.mock.patch(
       "litert_lm_cli.model.Model.from_model_reference"
   )
-  def test_run_with_piped_input(self, mock_from_model_ref):
+  @unittest.mock.patch(
+      "litert_lm_cli.commands.run.run_interactive"
+  )
+  def test_run_with_piped_input(
+      self, mock_run_interactive, mock_from_model_ref
+  ):
     mock_model = unittest.mock.MagicMock()
     mock_from_model_ref.return_value = mock_model
     mock_model.exists.return_value = True
@@ -58,14 +63,19 @@ class MainTest(absltest.TestCase):
     )
 
     self.assertEqual(result.exit_code, 0)
-    mock_model.run_interactive.assert_called_once()
-    kwargs = mock_model.run_interactive.call_args.kwargs
+    mock_run_interactive.assert_called_once()
+    kwargs = mock_run_interactive.call_args.kwargs
     self.assertEqual(kwargs["prompt"], "Hello from pipe")
 
   @unittest.mock.patch(
       "litert_lm_cli.model.Model.from_model_reference"
   )
-  def test_run_with_prompt_and_piped_input(self, mock_from_model_ref):
+  @unittest.mock.patch(
+      "litert_lm_cli.commands.run.run_interactive"
+  )
+  def test_run_with_prompt_and_piped_input(
+      self, mock_run_interactive, mock_from_model_ref
+  ):
     mock_model = unittest.mock.MagicMock()
     mock_from_model_ref.return_value = mock_model
     mock_model.exists.return_value = True
@@ -79,14 +89,19 @@ class MainTest(absltest.TestCase):
     )
 
     self.assertEqual(result.exit_code, 0)
-    mock_model.run_interactive.assert_called_once()
-    kwargs = mock_model.run_interactive.call_args.kwargs
+    mock_run_interactive.assert_called_once()
+    kwargs = mock_run_interactive.call_args.kwargs
     self.assertEqual(kwargs["prompt"], "Prompt arg\n\nHello from pipe")
 
   @unittest.mock.patch(
       "litert_lm_cli.model.Model.from_model_reference"
   )
-  def test_run_non_tty_no_input(self, mock_from_model_ref):
+  @unittest.mock.patch(
+      "litert_lm_cli.commands.run.run_interactive"
+  )
+  def test_run_non_tty_no_input(
+      self, mock_run_interactive, mock_from_model_ref
+  ):
     mock_model = unittest.mock.MagicMock()
     mock_from_model_ref.return_value = mock_model
     mock_model.exists.return_value = True
@@ -97,11 +112,12 @@ class MainTest(absltest.TestCase):
 
     self.assertEqual(result.exit_code, 0)
     # Should return early and not start the interactive session
-    mock_model.run_interactive.assert_not_called()
+    mock_run_interactive.assert_not_called()
 
   def test_create_keybindings(self):
-    m = model.Model(model_id="test_model", model_path="test_path")
-    kb = m._create_keybindings()
+    from litert_lm_cli.commands import run as run_cmd
+
+    kb = run_cmd._create_keybindings()
     self.assertIsInstance(kb, key_binding.KeyBindings)
     # Check if expected keys are added.
     keys = [str(b.keys) for b in kb.bindings]
@@ -115,7 +131,10 @@ class MainTest(absltest.TestCase):
     with unittest.mock.patch(
         "litert_lm_cli.model.Model.from_model_reference",
         autospec=True,
-    ) as mock_from_model_ref:
+    ) as mock_from_model_ref, unittest.mock.patch(
+        "litert_lm_cli.commands.run.run_interactive",
+        autospec=True,
+    ) as mock_run_interactive:
       mock_model = unittest.mock.MagicMock()
       mock_from_model_ref.return_value = mock_model
       mock_model.exists.return_value = True
@@ -140,8 +159,8 @@ class MainTest(absltest.TestCase):
       )
 
       self.assertEqual(result.exit_code, 0)
-      mock_model.run_interactive.assert_called_once()
-      kwargs = mock_model.run_interactive.call_args.kwargs
+      mock_run_interactive.assert_called_once()
+      kwargs = mock_run_interactive.call_args.kwargs
       self.assertEqual(kwargs["top_k"], 10)
       self.assertEqual(kwargs["top_p"], 0.9)
       self.assertEqual(kwargs["temperature"], 0.8)
@@ -158,7 +177,12 @@ class MainTest(absltest.TestCase):
   @unittest.mock.patch(
       "litert_lm_cli.model.Model.from_model_reference"
   )
-  def test_run_with_vision_and_audio_backends(self, mock_from_model_ref):
+  @unittest.mock.patch(
+      "litert_lm_cli.commands.run.run_interactive"
+  )
+  def test_run_with_vision_and_audio_backends(
+      self, mock_run_interactive, mock_from_model_ref
+  ):
     mock_model = unittest.mock.MagicMock()
     mock_from_model_ref.return_value = mock_model
     mock_model.exists.return_value = True
@@ -179,15 +203,20 @@ class MainTest(absltest.TestCase):
     )
 
     self.assertEqual(result.exit_code, 0)
-    mock_model.run_interactive.assert_called_once()
-    kwargs = mock_model.run_interactive.call_args.kwargs
+    mock_run_interactive.assert_called_once()
+    kwargs = mock_run_interactive.call_args.kwargs
     self.assertEqual(kwargs["vision_backend"], "gpu")
     self.assertEqual(kwargs["audio_backend"], "cpu")
 
   @unittest.mock.patch(
       "litert_lm_cli.model.Model.from_model_reference"
   )
-  def test_run_with_default_backends(self, mock_from_model_ref):
+  @unittest.mock.patch(
+      "litert_lm_cli.commands.run.run_interactive"
+  )
+  def test_run_with_default_backends(
+      self, mock_run_interactive, mock_from_model_ref
+  ):
     mock_model = unittest.mock.MagicMock()
     mock_from_model_ref.return_value = mock_model
     mock_model.exists.return_value = True
@@ -204,8 +233,8 @@ class MainTest(absltest.TestCase):
     )
 
     self.assertEqual(result.exit_code, 0)
-    mock_model.run_interactive.assert_called_once()
-    kwargs = mock_model.run_interactive.call_args.kwargs
+    mock_run_interactive.assert_called_once()
+    kwargs = mock_run_interactive.call_args.kwargs
     self.assertIsNone(kwargs["vision_backend"])
     self.assertIsNone(kwargs["audio_backend"])
 
@@ -213,7 +242,12 @@ class MainTest(absltest.TestCase):
   @unittest.mock.patch(
       "litert_lm_cli.model.Model.from_model_reference"
   )
-  def test_run_with_attachments(self, mock_from_model_ref, mock_expanduser):
+  @unittest.mock.patch(
+      "litert_lm_cli.commands.run.run_interactive"
+  )
+  def test_run_with_attachments(
+      self, mock_run_interactive, mock_from_model_ref, mock_expanduser
+  ):
     mock_model = unittest.mock.MagicMock()
     mock_from_model_ref.return_value = mock_model
     mock_model.exists.return_value = True
@@ -249,8 +283,8 @@ class MainTest(absltest.TestCase):
         )
 
     self.assertEqual(result.exit_code, 0)
-    mock_model.run_interactive.assert_called_once()
-    kwargs = mock_model.run_interactive.call_args.kwargs
+    mock_run_interactive.assert_called_once()
+    kwargs = mock_run_interactive.call_args.kwargs
     self.assertEqual(kwargs["vision_backend"], "gpu")
     self.assertEqual(kwargs["audio_backend"], "cpu")
     self.assertEqual(
@@ -261,8 +295,11 @@ class MainTest(absltest.TestCase):
   @unittest.mock.patch(
       "litert_lm_cli.model.Model.from_model_reference"
   )
+  @unittest.mock.patch(
+      "litert_lm_cli.commands.run.run_interactive"
+  )
   def test_run_with_audio_attachment_missing_backend(
-      self, mock_from_model_ref, mock_exists
+      self, mock_run_interactive, mock_from_model_ref, mock_exists
   ):
     mock_model = unittest.mock.MagicMock()
     mock_from_model_ref.return_value = mock_model
@@ -286,14 +323,17 @@ class MainTest(absltest.TestCase):
         "Error: Audio attachments require --audio-backend to be set.",
         result.output,
     )
-    mock_model.run_interactive.assert_not_called()
+    mock_run_interactive.assert_not_called()
 
   @unittest.mock.patch("os.path.exists", return_value=True)
   @unittest.mock.patch(
       "litert_lm_cli.model.Model.from_model_reference"
   )
+  @unittest.mock.patch(
+      "litert_lm_cli.commands.run.run_interactive"
+  )
   def test_run_with_image_attachment_missing_backend(
-      self, mock_from_model_ref, mock_exists
+      self, mock_run_interactive, mock_from_model_ref, mock_exists
   ):
     mock_model = unittest.mock.MagicMock()
     mock_from_model_ref.return_value = mock_model
@@ -317,14 +357,17 @@ class MainTest(absltest.TestCase):
         "Error: Image attachments require --vision-backend to be set.",
         result.output,
     )
-    mock_model.run_interactive.assert_not_called()
+    mock_run_interactive.assert_not_called()
 
   @unittest.mock.patch("os.path.exists", return_value=True)
   @unittest.mock.patch(
       "litert_lm_cli.model.Model.from_model_reference"
   )
+  @unittest.mock.patch(
+      "litert_lm_cli.commands.run.run_interactive"
+  )
   def test_run_with_unsupported_attachment_type(
-      self, mock_from_model_ref, mock_exists
+      self, mock_run_interactive, mock_from_model_ref, mock_exists
   ):
     mock_model = unittest.mock.MagicMock()
     mock_from_model_ref.return_value = mock_model
@@ -345,14 +388,17 @@ class MainTest(absltest.TestCase):
 
     self.assertNotEqual(result.exit_code, 0)
     self.assertIn("Unsupported attachment type", result.output)
-    mock_model.run_interactive.assert_not_called()
+    mock_run_interactive.assert_not_called()
 
   @unittest.mock.patch("os.path.exists", return_value=False)
   @unittest.mock.patch(
       "litert_lm_cli.model.Model.from_model_reference"
   )
+  @unittest.mock.patch(
+      "litert_lm_cli.commands.run.run_interactive"
+  )
   def test_run_with_non_existent_attachment(
-      self, mock_from_model_ref, mock_exists
+      self, mock_run_interactive, mock_from_model_ref, mock_exists
   ):
     mock_model = unittest.mock.MagicMock()
     mock_from_model_ref.return_value = mock_model
@@ -373,12 +419,17 @@ class MainTest(absltest.TestCase):
 
     self.assertNotEqual(result.exit_code, 0)
     self.assertIn("File 'ghost.jpg' does not exist.", result.output)
-    mock_model.run_interactive.assert_not_called()
+    mock_run_interactive.assert_not_called()
 
   @unittest.mock.patch(
       "litert_lm_cli.model.Model.from_model_reference"
   )
-  def test_run_with_attachments_and_no_template(self, mock_from_model_ref):
+  @unittest.mock.patch(
+      "litert_lm_cli.commands.run.run_interactive"
+  )
+  def test_run_with_attachments_and_no_template(
+      self, mock_run_interactive, mock_from_model_ref
+  ):
     mock_model = unittest.mock.MagicMock()
     mock_from_model_ref.return_value = mock_model
     mock_model.exists.return_value = True
@@ -402,10 +453,10 @@ class MainTest(absltest.TestCase):
         "Error: Attachments are not supported with --no-template.",
         result.output,
     )
-    mock_model.run_interactive.assert_not_called()
+    mock_run_interactive.assert_not_called()
 
   @unittest.mock.patch(
-      "litert_lm_cli.main.os.stat"
+      "litert_lm_cli.commands.list.os.stat"
   )
   @unittest.mock.patch(
       "litert_lm_cli.model.Model.get_all_models"

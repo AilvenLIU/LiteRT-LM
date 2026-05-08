@@ -10,7 +10,7 @@ import urllib.request
 from absl.testing import absltest
 
 from litert_lm_cli import model
-from litert_lm_cli import serve
+from litert_lm_cli.commands import serve
 
 
 def _parse_sse_events(

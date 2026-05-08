@@ -24,6 +24,10 @@ load("@rules_python//python:defs.bzl", "py_test")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//:version.bzl", "VERSION")
 
+package(
+    default_visibility = ["//python/litert_lm_cli:__subpackages__"],
+)
+
 version = select({
     "//python:dev_build": VERSION + ".dev$(DEV_VERSION)",
     "//conditions:default": VERSION,
@@ -41,7 +45,6 @@ pytype_strict_library(
     deps = [
         "//python/litert_lm",
         requirement("click"),
-        requirement("prompt_toolkit"),
     ] + select({
         "//conditions:default": [],
     }),
@@ -75,12 +78,11 @@ pytype_strict_library(
 )
 
 pytype_strict_library(
-    name = "serve",
-    srcs = ["serve.py"],
+    name = "common",
+    srcs = ["common.py"],
     deps = [
-        ":model",
-        "//python/litert_lm",
         requirement("click"),
+        requirement("huggingface_hub"),
     ],
     imports = [".."],
 )
@@ -106,13 +108,17 @@ pytype_strict_library(
     srcs = ["main.py"],
     deps = [
         ":help_formatter",
-        ":model",
-        ":serve",
-        ":venv_manager",
         ":version",
         "//python/litert_lm",
+        "//python/litert_lm_cli/commands:benchmark",
+        "//python/litert_lm_cli/commands:convert",
+        "//python/litert_lm_cli/commands:delete",
+        "//python/litert_lm_cli/commands:import",
+        "//python/litert_lm_cli/commands:list",
+        "//python/litert_lm_cli/commands:rename",
+        "//python/litert_lm_cli/commands:run",
+        "//python/litert_lm_cli/commands:serve",
         requirement("click"),
-        requirement("huggingface_hub"),
     ],
     imports = [".."],
 )
@@ -129,22 +135,6 @@ py_test(
         "@absl_py//absl/testing:absltest",
         requirement("click"),
         requirement("prompt_toolkit"),
-    ],
-    imports = [".."],
-)
-
-py_test(
-    name = "serve_test",
-    srcs = ["serve_test.py"],
-    tags = [
-        "nowindows",
-    ],
-    deps = [
-        ":serve",
-        "//python/litert_lm",
-        "//python/litert_lm:interfaces",
-        "@absl_py//absl/testing:absltest",
-        "@absl_py//absl/testing:parameterized",
     ],
     imports = [".."],
 )
