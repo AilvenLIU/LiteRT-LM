@@ -167,11 +167,12 @@ LlmLiteRtMtpDrafter::Create(Environment& env, ModelResources& resources,
       executor_settings.GetActivationDataType().value_or(
           ActivationDataType::FLOAT16);
 
+  auto cache_suffix = std::string(ExecutorSettingsBase::kMtpDrafterCacheSuffix);
   ASSIGN_OR_RETURN(
       auto compilation_options,
       CreateCompilationOptions(executor_settings, activation_data_type,
                                /*signatures=*/std::nullopt,
-                               /*cache_suffix=*/".mtp_drafter"));
+                               /*cache_suffix=*/cache_suffix));
   RETURN_IF_ERROR(
       UpdateCompilationOptions(executor_settings, compilation_options));
   ASSIGN_OR_RETURN(auto model,
