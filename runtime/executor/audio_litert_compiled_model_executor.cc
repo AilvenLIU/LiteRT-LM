@@ -22,7 +22,6 @@
 #include <optional>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "absl/base/nullability.h"  // from @com_google_absl
@@ -52,13 +51,11 @@
 #include "runtime/engine/io_types.h"
 #include "runtime/executor/audio_executor_settings.h"
 #include "runtime/executor/audio_executor_utils.h"
-#include "runtime/executor/common_utils.h"
 #include "runtime/executor/executor_settings_base.h"
 #include "runtime/executor/litert_compiled_model_executor_utils.h"
 #include "runtime/executor/llm_executor_io_types.h"
 #include "runtime/util/convert_tensor_buffer.h"
 #include "runtime/util/file_util.h"
-#include "runtime/util/scoped_file.h"
 #include "runtime/util/tensor_buffer_util.h"
 #include "tflite/types/half.h"  // from @litert
 
@@ -201,10 +198,23 @@ AudioLiteRtCompiledModelExecutor::AudioStaticEncoder::Initialize() {
         absl::StrCat(AudioExecutorSettings::kStaticEncoderName,
                      ExecutorSettingsBase::kMlDriftCacheSuffix),
         /*check_and_clean=*/true);
+    // Trigger cleanup for stale GPU weight caches via GetWeightCacheFile.
+    auto ignored_weight_cache_or = executor_settings_.GetWeightCacheFile(
+        absl::StrCat(AudioExecutorSettings::kStaticEncoderName,
+                     ExecutorSettingsBase::kMlDriftCacheSuffix),
+        /*check_and_clean=*/true);
+    if (!ignored_weight_cache_or.ok()) {
+      ABSL_LOG(WARNING) << "Failed to trigger clean up for stale GPU weight "
+                           "caches: "
+                        << ignored_weight_cache_or.status();
+    }
     RETURN_IF_ERROR(SetGpuOptions(executor_settings_, gpu_options));
+    ASSIGN_OR_RETURN(std::string metadata_id,
+                     GetFileCacheIdentifier(model_path));
     RETURN_IF_ERROR(SetGpuCacheOptions(
         weight_cache_path, program_cache_file, executor_settings_,
-        absl::StrCat(model_basename, AudioExecutorSettings::kStaticEncoderName),
+        absl::StrCat(model_basename, AudioExecutorSettings::kStaticEncoderName,
+                     "_", metadata_id),
         /*logging_prefix=*/AudioExecutorSettings::kStaticEncoderName,
         gpu_options));
     options.SetHardwareAccelerators(litert::HwAccelerators::kGpu);
@@ -333,11 +343,24 @@ AudioLiteRtCompiledModelExecutor::AudioStreamingEncoder::Initialize() {
         absl::StrCat(AudioExecutorSettings::kStreamingEncoderName,
                      ExecutorSettingsBase::kMlDriftCacheSuffix),
         /*check_and_clean=*/true);
+    // Trigger cleanup for stale GPU weight caches via GetWeightCacheFile.
+    auto ignored_weight_cache_or = executor_settings_.GetWeightCacheFile(
+        absl::StrCat(AudioExecutorSettings::kStreamingEncoderName,
+                     ExecutorSettingsBase::kMlDriftCacheSuffix),
+        /*check_and_clean=*/true);
+    if (!ignored_weight_cache_or.ok()) {
+      ABSL_LOG(WARNING) << "Failed to trigger clean up for stale GPU weight "
+                           "caches: "
+                        << ignored_weight_cache_or.status();
+    }
     RETURN_IF_ERROR(SetGpuOptions(executor_settings_, gpu_options));
+    ASSIGN_OR_RETURN(std::string metadata_id,
+                     GetFileCacheIdentifier(model_path));
     RETURN_IF_ERROR(SetGpuCacheOptions(
         weight_cache_path, program_cache_file, executor_settings_,
         absl::StrCat(model_basename,
-                     AudioExecutorSettings::kStreamingEncoderName),
+                     AudioExecutorSettings::kStreamingEncoderName,
+                     "_", metadata_id),
         /*logging_prefix=*/AudioExecutorSettings::kStreamingEncoderName,
         gpu_options));
     options.SetHardwareAccelerators(litert::HwAccelerators::kGpu);
