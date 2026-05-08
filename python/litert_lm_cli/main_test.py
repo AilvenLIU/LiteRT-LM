@@ -405,7 +405,7 @@ class MainTest(absltest.TestCase):
     mock_model.run_interactive.assert_not_called()
 
   @unittest.mock.patch(
-      "litert_lm_cli.main.os.stat"
+      "litert_lm_cli.commands.list.os.stat"
   )
   @unittest.mock.patch(
       "litert_lm_cli.model.Model.get_all_models"

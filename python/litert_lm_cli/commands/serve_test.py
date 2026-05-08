@@ -71,7 +71,7 @@ sys.modules["litert_lm_cli.model"] = (
     mock_model_mod
 )
 
-from litert_lm_cli import serve
+from litert_lm_cli.commands import serve
 
 
 class ServeTest(parameterized.TestCase):

@@ -27,7 +27,7 @@ from absl.testing import absltest
 from google import genai
 
 from litert_lm_cli import model
-from litert_lm_cli import serve
+from litert_lm_cli.commands import serve
 
 
 class ServeIntegrationTest(absltest.TestCase):

@@ -27,6 +27,7 @@ cc_library(
     name = "kv_cache",
     srcs = ["kv_cache.cc"],
     hdrs = ["kv_cache.h"],
+     tags = ["nowindows"],
     deps = [
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/memory",
