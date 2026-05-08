@@ -175,19 +175,39 @@ TEST_F(Gemma4DataProcessorTest, ToInputDataVectorTextAndImage) {
   }
 
   {
-    // Override the max number of patches to 1000 at runtime.
+    // Override the visual token budget to 100 at runtime.
     ASSERT_OK_AND_ASSIGN(
         const std::vector<InputData> input_data,
         processor->ToInputDataVector(
             rendered_template_prompt, json::array({message}),
-            Gemma4DataProcessorArguments{.max_num_patches = 1000}));
+            Gemma4DataProcessorArguments{.visual_token_budget = 100}));
 
     InputText expected_text1(
         "<|turn>user\nHere is an image of apples <|image>");
     InputText expected_text2("\n\n");
     InputText expected_text3("<turn|>");
     EXPECT_THAT(input_data,
-                ElementsAre(HasInputText(&expected_text1), HasInputImage(1000),
+                ElementsAre(HasInputText(&expected_text1), HasInputImage(900),
+                            HasInputImageEnd(), HasInputText(&expected_text2),
+                            HasInputText(&expected_text3)));
+  }
+
+  {
+    // Override the visual token budget to 300 at runtime, which is larger than
+    // the max_num_patches / 9 in the config. The visual token budget should be
+    // capped to max_num_patches / 9.
+    ASSERT_OK_AND_ASSIGN(
+        const std::vector<InputData> input_data,
+        processor->ToInputDataVector(
+            rendered_template_prompt, json::array({message}),
+            Gemma4DataProcessorArguments{.visual_token_budget = 300}));
+
+    InputText expected_text1(
+        "<|turn>user\nHere is an image of apples <|image>");
+    InputText expected_text2("\n\n");
+    InputText expected_text3("<turn|>");
+    EXPECT_THAT(input_data,
+                ElementsAre(HasInputText(&expected_text1), HasInputImage(2520),
                             HasInputImageEnd(), HasInputText(&expected_text2),
                             HasInputText(&expected_text3)));
   }

@@ -366,10 +366,20 @@ Gemma4DataProcessor::ToInputDataVectorImpl(
   const char* start = prompt_view.data();
   std::string part;
   ImagePreprocessParameter image_params;
+  int visual_token_budget =
+      args.visual_token_budget.value_or(config_.max_num_patches / 9);
+  if (visual_token_budget <= 0) {
+    return absl::InvalidArgumentError("Visual token budget must be positive.");
+  }
+  if (visual_token_budget > config_.max_num_patches / 9) {
+    // Override the visual token budget to the max value if it is larger than
+    // the max number of patches.
+    visual_token_budget = config_.max_num_patches / 9;
+  }
   image_params.SetPatchifyConfig(ImagePreprocessParameter::PatchifyConfig{
       .patch_width = config_.patch_width,
       .patch_height = config_.patch_height,
-      .max_num_patches = args.max_num_patches.value_or(config_.max_num_patches),
+      .max_num_patches = visual_token_budget * 9,
       .pooling_kernel_size = config_.pooling_kernel_size});
   // Replace the placeholders with the actual data.
   while (RE2::FindAndConsume(&prompt_view, re_delimiter, &part)) {
