@@ -323,6 +323,22 @@ absl::Status VisionLiteRtCompiledModelExecutor::VisionAdapter::Initialize() {
       options.SetHardwareAccelerators(litert::HwAccelerators::kGpu);
       break;
     }
+#if !defined(LITERT_DISABLE_NPU)
+    case Backend::NPU: {
+      LITERT_ASSIGN_OR_RETURN(auto& qualcomm_options,
+                              options.GetQualcommOptions());
+      qualcomm_options.SetLogLevel(qualcomm::QualcommOptions::LogLevel::kOff);
+      qualcomm_options.SetHtpPerformanceMode(
+          qualcomm::QualcommOptions::HtpPerformanceMode::kBurst);
+      LITERT_ASSIGN_OR_RETURN(auto& google_tensor_options,
+                              options.GetGoogleTensorOptions());
+      google_tensor_options.SetPerformanceMode(
+          google_tensor::GoogleTensorOptions::PerformanceMode::kBurst);
+
+      options.SetHardwareAccelerators(litert::HwAccelerators::kCpu);
+      break;
+    }
+#endif  // !defined(LITERT_DISABLE_NPU)
     default:
       return absl::InvalidArgumentError(
           absl::StrCat("Unsupported adapter backend: ", backend_));
@@ -632,12 +648,15 @@ absl::StatusOr<ExecutorVisionData> VisionLiteRtCompiledModelExecutor::Encode(
           env_, TensorBufferType::kHostMemory, output_tensor_type,
           output_tensor_type.Layout().Dimensions()[1] *
               output_tensor_type.Layout().Dimensions()[2] * sizeof(float)));
-  LITERT_ASSIGN_OR_RETURN(
-      auto adapter_output_data,
-      ReferTensorBufferAsSpan<float>(adapter_output_tensor_buffers[0]));
+  LITERT_ASSIGN_OR_RETURN(int adapter_output_num_elements,
+                          adapter_output_tensor_type.Layout().NumElements());
+  std::vector<float> adapter_output_data(adapter_output_num_elements);
+  LITERT_RETURN_IF_ERROR(adapter_output_tensor_buffers[0].Read<float>(
+      absl::MakeSpan(adapter_output_data)));
 
-  LITERT_RETURN_IF_ERROR(output_tensor.Write<float>(adapter_output_data.subspan(
-      0, num_patches * output_tensor_type.Layout().Dimensions()[2])));
+  LITERT_RETURN_IF_ERROR(output_tensor.Write<float>(
+      absl::MakeConstSpan(adapter_output_data).subspan(
+          0, num_patches * output_tensor_type.Layout().Dimensions()[2])));
   return ExecutorVisionData(std::move(output_tensor),
                             /*per_layer_embeddings=*/std::nullopt);
 }
