@@ -63,6 +63,8 @@ cc_binary(
         "@nlohmann_json//:json",
         "//runtime/conversation",
         "//runtime/conversation:io_types",
+        "//runtime/conversation/model_data_processor:config_registry",
+        "//runtime/conversation/model_data_processor:gemma4_data_processor_config",
         "//runtime/core:engine_impl",
         "//runtime/engine:engine_factory",
         "//runtime/engine:engine_interface",

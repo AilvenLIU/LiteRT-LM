@@ -126,7 +126,9 @@ class Conversation(interfaces.AbstractConversation):
       ctx_json = json.dumps(getattr(self, "extra_context", {}))
 
       resp_ptr = self._lib.litert_lm_conversation_send_message(
-          self._ptr, msg_json, ctx_json
+          self._ptr, msg_json, ctx_json,
+          # TODO(b/508420269): Add visual token budget option.
+          None,
       )
       if not resp_ptr:
         raise RuntimeError("litert_lm_conversation_send_message failed")
@@ -173,6 +175,8 @@ class Conversation(interfaces.AbstractConversation):
           self._ptr,
           msg_json,
           ctx_json,
+          # TODO(b/508420269): Add visual token budget option.
+          None,
           c_callback,
           None,
       )

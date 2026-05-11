@@ -32,6 +32,8 @@
 #include "nlohmann/json.hpp"  // from @nlohmann_json
 #include "runtime/conversation/conversation.h"
 #include "runtime/conversation/io_types.h"
+#include "runtime/conversation/model_data_processor/config_registry.h"
+#include "runtime/conversation/model_data_processor/gemma4_data_processor_config.h"
 #include "runtime/engine/engine.h"
 #include "runtime/engine/engine_factory.h"
 #include "runtime/engine/engine_settings.h"
@@ -87,16 +89,36 @@ CreateConversationCallback(LiteRtLmStreamCallback callback, void* user_data) {
   };
 }
 
-litert::lm::OptionalArgs CreateOptionalArgs(const char* extra_context) {
-  litert::lm::OptionalArgs optional_args;
+std::optional<litert::lm::DataProcessorArguments> GetDataProcessorArguments(
+    const litert::lm::Conversation* conversation,
+    const int visual_token_budget) {
+  bool is_gemma4 = conversation->GetConfig()
+                       .GetSessionConfig()
+                       .GetLlmModelType()
+                       .has_gemma4();
+  if (is_gemma4) {
+    return litert::lm::Gemma4DataProcessorArguments{.visual_token_budget =
+                                                        visual_token_budget};
+  }
+  return std::nullopt;
+}
+
+litert::lm::OptionalArgs CreateOptionalArgs(
+    const litert::lm::Conversation* conversation, const char* extra_context,
+    std::optional<int> visual_token_budget) {
+  litert::lm::OptionalArgs litert_lm_optional_args;
   if (extra_context) {
     auto extra_context_json =
         nlohmann::ordered_json::parse(extra_context, nullptr, false);
     if (!extra_context_json.is_null() && !extra_context_json.empty()) {
-      optional_args.extra_context = extra_context_json;
+      litert_lm_optional_args.extra_context = extra_context_json;
     }
   }
-  return optional_args;
+  if (visual_token_budget.has_value()) {
+    litert_lm_optional_args.args =
+        GetDataProcessorArguments(conversation, *visual_token_budget);
+  }
+  return litert_lm_optional_args;
 }
 
 std::vector<litert::lm::InputData> ToEngineInputData(
@@ -136,6 +158,7 @@ using ::litert::lm::Engine;
 using ::litert::lm::EngineFactory;
 using ::litert::lm::EngineSettings;
 using ::litert::lm::InputText;
+using ::litert::lm::OptionalArgs;
 
 using ::litert::lm::Message;
 using ::litert::lm::ModelAssets;
@@ -191,6 +214,10 @@ struct LiteRtLmConversationConfig {
   std::string extra_context_json;
   bool enable_constrained_decoding = false;
   bool filter_channel_content_from_kv_cache = false;
+};
+
+struct LiteRtLmConversationOptionalArgs {
+  std::optional<int> visual_token_budget;
 };
 
 struct LiteRtLmDetokenizeResult {
@@ -327,6 +354,23 @@ void litert_lm_conversation_config_set_filter_channel_content_from_kv_cache(
 
 void litert_lm_conversation_config_delete(LiteRtLmConversationConfig* config) {
   delete config;
+}
+
+LiteRtLmConversationOptionalArgs*
+litert_lm_conversation_optional_args_create() {
+  return new LiteRtLmConversationOptionalArgs;
+}
+
+void litert_lm_conversation_optional_args_set_visual_token_budget(
+    LiteRtLmConversationOptionalArgs* args, int visual_token_budget) {
+  if (args) {
+    args->visual_token_budget = visual_token_budget;
+  }
+}
+
+void litert_lm_conversation_optional_args_delete(
+    LiteRtLmConversationOptionalArgs* args) {
+  delete args;
 }
 
 LiteRtLmEngineSettings* litert_lm_engine_settings_create(
@@ -950,7 +994,8 @@ LiteRtLmConversation* litert_lm_conversation_clone(
 
 LiteRtLmJsonResponse* litert_lm_conversation_send_message(
     LiteRtLmConversation* conversation, const char* message_json,
-    const char* extra_context) {
+    const char* extra_context,
+    const LiteRtLmConversationOptionalArgs* optional_args) {
   if (!conversation || !conversation->conversation) {
     return nullptr;
   }
@@ -962,10 +1007,13 @@ LiteRtLmJsonResponse* litert_lm_conversation_send_message(
     return nullptr;
   }
 
-  litert::lm::OptionalArgs optional_args = CreateOptionalArgs(extra_context);
+  OptionalArgs litert_lm_optional_args = CreateOptionalArgs(
+      conversation->conversation.get(), extra_context,
+      optional_args ? std::optional<int>(optional_args->visual_token_budget)
+                    : std::nullopt);
 
   auto response = conversation->conversation->SendMessage(
-      json_message, std::move(optional_args));
+      json_message, std::move(litert_lm_optional_args));
   if (!response.ok()) {
     ABSL_LOG(ERROR) << "Failed to send message: " << response.status();
     return nullptr;
@@ -989,8 +1037,9 @@ const char* litert_lm_json_response_get_string(
 
 int litert_lm_conversation_send_message_stream(
     LiteRtLmConversation* conversation, const char* message_json,
-    const char* extra_context, LiteRtLmStreamCallback callback,
-    void* callback_data) {
+    const char* extra_context,
+    const LiteRtLmConversationOptionalArgs* optional_args,
+    LiteRtLmStreamCallback callback, void* callback_data) {
   if (!conversation || !conversation->conversation) {
     return -1;
   }
@@ -1002,11 +1051,14 @@ int litert_lm_conversation_send_message_stream(
     return -1;
   }
 
-  litert::lm::OptionalArgs optional_args = CreateOptionalArgs(extra_context);
+  litert::lm::OptionalArgs litert_lm_optional_args = CreateOptionalArgs(
+      conversation->conversation.get(), extra_context,
+      optional_args ? std::optional<int>(optional_args->visual_token_budget)
+                    : std::nullopt);
 
   absl::Status status = conversation->conversation->SendMessageAsync(
       json_message, CreateConversationCallback(callback, callback_data),
-      std::move(optional_args));
+      std::move(litert_lm_optional_args));
 
   if (!status.ok()) {
     ABSL_LOG(ERROR) << "Failed to start message stream: " << status;

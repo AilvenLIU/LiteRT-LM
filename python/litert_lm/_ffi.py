@@ -279,12 +279,14 @@ def _setup_lib_signatures(lib):
       ctypes.c_void_p,
       c_string_p,
       c_string_p,
+      ctypes.c_void_p,
   ]
   lib.litert_lm_conversation_send_message_stream.restype = ctypes.c_int
   lib.litert_lm_conversation_send_message_stream.argtypes = [
       ctypes.c_void_p,
       c_string_p,
       c_string_p,
+      ctypes.c_void_p,
       STREAM_CALLBACK_TYPE,
       ctypes.c_void_p,
   ]
