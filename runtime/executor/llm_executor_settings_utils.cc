@@ -112,12 +112,13 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
         std::string cache_key = absl::StrCat(model_name, "_", metadata_id);
         gpu_compilation_options.SetModelCacheKey(cache_key.c_str());
       } else if (has_valid_model_fd && has_valid_program_cache_fd) {
-        // If the model is loaded from an fd, there is no way to automatically
-        // generate a cache key. But if we are loading a model from an fd, it is
-        // likely that our program cache is also loaded from an fd which does
-        // not require a cache key to prevent collisions. The GPU delegate will
-        // still expect a cache key, so we set it to a constant value.
-        gpu_compilation_options.SetModelCacheKey("fd_token");
+        // Generate a unique cache key from the file descriptor.
+        LITERT_ASSIGN_OR_RETURN(
+            std::string metadata_id,
+            GetFileCacheIdentifier(
+                *executor_settings.GetModelAssets().GetScopedFile().value()));
+        std::string cache_key = absl::StrCat("fd_", metadata_id);
+        gpu_compilation_options.SetModelCacheKey(cache_key.c_str());
       }
 
       AdvancedSettings advanced_settings;
