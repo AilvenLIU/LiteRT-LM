@@ -61,9 +61,10 @@ void AudioExecutorSettings::SetMaxSequenceLength(int max_sequence_length) {
 
 absl::Status AudioExecutorSettings::SetBackend(const Backend& backend) {
   if (backend != Backend::CPU && backend != Backend::GPU &&
-      backend != Backend::GPU_ARTISAN) {
+      backend != Backend::GPU_ARTISAN && backend != Backend::NPU) {
     return absl::InvalidArgumentError(
-        "Currently AudioExecutor only supports CPU, GPU and GPU_ARTISAN.");
+        "Currently AudioExecutor only supports CPU, GPU, GPU_ARTISAN, and"
+        " NPU.");
   }
   backend_ = backend;
   return absl::OkStatus();

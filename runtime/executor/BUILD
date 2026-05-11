@@ -953,6 +953,7 @@ cc_library(
             "@litert//litert/cc:litert_ranked_tensor_type",
             "@litert//litert/cc:litert_tensor_buffer",
             "@litert//litert/cc/options:litert_cpu_options",
+            "@litert//litert/cc/options:litert_google_tensor_options",
             "@litert//litert/cc/options:litert_gpu_options",
             "@litert//litert/cc/options:litert_runtime_options",
         ],

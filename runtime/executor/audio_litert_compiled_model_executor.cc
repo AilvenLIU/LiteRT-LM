@@ -59,6 +59,10 @@
 #include "runtime/util/tensor_buffer_util.h"
 #include "tflite/types/half.h"  // from @litert
 
+#if !defined(LITERT_DISABLE_NPU)
+#include "litert/cc/options/litert_google_tensor_options.h"  // from @litert
+#endif  // !defined(LITERT_DISABLE_NPU)
+
 namespace litert::lm {
 namespace {
 
@@ -225,6 +229,14 @@ AudioLiteRtCompiledModelExecutor::AudioStaticEncoder::Initialize() {
         weight_cache_file, AudioExecutorSettings::kEncoderName, cpu_options));
 
     options.SetHardwareAccelerators(litert::HwAccelerators::kCpu);
+#if !defined(LITERT_DISABLE_NPU)
+  } else if (executor_settings_.GetBackend() == Backend::NPU) {
+    LITERT_ASSIGN_OR_RETURN(auto& google_tensor_options,
+                            options.GetGoogleTensorOptions());
+    google_tensor_options.SetPerformanceMode(
+        google_tensor::GoogleTensorOptions::PerformanceMode::kBurst);
+    options.SetHardwareAccelerators(litert::HwAccelerators::kCpu);
+#endif  // !defined(LITERT_DISABLE_NPU)
   } else {
     return absl::InvalidArgumentError(
         absl::StrCat("Unsupported backend for AudioStaticEncoder: ",
@@ -372,6 +384,14 @@ AudioLiteRtCompiledModelExecutor::AudioStreamingEncoder::Initialize() {
         weight_cache_file, AudioExecutorSettings::kEncoderName, cpu_options));
 
     options.SetHardwareAccelerators(litert::HwAccelerators::kCpu);
+#if !defined(LITERT_DISABLE_NPU)
+  } else if (executor_settings_.GetBackend() == Backend::NPU) {
+    LITERT_ASSIGN_OR_RETURN(auto& google_tensor_options,
+                            options.GetGoogleTensorOptions());
+    google_tensor_options.SetPerformanceMode(
+        google_tensor::GoogleTensorOptions::PerformanceMode::kBurst);
+    options.SetHardwareAccelerators(litert::HwAccelerators::kCpu);
+#endif  // !defined(LITERT_DISABLE_NPU)
   } else {
     return absl::InvalidArgumentError(
         absl::StrCat("Unsupported backend for AudioEncoder: ",
@@ -556,6 +576,14 @@ absl::Status AudioLiteRtCompiledModelExecutor::AudioAdapter::Initialize() {
         weight_cache_file, AudioExecutorSettings::kAdapterName, cpu_options));
 
     options.SetHardwareAccelerators(litert::HwAccelerators::kCpu);
+#if !defined(LITERT_DISABLE_NPU)
+  } else if (executor_settings_.GetBackend() == Backend::NPU) {
+    LITERT_ASSIGN_OR_RETURN(auto& google_tensor_options,
+                            options.GetGoogleTensorOptions());
+    google_tensor_options.SetPerformanceMode(
+        google_tensor::GoogleTensorOptions::PerformanceMode::kBurst);
+    options.SetHardwareAccelerators(litert::HwAccelerators::kCpu);
+#endif  // !defined(LITERT_DISABLE_NPU)
   } else {
     return absl::InvalidArgumentError(
         absl::StrCat("Unsupported backend for AudioAdapter: ",
