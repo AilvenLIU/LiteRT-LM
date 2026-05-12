@@ -118,6 +118,17 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
     return "LiteRT NPU Compiled Model";
   }
 
+  // Set the current step of the executor.
+  absl::Status SetCurrentStep(int new_step) override;
+
+  absl::StatusOr<const ProcessedTokens*> GetProcessedTokens() const override;
+
+  // Updates the runtime configuration.
+  absl::Status UpdateRuntimeConfig(
+      const RuntimeConfig& runtime_config) override {
+    return absl::OkStatus();
+  }
+
   // Gets the current step of the executor.
   // Public API, the return value is the current step that user expects (e.g.
   // users prefill 100 tokens, then they expect the current step to be 100).
@@ -137,6 +148,15 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
 
   // Resets all of the internal states.
   absl::Status Reset() override;
+
+  absl::StatusOr<std::unique_ptr<LlmContext>> CreateNewContext(
+      std::optional<uint32_t> lora_id,
+      RuntimeConfig runtime_config) const override;
+
+  absl::StatusOr<std::unique_ptr<LlmContext>> CloneContext() const override;
+
+  absl::Status RestoreContext(
+      std::unique_ptr<LlmContext> context_data) override;
 
  private:
   static litert::Expected<litert::Options> CreateLiteRtNpuOptions(

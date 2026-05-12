@@ -594,6 +594,7 @@ cc_library(
         ":llm_executor_processed_tokens",
         ":llm_executor_settings",
         ":llm_litert_npu_compiled_model_executor_utils",
+        ":llm_processed_context",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log",
@@ -614,6 +615,7 @@ cc_library(
         "//runtime/components/embedding_lookup:embedding_lookup_manager",
         "//runtime/util:convert_tensor_buffer",
         "//runtime/util:litert_status_util",
+        "//runtime/util:tensor_buffer_util",
         "@litert//tflite/types:half",
     ] + select({
         "@litert//litert:litert_link_capi_so": [

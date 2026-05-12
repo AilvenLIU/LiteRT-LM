@@ -1228,6 +1228,95 @@ absl::StatusOr<TensorBuffer> LlmLiteRtCompiledModelExecutorBase::DecodeLogits(
   return output_logits;
 }
 
+absl::StatusOr<std::string>
+LlmLiteRtCompiledModelExecutorBase::GetPrefillSignatureKey() const {
+  std::string prefill_signature_key;
+  for (int i = 0; i < model_.GetNumSignatures(); ++i) {
+    LITERT_ASSIGN_OR_RETURN(auto sig, model_.GetSignature(i));
+    absl::string_view key = sig.Key();
+    if (absl::StartsWith(key, kPrefillSignatureRunner)) {
+      prefill_signature_key = key;
+      break;
+    }
+  }
+  RET_CHECK(!prefill_signature_key.empty());
+  return prefill_signature_key;
+}
+
+absl::StatusOr<absl::flat_hash_map<absl::string_view, TensorBuffer>>
+LlmLiteRtCompiledModelExecutorBase::CloneKVCacheBuffers() const {
+  absl::flat_hash_map<absl::string_view, TensorBuffer> kv_cache_buffers;
+  ASSIGN_OR_RETURN(auto prefill_signature_key, GetPrefillSignatureKey());
+  for (const auto& [name, buffer] : *input_kv_cache_buffers_) {
+    LITERT_ASSIGN_OR_RETURN(auto buffer_copy, CopyTensorBuffer(env_, buffer));
+    kv_cache_buffers[name] = std::move(buffer_copy);
+  }
+  return kv_cache_buffers;
+}
+
+absl::Status LlmLiteRtCompiledModelExecutorBase::RestoreKVCacheBuffers(
+    const absl::flat_hash_map<absl::string_view, TensorBuffer>&
+        kv_cache_buffers) {
+  // TODO: b/452977992: Instead of copying, consider replacing our kv cache
+  // buffers the caller's.
+  if (!gpu_optimized_single_buffer_cache_) {
+    for (const auto& [name, buffer] : kv_cache_buffers) {
+      RETURN_IF_ERROR(CopyBuffer(buffer, (*input_kv_cache_buffers_)[name]));
+    }
+  }
+  return absl::OkStatus();
+}
+
+absl::StatusOr<std::unique_ptr<LlmContext>>
+LlmLiteRtCompiledModelExecutorBase::CreateNewContext(
+    std::optional<uint32_t> lora_id, RuntimeConfig runtime_config) const {
+  std::unique_ptr<ProcessedContext> processed_context =
+      std::make_unique<LlmProcessedContext>(
+          lora_id, absl::flat_hash_map<absl::string_view, TensorBuffer>());
+
+  return std::make_unique<LlmContext>(
+      std::move(processed_context),
+      std::make_unique<RuntimeConfig>(std::move(runtime_config)),
+      std::make_unique<RuntimeState>());
+}
+
+absl::StatusOr<std::unique_ptr<LlmContext>>
+LlmLiteRtCompiledModelExecutorBase::CloneContext() const {
+  std::optional<uint32_t> lora_id;
+  ASSIGN_OR_RETURN(auto kv_cache_buffers, CloneKVCacheBuffers());
+  ProcessedTokens new_processed_tokens =
+      llm_context_->processed_context().processed_tokens();
+  auto new_processed_context = std::make_unique<LlmProcessedContext>(
+      std::move(lora_id), std::move(kv_cache_buffers),
+      std::move(new_processed_tokens));
+  auto new_runtime_config =
+      std::make_unique<RuntimeConfig>(llm_context_->runtime_config());
+  auto new_runtime_state =
+      std::make_unique<RuntimeState>(llm_context_->runtime_state());
+  return std::make_unique<LlmContext>(std::move(new_processed_context),
+                                      std::move(new_runtime_config),
+                                      std::move(new_runtime_state));
+}
+
+absl::Status LlmLiteRtCompiledModelExecutorBase::RestoreContext(
+    std::unique_ptr<LlmContext> context_data) {
+  llm_context_ = std::move(context_data);
+
+  // We can keep our kv cache buffers if this is the first step. This lets us
+  // restore from LlmContexts at step 0 with an empty kv cache.
+  if (!gpu_optimized_single_buffer_cache_) {
+    if (llm_context_->runtime_state().current_step > 0) {
+      *input_kv_cache_buffers_ = std::move(
+          static_cast<LlmProcessedContext&>(llm_context_->processed_context())
+              .kv_cache_buffers());
+    }
+  }
+
+  force_prepare_needed_ = true;
+
+  return absl::OkStatus();
+}
+
 absl::Status LlmLiteRtCompiledModelExecutorBase::InitializeSampler(
     std::optional<ActivationDataType> logits_data_type) {
   if (sampler_ != nullptr) {
@@ -1352,6 +1441,8 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::SetCurrentStep(int new_step) {
   }
 
   int max_step = old_step;
+  ASSIGN_OR_RETURN(auto processed_tokens, GetProcessedTokens());
+  max_step = processed_tokens->TokenCount();
   RET_CHECK_LE(new_step, max_step).SetCode(absl::StatusCode::kInvalidArgument)
       << "New step cannot be greater than the max step: " << max_step;
   RET_CHECK_GE(new_step, 0).SetCode(absl::StatusCode::kInvalidArgument)

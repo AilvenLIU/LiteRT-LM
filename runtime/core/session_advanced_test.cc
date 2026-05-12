@@ -1120,8 +1120,7 @@ TEST_F(SessionAdvancedTest, RunPrefillEmptyInput) {
 
   std::vector<InputData> inputs;
   EXPECT_THAT(session->RunPrefill(inputs),
-              StatusIs(absl::StatusCode::kInvalidArgument,
-                       "No token IDs found in preprocessed_contents."));
+              StatusIs(absl::StatusCode::kInvalidArgument, "Input is empty."));
 }
 
 TEST_F(SessionAdvancedTest, RunPrefillAsyncFailed) {

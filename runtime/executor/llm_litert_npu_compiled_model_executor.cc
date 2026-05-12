@@ -66,8 +66,10 @@
 #include "runtime/executor/llm_executor_processed_tokens.h"
 #include "runtime/executor/llm_executor_settings.h"
 #include "runtime/executor/llm_litert_npu_compiled_model_executor_utils.h"
+#include "runtime/executor/llm_processed_context.h"
 #include "runtime/util/convert_tensor_buffer.h"
 #include "runtime/util/status_macros.h"  // NOLINT
+#include "runtime/util/tensor_buffer_util.h"
 
 namespace litert::lm {
 
@@ -2668,6 +2670,31 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::CommitVerifiedKVCache(
   return absl::OkStatus();
 }
 
+absl::Status LlmLiteRtNpuCompiledModelExecutor::SetCurrentStep(int new_step) {
+  const int max_step = processed_tokens_.TokenCount();
+  if (new_step != (max_step - 1)) {
+    return absl::InvalidArgumentError(
+        "NPU executor's SetCurrentStep only supports rolling back one token at "
+        "the end of decode.");
+  }
+
+  for (int i = new_step; i < current_step_; ++i) {
+    if (processed_tokens_.GetTokenAtStep(i).empty()) {
+      return absl::InvalidArgumentError(
+          "SetCurrentStep does not currently support rolling back vision or "
+          "audio tokens.");
+    }
+  }
+
+  current_step_ = new_step;
+  return absl::OkStatus();
+};
+
+absl::StatusOr<const ProcessedTokens*>
+LlmLiteRtNpuCompiledModelExecutor::GetProcessedTokens() const {
+  return &processed_tokens_;
+}
+
 absl::StatusOr<int> LlmLiteRtNpuCompiledModelExecutor::GetVocabSize() {
   LITERT_ASSIGN_OR_RETURN(
       auto logits_tensor_type,
@@ -2693,6 +2720,70 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::Reset() {
   pending_accepted_tokens_.clear();
 
   RETURN_IF_ERROR(ClearKVCache(llm_inference_context_.prefill_input_buffers));
+  return absl::OkStatus();
+}
+
+absl::StatusOr<std::unique_ptr<LlmContext>>
+LlmLiteRtNpuCompiledModelExecutor::CreateNewContext(
+    std::optional<uint32_t> lora_id, RuntimeConfig runtime_config) const {
+  std::unique_ptr<ProcessedContext> processed_context =
+      std::make_unique<LlmProcessedContext>(
+          lora_id,
+          absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>());
+
+  return std::make_unique<LlmContext>(
+      std::move(processed_context),
+      std::make_unique<RuntimeConfig>(std::move(runtime_config)),
+      std::make_unique<RuntimeState>());
+}
+
+absl::StatusOr<std::unique_ptr<LlmContext>>
+LlmLiteRtNpuCompiledModelExecutor::CloneContext() const {
+  absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>
+      kv_cache_buffers;
+  for (const auto& [name, buffer] :
+       llm_inference_context_.prefill_input_buffers) {
+    if (absl::StartsWith(name, kv_cache_k_root_name) ||
+        absl::StartsWith(name, kv_cache_v_root_name)) {
+      LITERT_ASSIGN_OR_RETURN(auto buffer_copy, CopyTensorBuffer(env_, buffer));
+      kv_cache_buffers[name] = std::move(buffer_copy);
+    }
+  }
+
+  std::unique_ptr<ProcessedContext> processed_context =
+      std::make_unique<LlmProcessedContext>(
+          /*lora_id=*/std::nullopt, std::move(kv_cache_buffers),
+          processed_tokens_);
+
+  RuntimeConfig runtime_config;
+
+  RuntimeState runtime_state;
+  runtime_state.current_step = current_step_;
+
+  return std::make_unique<LlmContext>(
+      std::move(processed_context),
+      std::make_unique<RuntimeConfig>(std::move(runtime_config)),
+      std::make_unique<RuntimeState>(std::move(runtime_state)));
+}
+
+absl::Status LlmLiteRtNpuCompiledModelExecutor::RestoreContext(
+    std::unique_ptr<LlmContext> context_data) {
+  if (context_data->runtime_state().current_step > 0) {
+    auto& saved_kv_buffers =
+        static_cast<LlmProcessedContext&>(context_data->processed_context())
+            .kv_cache_buffers();
+    for (const auto& [name, saved_buffer] : saved_kv_buffers) {
+      if (llm_inference_context_.prefill_input_buffers.contains(name)) {
+        LITERT_ASSIGN_OR_RETURN(auto buffer_copy, saved_buffer.Duplicate());
+        llm_inference_context_.prefill_input_buffers[name] =
+            std::move(buffer_copy);
+      }
+    }
+  }
+
+  processed_tokens_ = context_data->processed_context().processed_tokens();
+  current_step_ = context_data->runtime_state().current_step;
+
   return absl::OkStatus();
 }
 

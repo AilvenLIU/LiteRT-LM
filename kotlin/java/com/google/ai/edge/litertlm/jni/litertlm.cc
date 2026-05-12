@@ -777,7 +777,14 @@ LITERTLM_JNIEXPORT void JNICALL JNI_METHOD(nativeGenerateContentStream)(
                                 (jint)absl::StatusCode::kInternal, message);
             env->DeleteLocalRef(message);
             cleanup_callback_ref();
-          } else {
+          } else if (responses->GetTaskState() ==
+                     litert::lm::TaskState::kCancelled) {
+            jstring message = NewStringStandardUTF(env, "Process cancelled.");
+            env->CallVoidMethod(callback_global, on_error_mid, (jint)1,
+                                message);
+            env->DeleteLocalRef(message);
+            cleanup_callback_ref();
+          } else if (!responses->GetTexts().empty()) {
             jstring response_jstr =
                 NewStringStandardUTF(env, responses->GetTexts()[0]);
             env->CallVoidMethod(callback_global, on_response_mid,

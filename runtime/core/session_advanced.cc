@@ -85,6 +85,9 @@ absl::StatusOr<std::unique_ptr<TaskController>>
 SessionAdvanced::RunPrefillAsync(
     const std::vector<InputData>& contents,
     absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback) {
+  if (contents.empty()) {
+    return absl::InvalidArgumentError("Input is empty.");
+  }
   absl::MutexLock lock(mutex_);
   auto cancelled = std::make_shared<std::atomic<bool>>(false);
 

@@ -721,8 +721,19 @@ ResourceManager::AcquireExecutorWithContextHandler(
 }
 
 absl::Status ResourceManager::TryLoadingVisionExecutor() {
-  return absl::InvalidArgumentError(
-      "Vision executor backend is not supported.");
+  absl::MutexLock lock(vision_executor_mutex_);
+  if (vision_executor_ != nullptr) {
+    return absl::OkStatus();
+  }
+  if (!vision_executor_settings_) {
+    return absl::InvalidArgumentError("Vision options should not be null.");
+  }
+
+  RETURN_IF_ERROR(MaybeCreateLitertEnv());
+  ASSIGN_OR_RETURN(vision_executor_,
+                   VisionLiteRtCompiledModelExecutor::Create(
+                       *vision_executor_settings_, *litert_env_));
+  return absl::OkStatus();
 }
 
 absl::StatusOr<std::unique_ptr<VisionExecutor>>
@@ -755,8 +766,10 @@ absl::Status ResourceManager::TryLoadingAudioExecutor() {
   }
   if (audio_executor_settings_->GetBackend() == litert::lm::Backend::CPU ||
       audio_executor_settings_->GetBackend() == litert::lm::Backend::GPU) {
-    return absl::InvalidArgumentError(
-        "Audio executor backend is not supported.");
+    RETURN_IF_ERROR(MaybeCreateLitertEnv());
+    ASSIGN_OR_RETURN(audio_executor_,
+                     litert::lm::AudioLiteRtCompiledModelExecutor::Create(
+                         *audio_executor_settings_, *litert_env_));
   } else {
     return absl::InvalidArgumentError(
         "Audio executor backend is not supported.");
