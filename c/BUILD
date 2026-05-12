@@ -108,6 +108,7 @@ cc_test(
         "@nlohmann_json//:json",
         "//runtime/conversation",
         "//runtime/conversation:io_types",
+        "//runtime/core:engine_advanced_impl",
         "//runtime/engine:engine_settings",
         "//runtime/executor:executor_settings_base",
         "//runtime/executor:llm_executor_settings",
