@@ -29,6 +29,7 @@
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "runtime/components/model_resources.h"
 #include "runtime/engine/engine_settings.h"
+#include "runtime/executor/executor_settings_base.h"
 #include "runtime/executor/magic_number_configs_helper.h"
 #include "runtime/util/logging.h"
 
@@ -39,6 +40,7 @@ absl::StatusOr<Environment&> GetEnvironment(EngineSettings& engine_settings,
   // Helper must be available until LlmLiteRtCompiledModelExecutor::Create() is
   // called. Since env is used multiple times, it should also be static.
   static absl::NoDestructor<MagicNumberConfigsHelper> helper;
+
   static absl::NoDestructor<absl::StatusOr<Environment>> kEnvironment(
       [&]() -> absl::StatusOr<Environment> {
         const auto& main_executor_settings =
@@ -46,12 +48,14 @@ absl::StatusOr<Environment&> GetEnvironment(EngineSettings& engine_settings,
         std::vector<EnvironmentOptions::Option> env_options;
 
         if (model_resources != nullptr &&
-            (!main_executor_settings
-                  .GetAdvancedSettings() ||  // Default is true.
-             main_executor_settings.GetAdvancedSettings()
-                 ->configure_magic_numbers)) {
-          env_options = helper->GetLiteRtEnvOptions(*model_resources,
-                                                    main_executor_settings);
+            (main_executor_settings.GetBackend() == Backend::CPU ||
+             main_executor_settings.GetBackend() == Backend::GPU)) {
+          if (!main_executor_settings.GetAdvancedSettings() ||
+              main_executor_settings.GetAdvancedSettings()
+                  ->configure_magic_numbers) {
+            env_options = helper->GetLiteRtEnvOptions(*model_resources,
+                                                      main_executor_settings);
+          }
         }
 
         if (auto severity = GetMinLogSeverity()) {
@@ -76,22 +80,21 @@ absl::StatusOr<Environment&> GetEnvironment(EngineSettings& engine_settings,
           std::filesystem::path path(model_path);
           // Note: Existence check for path was here, but it's better to check
           // before calling this function if needed.
-          static const absl::NoDestructor<std::string> kDispatchLibraryPath(
-              path.parent_path().string());
+          std::string dispatch_library_path = path.parent_path().string();
       // In WASM, the parent path is often just "/" which is usually not
       // what we want for dispatch libraries.
 #ifdef __EMSCRIPTEN__
           bool should_set_path =
-              !kDispatchLibraryPath->empty() && *kDispatchLibraryPath != "/";
+              !dispatch_library_path.empty() && dispatch_library_path != "/";
 #else
-          bool should_set_path = !kDispatchLibraryPath->empty();
+          bool should_set_path = !dispatch_library_path.empty();
 #endif
           if (should_set_path) {
             ABSL_LOG(INFO) << "Setting dispatch library path: "
-                           << *kDispatchLibraryPath;
+                           << dispatch_library_path;
             env_options.push_back(::litert::EnvironmentOptions::Option{
                 ::litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
-                absl::string_view(*kDispatchLibraryPath)});
+                absl::string_view(dispatch_library_path)});
           } else {
             ABSL_LOG(INFO) << "No dispatch library path provided.";
           }

@@ -526,6 +526,7 @@ cc_library(
         "@litert//litert/cc:litert_macros",
         "//runtime/components:model_resources",
         "//runtime/engine:engine_settings",
+        "//runtime/executor:executor_settings_base",
         "//runtime/executor:magic_number_configs_helper",
     ] + select({
         "@litert//litert:litert_link_capi_so": [
