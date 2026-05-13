@@ -1,6 +1,5 @@
 import collections.abc
 import http.client
-import http.server
 import json
 import pathlib
 import threading
@@ -10,7 +9,8 @@ import urllib.request
 from absl.testing import absltest
 
 from litert_lm_cli import model
-from litert_lm_cli.commands import serve
+from litert_lm_cli.commands import openai_handler
+from litert_lm_cli.commands import serve_util
 
 
 def _parse_sse_events(
@@ -33,10 +33,10 @@ class ServeOpenAIStreamingTest(absltest.TestCase):
 
   def setUp(self):
     super().setUp()
-    self.enter_context(mock.patch.object(serve, "_current_engine", None))
-    self.enter_context(mock.patch.object(serve, "_current_model_id", None))
 
-    self.server = http.server.HTTPServer(("localhost", 0), serve.OpenAIHandler)
+    self.server = serve_util.LiteRTLMServer(
+        ("localhost", 0), openai_handler.OpenAIHandler
+    )
     self.port = self.server.server_port
 
     self.server_thread = threading.Thread(

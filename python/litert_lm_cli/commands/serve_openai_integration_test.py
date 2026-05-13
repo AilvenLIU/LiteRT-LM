@@ -1,4 +1,3 @@
-import http.server
 import json
 import pathlib
 import threading
@@ -8,19 +7,18 @@ import urllib.request
 from absl.testing import absltest
 
 from litert_lm_cli import model
-from litert_lm_cli.commands import serve
+from litert_lm_cli.commands import openai_handler
+from litert_lm_cli.commands import serve_util
 
 
 class ServeOpenAIIntegrationTest(absltest.TestCase):
 
   def setUp(self):
     super().setUp()
-    # Reset global state in serve.py to ensure each test starts fresh
-    serve._current_engine = None
-    serve._current_model_id = None
-
     # Start the server on a free ephemeral port
-    self.server = http.server.HTTPServer(("localhost", 0), serve.OpenAIHandler)
+    self.server = serve_util.LiteRTLMServer(
+        ("localhost", 0), openai_handler.OpenAIHandler
+    )
     self.port = self.server.server_port
 
     self.server_thread = threading.Thread(
@@ -45,7 +43,6 @@ class ServeOpenAIIntegrationTest(absltest.TestCase):
         self.model_path.exists(), f"Model not found at {self.model_path}"
     )
 
-    # Use self.enter_context instead of with statement for patching
     mock_from_id = self.enter_context(
         mock.patch.object(model.Model, "from_model_id", autospec=True)
     )
@@ -65,18 +62,30 @@ class ServeOpenAIIntegrationTest(absltest.TestCase):
       self.assertEqual(response.getcode(), 200)
       res_body = json.loads(response.read().decode("utf-8"))
 
-      # Verify top-level fields
-      self.assertIn("id", res_body)
-      self.assertIn("output", res_body)
+      resp_id = res_body.get("id", "")
+      self.assertStartsWith(resp_id, "resp_")
 
-      # Unpack list and verify structure
-      [output_item] = res_body["output"]
-      self.assertEqual(output_item.get("role"), "assistant")
-      self.assertEqual(output_item.get("status"), "completed")
+      output_list = res_body.get("output", [])
+      self.assertLen(output_list, 1)
+      msg_id = output_list[0].get("id", "")
+      text_content = output_list[0].get("content", [{}])[0].get("text", "")
+      self.assertNotEmpty(text_content)
 
-      [content_item] = output_item["content"]
-      self.assertEqual(content_item.get("type"), "output_text")
-      self.assertNotEmpty(content_item.get("text"))
+      expected_body = {
+          "id": resp_id,
+          "output": [{
+              "id": msg_id,
+              "type": "message",
+              "role": "assistant",
+              "status": "completed",
+              "content": [{
+                  "type": "output_text",
+                  "text": text_content,
+                  "annotations": [],
+              }],
+          }],
+      }
+      self.assertDictEqual(res_body, expected_body)
 
 
 if __name__ == "__main__":
