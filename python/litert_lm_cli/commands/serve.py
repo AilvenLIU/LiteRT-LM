@@ -18,26 +18,22 @@ Reference: https://ai.google.dev/api/generate-content
 """
 
 import collections.abc
-import datetime
 import http.server
 import json
 import re
-import traceback
-from typing import Any, Optional
+from typing import Any
 
 import click
 
 import litert_lm
 from litert_lm_cli import help_formatter
-from litert_lm_cli import model
+from litert_lm_cli.commands import openai_handler
+from litert_lm_cli.commands import serve_util
 
 GEN_CONTENT_RE = re.compile(r"^/v1beta/models/([^/\\:]+):generateContent$")
 STREAM_GEN_CONTENT_RE = re.compile(
     r"^/v1beta/models/([^/\\:]+):streamGenerateContent$"
 )
-
-_current_engine: Optional[litert_lm.Engine] = None
-_current_model_id: Optional[str] = None
 
 
 class _ProxyTool(litert_lm.Tool):
@@ -50,54 +46,7 @@ class _ProxyTool(litert_lm.Tool):
     return self._definition
 
   def execute(self, param: collections.abc.Mapping[str, Any]) -> Any:
-    # In the serve command, `automatic_tool_calling` is set to False, so the
-    # engine will return `tool_calls` to the client instead of executing them
-    # locally. Therefore, this tool's `execute` method should never be called by
-    # the engine.
     raise NotImplementedError("Proxy tools are not executable.")
-
-
-def get_engine(model_id: str) -> litert_lm.Engine:
-  """Gets or creates the LiteRT-LM engine for the given model ID.
-
-  The LiteRT-LM Engine is a globally cached resource. Its lifetime is managed
-  manually:
-  -   `__enter__` is called when a new engine is created for a `model_id`.
-  -   `__exit__` is called when switching to a different `model_id` or when the
-      server is shutting down.
-
-  Args:
-    model_id: The identifier for the model.
-
-  Returns:
-    The initialized LiteRT-LM Engine.
-
-  Raises:
-    FileNotFoundError: If the model for the given `model_id` is not found.
-  """
-  global _current_engine, _current_model_id
-  if _current_model_id == model_id and _current_engine is not None:
-    return _current_engine
-
-  # If we are switching models or re-initializing, clear the old one first.
-  if _current_engine is not None:
-    _current_engine.__exit__(None, None, None)
-    _current_engine = None
-    _current_model_id = None
-
-  m = model.Model.from_model_id(model_id)
-  if not m.exists():
-    raise FileNotFoundError(f"Model {model_id} not found")
-
-  click.echo(
-      click.style(f"Initializing engine for model: {m.model_path}", fg="cyan")
-  )
-  new_engine = litert_lm.Engine(m.model_path, backend=litert_lm.Backend.CPU())
-  new_engine.__enter__()
-
-  _current_engine = new_engine
-  _current_model_id = model_id
-  return _current_engine
 
 
 def gemini_to_litertlm_message(
@@ -205,7 +154,8 @@ class GeminiHandler(http.server.BaseHTTPRequestHandler):
     click.echo(json.dumps(body, indent=2, ensure_ascii=False))
 
     try:
-      engine = get_engine(model_id)
+      assert isinstance(self.server, serve_util.LiteRTLMServer)
+      engine = serve_util.get_or_initialize_server_engine(self.server, model_id)
     except FileNotFoundError as e:
       self.send_error(404, str(e))
       return
@@ -312,147 +262,6 @@ class GeminiHandler(http.server.BaseHTTPRequestHandler):
           pass
 
 
-class OpenAIHandler(http.server.BaseHTTPRequestHandler):
-  """Handler for OpenAI API requests."""
-
-  def do_POST(self) -> None:  # pylint: disable=invalid-name
-    """Handles POST requests for /v1/responses."""
-    path_without_query = self.path.split("?")[0]
-    if path_without_query != "/v1/responses":
-      self.send_error(404, "Not Found")
-      return
-
-    content_length = int(self.headers.get("Content-Length", 0))
-    try:
-      body = json.loads(self.rfile.read(content_length))
-    except json.JSONDecodeError:
-      self.send_error(400, "Invalid JSON")
-      return
-
-    model_id = body.get("model")
-    prompt = body.get("input")
-
-    if not model_id or not prompt:
-      self.send_error(400, "Missing model or input")
-      return
-
-    try:
-      engine = get_engine(model_id)
-    except FileNotFoundError as e:
-      self.send_error(404, "".join(traceback.format_exception_only(e)))
-      return
-    except Exception as e:  # pylint: disable=broad-exception-caught
-      self.send_error(500, f"Failed to load engine: {e!r}")
-      return
-
-    stream = body.get("stream", False)
-
-    try:
-      with engine.create_conversation(
-          messages=[],
-          automatic_tool_calling=False,
-      ) as conv:
-        if not stream:
-          response = conv.send_message(prompt)
-
-          text_output = "".join(
-              item.get("text", "")
-              for item in response.get("content", [])
-              if item.get("type") == "text"
-          )
-
-          now_str = datetime.datetime.now(datetime.timezone.utc).strftime(
-              "%Y%m%d%H%M%S%f"
-          )
-          resp_body = {
-              "id": f"resp_{now_str}",
-              "output": [{
-                  "id": f"msg_{now_str}",
-                  "type": "message",
-                  "role": "assistant",
-                  "status": "completed",
-                  "content": [{
-                      "type": "output_text",
-                      "text": text_output,
-                      "annotations": [],
-                  }],
-              }],
-          }
-
-          self.send_response(200)
-          self.send_header("Content-Type", "application/json")
-          self.end_headers()
-          self.wfile.write(
-              json.dumps(resp_body, ensure_ascii=False).encode("utf-8")
-          )
-          return
-
-        # Handle streaming response using Server-Sent Events (SSE).
-        # We send response.created, response.output_text.delta, and
-        # response.completed events.
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.end_headers()
-
-        try:
-          now_str = datetime.datetime.now(datetime.timezone.utc).strftime(
-              "%Y%m%d%H%M%S%f"
-          )
-          resp_id = f"resp_{now_str}"
-
-          self.wfile.write(
-              "event: response.created\ndata:"
-              f" {json.dumps({'id': resp_id, 'status': 'in_progress'})}\n\n"
-              .encode("utf-8")
-          )
-          self.wfile.flush()
-
-          for chunk in conv.send_message_async(prompt):
-            text_output = "".join(
-                item.get("text", "")
-                for item in chunk.get("content", [])
-                if item.get("type") == "text"
-            )
-            if text_output:
-              self.wfile.write(
-                  "event: response.output_text.delta\ndata:"
-                  f" {json.dumps({'delta': {'text': text_output}})}\n\n".encode(
-                      "utf-8"
-                  )
-              )
-              self.wfile.flush()
-
-          self.wfile.write(
-              "event: response.completed\ndata:"
-              f" {json.dumps({'id': resp_id, 'status': 'completed'})}\n\n"
-              .encode("utf-8")
-          )
-          self.wfile.flush()
-          self.wfile.write(b"data: [DONE]\n\n")
-          self.wfile.flush()
-        except Exception as e:
-          click.echo(click.style(f"Error during streaming: {e!r}", fg="red"))
-          conv.cancel_process()
-          try:
-            self.wfile.write(
-                "event: response.error\ndata:"
-                f" {json.dumps({'error': repr(e)})}\n\n".encode("utf-8")
-            )
-            self.wfile.flush()
-          except Exception:  # pylint: disable=broad-exception-caught
-            pass
-          return
-
-    except Exception as e:  # pylint: disable=broad-exception-caught
-      click.echo(click.style(f"Error during inference: {e!r}", fg="red"))
-      if not self.wfile.closed:
-        try:
-          self.send_error(500, "".join(traceback.format_exception_only(e)))
-        except BrokenPipeError:
-          pass
-
-
 def run_server(
     host: str,
     port: int,
@@ -467,7 +276,7 @@ def run_server(
   """
   server_address = (host, port)
   try:
-    with http.server.HTTPServer(server_address, handler_class) as httpd:
+    with serve_util.LiteRTLMServer(server_address, handler_class) as server:
       click.echo(
           click.style(
               f"Starting LiteRT-LM API server on {host}:{port}...",
@@ -475,11 +284,13 @@ def run_server(
               bold=True,
           )
       )
-      httpd.serve_forever()
+      try:
+        server.serve_forever()
+      finally:
+        if server.litert_lm_engine is not None:
+          server.litert_lm_engine.__exit__(None, None, None)
   except KeyboardInterrupt:
     click.echo(click.style("\nShutting down server...", fg="cyan"))
-    if _current_engine:
-      _current_engine.__exit__(None, None, None)
 
 
 @click.command(
@@ -513,7 +324,7 @@ def serve(host: str, port: int, *, api: str, verbose: bool) -> None:
   if api_lower == "gemini":
     handler_class = GeminiHandler
   elif api_lower == "openai":
-    handler_class = OpenAIHandler
+    handler_class = openai_handler.OpenAIHandler
   else:
     raise click.BadParameter(f"Unsupported API: {api}")
 

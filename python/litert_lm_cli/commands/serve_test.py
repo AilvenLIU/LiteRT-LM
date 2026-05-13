@@ -72,15 +72,13 @@ sys.modules["litert_lm_cli.model"] = (
 )
 
 from litert_lm_cli.commands import serve
+from litert_lm_cli.commands import serve_util
 
 
 class ServeTest(parameterized.TestCase):
 
   def setUp(self):
     super().setUp()
-    # Reset global state in serve.py
-    serve._current_engine = None
-    serve._current_model_id = None
     # Reset mocks
     mock_litert_lm.set_min_log_severity.reset_mock()  # pytype: disable=attribute-error
     mock_litert_lm.Engine.reset_mock()  # pytype: disable=attribute-error
@@ -253,47 +251,43 @@ class ServeTest(parameterized.TestCase):
     mock_engine_instance.__exit__.return_value = False
     mock_litert_lm.Engine.return_value = mock_engine_instance
 
+    server = mock.MagicMock(spec=serve_util.LiteRTLMServer)
+    server.litert_lm_engine = None
+    server.model_id = None
+
     # First call - creates engine
-    engine1 = serve.get_engine("test-model")
+    engine1 = serve_util.get_or_initialize_server_engine(server, "test-model")
     self.assertEqual(engine1, mock_engine_instance)
     mock_litert_lm.Engine.assert_called_once()  # pytype: disable=attribute-error
+    self.assertEqual(server.litert_lm_engine, mock_engine_instance)
+    self.assertEqual(server.model_id, "test-model")
 
     # Second call with same ID - returns cached engine
-    engine2 = serve.get_engine("test-model")
+    engine2 = serve_util.get_or_initialize_server_engine(server, "test-model")
     self.assertEqual(engine2, mock_engine_instance)
     self.assertEqual(mock_litert_lm.Engine.call_count, 1)  # pytype: disable=attribute-error
 
-  def test_get_engine_recovery_after_failure(self):
-    def from_id_side_effect(model_id):
-      m = mock.Mock(spec_set=["exists", "model_path"])
-      m.exists.return_value = True
-      m.model_path = f"/path/to/{model_id}"
-      return m
-
-    mock_model_mod.Model.from_model_id.side_effect = from_id_side_effect
+  def test_get_engine_model_switching_raises(self):
+    mock_model = mock.Mock(spec_set=["exists", "model_path"])
+    mock_model.exists.return_value = True
+    mock_model.model_path = "/path/to/model"
+    mock_model_mod.Model.from_model_id.return_value = mock_model
 
     mock_engine_instance = mock.MagicMock(spec=interfaces.AbstractEngine)
     mock_engine_instance.__enter__.return_value = mock_engine_instance
-    mock_engine_instance.__exit__.return_value = False
     mock_litert_lm.Engine.return_value = mock_engine_instance
 
-    # 1. Load model "A"
-    serve.get_engine("A")
-    self.assertEqual(serve._current_model_id, "A")
+    server = mock.MagicMock(spec=serve_util.LiteRTLMServer)
+    server.litert_lm_engine = None
+    server.model_id = None
 
-    # 2. Mock engine creation failure for model "B"
-    mock_litert_lm.Engine.side_effect = RuntimeError("Failed to init")
+    # Initialize with model A
+    serve_util.get_or_initialize_server_engine(server, "A")
+    self.assertEqual(server.model_id, "A")
+
+    # Switching to model B raises RuntimeError
     with self.assertRaises(RuntimeError):
-      serve.get_engine("B")
-
-    # Verify state was cleared
-    self.assertIsNone(serve._current_engine)
-    self.assertIsNone(serve._current_model_id)
-
-    # 3. Load model "C" - should succeed
-    mock_litert_lm.Engine.side_effect = None
-    serve.get_engine("C")
-    self.assertEqual(serve._current_model_id, "C")
+      serve_util.get_or_initialize_server_engine(server, "B")
 
   def test_model_id_regex_parsing(self):
     self.assertTrue(

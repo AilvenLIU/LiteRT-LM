@@ -24,7 +24,11 @@ package(default_visibility = ["//python/litert_lm_cli:__subpackages__"])
 
 pytype_strict_library(
     name = "serve",
-    srcs = ["serve.py"],
+    srcs = [
+        "openai_handler.py",
+        "serve.py",
+        "serve_util.py",
+    ],
     imports = [".."],
     deps = [
         "//python/litert_lm",

@@ -18,7 +18,6 @@ These tests verify the Gemini-compatible API server using the official
 google.genai Python SDK and a real gemma3-1b-it-int4-litertlm model.
 """
 
-import http.server
 import os
 import threading
 from unittest import mock
@@ -28,18 +27,18 @@ from google import genai
 
 from litert_lm_cli import model
 from litert_lm_cli.commands import serve
+from litert_lm_cli.commands import serve_util
 
 
 class ServeIntegrationTest(absltest.TestCase):
 
   def setUp(self):
     super().setUp()
-    # Reset global state in serve.py to ensure each test starts fresh
-    serve._current_engine = None
-    serve._current_model_id = None
 
     # Start the server on a free ephemeral port
-    self.server = http.server.HTTPServer(("localhost", 0), serve.GeminiHandler)
+    self.server = serve_util.LiteRTLMServer(
+        ("localhost", 0), serve.GeminiHandler
+    )
     self.port = self.server.server_port
 
     self.server_thread = threading.Thread(
@@ -54,14 +53,12 @@ class ServeIntegrationTest(absltest.TestCase):
     )
 
   def tearDown(self):
-    # Shutdown the local server cleanly
     self.server.shutdown()
     self.server.server_close()
     self.server_thread.join()
     super().tearDown()
 
   def test_genai_generate_content(self):
-    # Ensure the model exists at the expected path
     self.assertTrue(
         os.path.exists(self.model_path), f"Model not found at {self.model_path}"
     )
@@ -71,7 +68,6 @@ class ServeIntegrationTest(absltest.TestCase):
         http_options={"base_url": f"http://localhost:{self.port}"},
     )
 
-    # Mock model.Model.from_model_id to point to our 'data' model path
     with mock.patch.object(
         model.Model, "from_model_id", autospec=True
     ) as mock_from_id:
