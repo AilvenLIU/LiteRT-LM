@@ -108,14 +108,14 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
           !std::holds_alternative<std::string>(*weight_cache_file);
 
       auto model_path_or_status = executor_settings.GetModelAssets().GetPath();
+      std::string cache_key;
       if (model_path_or_status.ok()) {
         // If the model path is available, use the model name as the cache key.
         absl::string_view model_path = *model_path_or_status;
         absl::string_view model_name = Basename(model_path);
         LITERT_ASSIGN_OR_RETURN(std::string metadata_id,
                                 GetFileCacheIdentifier(model_path));
-        std::string cache_key = absl::StrCat(model_name, "_", metadata_id);
-        gpu_compilation_options.SetModelCacheKey(cache_key.c_str());
+        cache_key = absl::StrCat(model_name, "_", metadata_id);
       } else if (has_valid_model_fd &&
                  (has_valid_program_cache_fd || has_valid_weight_cache_fd)) {
         // If the model is loaded from an fd, there is no way to automatically
@@ -124,8 +124,7 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
             std::string metadata_id,
             GetFileCacheIdentifier(
                 *executor_settings.GetModelAssets().GetScopedFile().value()));
-        std::string cache_key = absl::StrCat("fd_", metadata_id);
-        gpu_compilation_options.SetModelCacheKey(cache_key.c_str());
+        cache_key = absl::StrCat("fd_", metadata_id);
       }
 
       AdvancedSettings advanced_settings;
@@ -133,52 +132,10 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
         advanced_settings = *executor_settings.GetAdvancedSettings();
       }
 
-      bool serialization_dir_set = false;
-      if (weight_cache_file.ok()) {
-        if (std::holds_alternative<std::string>(*weight_cache_file)) {
-          cache_path =
-              std::filesystem::path(std::get<std::string>(*weight_cache_file))
-                  .parent_path()
-                  .string();
-          ABSL_LOG(INFO) << "Setting serialization dir: " << cache_path;
-          gpu_compilation_options.SetSerializationDir(cache_path.c_str());
-          serialization_dir_set = true;
-        } else {
-          auto scoped_cache_file =
-              std::get<std::shared_ptr<lm::ScopedFile>>(*weight_cache_file);
-          LITERT_ASSIGN_OR_RETURN(auto duplicated,
-                                  scoped_cache_file->Duplicate());
-          LITERT_ASSIGN_OR_RETURN(int fd, duplicated.Release());
-          gpu_compilation_options.SetWeightCacheFd(fd);
-        }
-        gpu_compilation_options.SetSerializeExternalTensors(true);
-        gpu_compilation_options.CacheCompiledProgramsOnly(
-            advanced_settings.cache_compiled_shaders_only);
-      } else {
-        gpu_compilation_options.SetSerializeExternalTensors(false);
-      }
-
-      if (program_cache_file.ok()) {
-        if (std::holds_alternative<std::string>(*program_cache_file)) {
-          if (!serialization_dir_set) {
-            cache_path = std::filesystem::path(
-                             std::get<std::string>(*program_cache_file))
-                             .parent_path()
-                             .string();
-            ABSL_LOG(INFO) << "Setting program cache dir: " << cache_path;
-            gpu_compilation_options.SetSerializationDir(cache_path.c_str());
-          }
-        } else {
-          auto scoped_cache_file =
-              std::get<std::shared_ptr<lm::ScopedFile>>(*program_cache_file);
-          ASSIGN_OR_RETURN(auto duplicated, scoped_cache_file->Duplicate());
-          ASSIGN_OR_RETURN(int fd, duplicated.Release());
-          gpu_compilation_options.SetProgramCacheFd(fd);
-        }
-        gpu_compilation_options.SetSerializeProgramCache(true);
-      } else {
-        gpu_compilation_options.SetSerializeProgramCache(false);
-      }
+      LITERT_RETURN_IF_ERROR(SetGpuCacheOptions(
+          weight_cache_file, program_cache_file, cache_key,
+          /*logging_prefix=*/"", advanced_settings.cache_compiled_shaders_only,
+          gpu_compilation_options));
 
       // Use NoExternalTensorsMode to get better performance.
       ASSIGN_OR_RETURN(const GpuConfig gpu_config,

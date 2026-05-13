@@ -85,7 +85,9 @@ AudioExecutorSettings::GetWeightCacheFile(absl::string_view suffix,
                                           bool check_and_clean) const {
   if (absl::StrContains(suffix, kAdapterName) && GetScopedAdapterCacheFile()) {
     return GetScopedAdapterCacheFile();
-  } else if (absl::StrContains(suffix, kEncoderName) &&
+  } else if ((absl::StrContains(suffix, kEncoderName) ||
+              absl::StrContains(suffix, kStaticEncoderName) ||
+              absl::StrContains(suffix, kStreamingEncoderName)) &&
              GetScopedEncoderCacheFile()) {
     return GetScopedEncoderCacheFile();
   }
@@ -100,7 +102,9 @@ AudioExecutorSettings::GetProgramCacheFile(absl::string_view suffix,
   if (absl::StrContains(suffix, kAdapterName) &&
       GetScopedAdapterProgramCacheFile()) {
     return GetScopedAdapterProgramCacheFile();
-  } else if (absl::StrContains(suffix, kEncoderName) &&
+  } else if ((absl::StrContains(suffix, kEncoderName) ||
+              absl::StrContains(suffix, kStaticEncoderName) ||
+              absl::StrContains(suffix, kStreamingEncoderName)) &&
              GetScopedEncoderProgramCacheFile()) {
     return GetScopedEncoderProgramCacheFile();
   }

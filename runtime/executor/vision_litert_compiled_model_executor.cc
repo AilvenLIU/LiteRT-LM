@@ -229,7 +229,7 @@ absl::Status VisionLiteRtCompiledModelExecutor::VisionEncoder::Initialize() {
                        vision_executor_settings_.GetModelAssets().GetPath());
       absl::string_view model_basename = Basename(model_path);
       LITERT_ASSIGN_OR_RETURN(std::string metadata_id,
-                                GetFileCacheIdentifier(model_path));
+                              GetFileCacheIdentifier(model_path));
       std::string cache_key =
           absl::StrCat(model_basename, VisionExecutorSettings::kEncoderName,
                        "_", metadata_id);
@@ -238,12 +238,15 @@ absl::Status VisionLiteRtCompiledModelExecutor::VisionEncoder::Initialize() {
           absl::StrCat(VisionExecutorSettings::kEncoderName,
                        ExecutorSettingsBase::kMlDriftCacheSuffix),
           /*check_and_clean=*/true);
+      auto weight_cache_file = vision_executor_settings_.GetWeightCacheFile(
+          absl::StrCat(VisionExecutorSettings::kEncoderName,
+                       ExecutorSettingsBase::kMlDriftCacheSuffix),
+          /*check_and_clean=*/true);
       RETURN_IF_ERROR(SetGpuOptions(vision_executor_settings_, gpu_options));
       RETURN_IF_ERROR(SetGpuCacheOptions(
-          weight_cache_path, program_cache_file, vision_executor_settings_,
-          cache_key,
+          weight_cache_file, program_cache_file, cache_key,
           /*logging_prefix=*/VisionExecutorSettings::kEncoderName,
-          gpu_options));
+          /*cache_compiled_shaders_only=*/false, gpu_options));
       options.SetHardwareAccelerators(litert::HwAccelerators::kGpu);
       break;
     }
@@ -316,6 +319,26 @@ absl::Status VisionLiteRtCompiledModelExecutor::VisionAdapter::Initialize() {
       LITERT_ASSIGN_OR_RETURN(auto& gpu_options, options.GetGpuOptions());
       LITERT_RETURN_IF_ERROR(
           SetGpuOptions(vision_executor_settings_, gpu_options));
+      ASSIGN_OR_RETURN(auto model_path,
+                       vision_executor_settings_.GetModelAssets().GetPath());
+      absl::string_view model_basename = Basename(model_path);
+      auto program_cache_file = vision_executor_settings_.GetProgramCacheFile(
+          absl::StrCat(VisionExecutorSettings::kAdapterName,
+                       ExecutorSettingsBase::kMlDriftCacheSuffix),
+          /*check_and_clean=*/true);
+      auto weight_cache_file = vision_executor_settings_.GetWeightCacheFile(
+          absl::StrCat(VisionExecutorSettings::kAdapterName,
+                       ExecutorSettingsBase::kMlDriftCacheSuffix),
+          /*check_and_clean=*/true);
+      ASSIGN_OR_RETURN(std::string metadata_id,
+                       GetFileCacheIdentifier(model_path));
+      RETURN_IF_ERROR(SetGpuCacheOptions(
+          weight_cache_file, program_cache_file,
+          absl::StrCat(model_basename, VisionExecutorSettings::kAdapterName,
+                       "_", metadata_id),
+          /*logging_prefix=*/VisionExecutorSettings::kAdapterName,
+          /*cache_compiled_shaders_only=*/false, gpu_options));
+
       break;
     }
 #if !defined(LITERT_DISABLE_NPU)
@@ -652,8 +675,9 @@ absl::StatusOr<ExecutorVisionData> VisionLiteRtCompiledModelExecutor::Encode(
       absl::MakeSpan(adapter_output_data)));
 
   LITERT_RETURN_IF_ERROR(output_tensor.Write<float>(
-      absl::MakeConstSpan(adapter_output_data).subspan(
-          0, num_patches * output_tensor_type.Layout().Dimensions()[2])));
+      absl::MakeConstSpan(adapter_output_data)
+          .subspan(0,
+                   num_patches * output_tensor_type.Layout().Dimensions()[2])));
 #else
   // This code runs if LITERT_DISABLE_NPU IS defined (i.e., NPU is DISABLED)
   LITERT_ASSIGN_OR_RETURN(
