@@ -56,6 +56,43 @@ absl::StatusOr<Environment&> GetEnvironment(EngineSettings& engine_settings,
             env_options = helper->GetLiteRtEnvOptions(*model_resources,
                                                       main_executor_settings);
           }
+        } else {
+#if !defined(LITERT_DISABLE_NPU)
+          if (!main_executor_settings.GetLitertDispatchLibDir().empty()) {
+            // If the dispatch library directory is provided, use it.
+            env_options.push_back(::litert::EnvironmentOptions::Option{
+                ::litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
+                main_executor_settings.GetLitertDispatchLibDir()});
+            ABSL_LOG(INFO) << "Setting dispatch library path from "
+                              "main_executor_settings: "
+                           << main_executor_settings.GetLitertDispatchLibDir();
+          } else {
+            // Otherwise, use the directory of the model file.
+            std::string model_path(
+                main_executor_settings.GetModelAssets().GetPath().value_or(""));
+            std::filesystem::path path(model_path);
+            // Note: Existence check for path was here, but it's better to check
+            // before calling this function if needed.
+            std::string dispatch_library_path = path.parent_path().string();
+        // In WASM, the parent path is often just "/" which is usually not
+        // what we want for dispatch libraries.
+#ifdef __EMSCRIPTEN__
+            bool should_set_path =
+                !dispatch_library_path.empty() && dispatch_library_path != "/";
+#else
+            bool should_set_path = !dispatch_library_path.empty();
+#endif
+            if (should_set_path) {
+              ABSL_LOG(INFO)
+                  << "Setting dispatch library path: " << dispatch_library_path;
+              env_options.push_back(::litert::EnvironmentOptions::Option{
+                  ::litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
+                  absl::string_view(dispatch_library_path)});
+            } else {
+              ABSL_LOG(INFO) << "No dispatch library path provided.";
+            }
+          }
+#endif  // defined(LITERT_DISABLE_NPU)
         }
 
         if (auto severity = GetMinLogSeverity()) {
@@ -63,43 +100,6 @@ absl::StatusOr<Environment&> GetEnvironment(EngineSettings& engine_settings,
               ::litert::EnvironmentOptions::Tag::kMinLoggerSeverity,
               static_cast<int64_t>(ToLiteRtLogSeverityInt8(*severity))});
         }
-
-#if !defined(LITERT_DISABLE_NPU)
-        if (!main_executor_settings.GetLitertDispatchLibDir().empty()) {
-          // If the dispatch library directory is provided, use it.
-          env_options.push_back(::litert::EnvironmentOptions::Option{
-              ::litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
-              main_executor_settings.GetLitertDispatchLibDir()});
-          ABSL_LOG(INFO) << "Setting dispatch library path from "
-                            "main_executor_settings: "
-                         << main_executor_settings.GetLitertDispatchLibDir();
-        } else {
-          // Otherwise, use the directory of the model file.
-          std::string model_path(
-              main_executor_settings.GetModelAssets().GetPath().value_or(""));
-          std::filesystem::path path(model_path);
-          // Note: Existence check for path was here, but it's better to check
-          // before calling this function if needed.
-          std::string dispatch_library_path = path.parent_path().string();
-      // In WASM, the parent path is often just "/" which is usually not
-      // what we want for dispatch libraries.
-#ifdef __EMSCRIPTEN__
-          bool should_set_path =
-              !dispatch_library_path.empty() && dispatch_library_path != "/";
-#else
-          bool should_set_path = !dispatch_library_path.empty();
-#endif
-          if (should_set_path) {
-            ABSL_LOG(INFO) << "Setting dispatch library path: "
-                           << dispatch_library_path;
-            env_options.push_back(::litert::EnvironmentOptions::Option{
-                ::litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
-                absl::string_view(dispatch_library_path)});
-          } else {
-            ABSL_LOG(INFO) << "No dispatch library path provided.";
-          }
-        }
-#endif  // defined(LITERT_DISABLE_NPU)
 
         LITERT_ASSIGN_OR_RETURN(
             auto env, Environment::Create(EnvironmentOptions(env_options)));

@@ -1038,9 +1038,15 @@ TEST(EngineCTest, ConversationCloneSuccess) {
   ASSERT_NE(conversation, nullptr);
 
   // 3. Clone the conversation.
-  ConversationPtr cloned_conversation(
-      litert_lm_conversation_clone(conversation.get()),
-      &litert_lm_conversation_delete);
+  LiteRtLmConversation* cloned_raw =
+      litert_lm_conversation_clone(conversation.get());
+  if (cloned_raw == nullptr) {
+    if (absl::IsUnimplemented(conversation->conversation->Clone().status())) {
+      GTEST_SKIP() << "Clone is not supported by this engine.";
+    }
+  }
+  ConversationPtr cloned_conversation(cloned_raw,
+                                      &litert_lm_conversation_delete);
   ASSERT_NE(cloned_conversation, nullptr);
 }
 
