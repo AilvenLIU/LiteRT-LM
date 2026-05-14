@@ -18,6 +18,7 @@
 #include <chrono>      // NOLINT: Required for file metadata retrieval.
 #include <filesystem>  // NOLINT: Required for file metadata retrieval.
 #include <string>
+#include <mutex>
 #include <system_error>  // NOLINT: Required for file metadata retrieval.
 #include <unordered_map>
 #include <utility>
@@ -95,10 +96,14 @@ absl::string_view Dirname(absl::string_view path) {
 absl::StatusOr<std::string> GetFileCacheIdentifier(absl::string_view path) {
   static auto* cached_identifiers =
       new std::unordered_map<std::string, std::string>();
+  static auto* cached_identifiers_mutex = new std::mutex();
   std::string path_str(path);
-  if (auto it = cached_identifiers->find(path_str);
-      it != cached_identifiers->end()) {
-    return it->second;
+  {
+    std::lock_guard<std::mutex> lock(*cached_identifiers_mutex);
+    if (auto it = cached_identifiers->find(path_str);
+        it != cached_identifiers->end()) {
+      return it->second;
+    }
   }
 
   std::error_code ec;
@@ -130,7 +135,10 @@ absl::StatusOr<std::string> GetFileCacheIdentifier(absl::string_view path) {
       std::chrono::duration_cast<std::chrono::seconds>(duration).count();
 
   std::string identifier = absl::StrCat(seconds, "_", size);
-  (*cached_identifiers)[path_str] = identifier;
+  {
+    std::lock_guard<std::mutex> lock(*cached_identifiers_mutex);
+    (*cached_identifiers)[path_str] = identifier;
+  }
   return identifier;
 }
 
