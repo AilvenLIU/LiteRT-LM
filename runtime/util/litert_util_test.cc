@@ -106,6 +106,7 @@ TEST(LiteRtUtilTest, GetEnvironment_CPUGPUFirst_IncludesNPUOptions) {
 
   auto dispatch_lib_status =
       options.GetOption(EnvironmentOptions::Tag::kDispatchLibraryDir);
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
   ASSERT_TRUE(dispatch_lib_status.HasValue())
       << "kDispatchLibraryDir was not initialized on the Environment singleton "
          "when CPU was used first.";
@@ -113,6 +114,9 @@ TEST(LiteRtUtilTest, GetEnvironment_CPUGPUFirst_IncludesNPUOptions) {
   auto dispatch_lib_dir = std::get<const char*>(*dispatch_lib_status);
   std::filesystem::path expected_path(task_path.parent_path());
   EXPECT_EQ(std::string(dispatch_lib_dir), expected_path.string());
+#else
+  ASSERT_FALSE(dispatch_lib_status.HasValue());
+#endif
 }
 
 TEST(LiteRtUtilTest, GetEnvironment_NPUFirst_IncludesNPUOptions) {
@@ -137,12 +141,16 @@ TEST(LiteRtUtilTest, GetEnvironment_NPUFirst_IncludesNPUOptions) {
 
   auto dispatch_lib_status =
       options.GetOption(EnvironmentOptions::Tag::kDispatchLibraryDir);
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
   ASSERT_TRUE(dispatch_lib_status.HasValue())
       << "kDispatchLibraryDir was not initialized when NPU was used first.";
 
   auto dispatch_lib_dir = std::get<const char*>(*dispatch_lib_status);
   std::filesystem::path expected_path(task_path.parent_path());
   EXPECT_EQ(std::string(dispatch_lib_dir), expected_path.string());
+#else
+  ASSERT_FALSE(dispatch_lib_status.HasValue());
+#endif
 }
 
 }  // namespace

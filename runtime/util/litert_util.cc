@@ -66,8 +66,9 @@ absl::StatusOr<Environment&> GetEnvironment(EngineSettings& engine_settings,
               main_executor_settings.GetLitertDispatchLibDir()});
           ABSL_LOG(INFO) << "Setting dispatch library path from "
                             "main_executor_settings: "
-                         << main_executor_settings.GetLitertDispatchLibDir();
+                           << main_executor_settings.GetLitertDispatchLibDir();
         } else {
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
           // Otherwise, use the directory of the model file.
           std::string model_path(
               main_executor_settings.GetModelAssets().GetPath().value_or(""));
@@ -75,8 +76,8 @@ absl::StatusOr<Environment&> GetEnvironment(EngineSettings& engine_settings,
           // Note: Existence check for path was here, but it's better to check
           // before calling this function if needed.
           std::string dispatch_library_path = path.parent_path().string();
-      // In WASM, the parent path is often just "/" which is usually not
-      // what we want for dispatch libraries.
+          // In WASM, the parent path is often just "/" which is usually not
+          // what we want for dispatch libraries.
 #ifdef __EMSCRIPTEN__
           bool should_set_path =
               !dispatch_library_path.empty() && dispatch_library_path != "/";
@@ -92,6 +93,7 @@ absl::StatusOr<Environment&> GetEnvironment(EngineSettings& engine_settings,
           } else {
             ABSL_LOG(INFO) << "No dispatch library path provided.";
           }
+#endif  // defined(__ANDROID__) || defined(__EMSCRIPTEN__)
         }
 #endif  // defined(LITERT_DISABLE_NPU)
 
