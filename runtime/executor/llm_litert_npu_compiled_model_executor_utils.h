@@ -34,6 +34,11 @@ int FindMaxIndexFloatNeon(const float* data, int size);
 int FindMaxIndexInt16Neon(const int16_t* data, int size);
 int FindMaxIndexInt8Neon(const int8_t* data, int size);
 #endif
+#if defined(__x86_64__) || defined(_M_X64)
+int FindMaxIndexSse2Float(const float* data, int size);
+int FindMaxIndexSse2Int16(const int16_t* data, int size);
+int FindMaxIndexSse2Int8(const int8_t* data, int size);
+#endif
 
 // Generic function to find the index of the maximum value in a TensorBuffer.
 // Uses NEON optimizations if available.
@@ -67,6 +72,17 @@ absl::StatusOr<int> FindMaxIndex(::litert::TensorBuffer& decoded_logits,
       return FindMaxIndexInt16Neon(data, static_cast<int>(size));
     } else if constexpr (std::is_same_v<T, int8_t>) {
       return FindMaxIndexInt8Neon(data, static_cast<int>(size));
+    }
+  }
+#endif
+#if defined(__x86_64__) || defined(_M_X64)
+  if (use_neon_sampling) {
+    if constexpr (std::is_same_v<T, float>) {
+      return FindMaxIndexSse2Float(data, static_cast<int>(size));
+    } else if constexpr (std::is_same_v<T, int16_t>) {
+      return FindMaxIndexSse2Int16(data, static_cast<int>(size));
+    } else if constexpr (std::is_same_v<T, int8_t>) {
+      return FindMaxIndexSse2Int8(data, static_cast<int>(size));
     }
   }
 #endif

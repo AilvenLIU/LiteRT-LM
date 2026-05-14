@@ -36,6 +36,12 @@
 #include <limits>  // IWYU pragma: keep
 #endif
 
+#if defined(__x86_64__) || defined(_M_X64)
+#include <emmintrin.h>  // SSE2 NOLINT
+
+#include <limits>  // IWYU pragma: keep NOLINT
+#endif
+
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -158,6 +164,132 @@ int FindMaxIndexInt8Neon(const int8_t* data, int size) {
     if (data[i] == max_v) return i;
   }
   return 0;
+}
+#endif
+
+#if defined(__x86_64__) || defined(_M_X64)
+int FindMaxIndexSse2Float(const float* data, int size) {
+  if (size <= 0) return 0;
+  __m128 max_v4 = _mm_set1_ps(-std::numeric_limits<float>::infinity());
+  int i = 0;
+  for (; i <= size - 4; i += 4) {
+    max_v4 = _mm_max_ps(max_v4, _mm_loadu_ps(data + i));
+  }
+  // Horizontal max reduction.
+  __m128 shuf = _mm_shuffle_ps(max_v4, max_v4, _MM_SHUFFLE(2, 3, 0, 1));
+  max_v4 = _mm_max_ps(max_v4, shuf);
+  shuf = _mm_shuffle_ps(max_v4, max_v4, _MM_SHUFFLE(1, 0, 3, 2));
+  max_v4 = _mm_max_ps(max_v4, shuf);
+  float max_v;
+  _mm_store_ss(&max_v, max_v4);
+  for (; i < size; ++i) {
+    if (data[i] > max_v) max_v = data[i];
+  }
+
+  // Second pass: find first index matching max_v.
+  __m128 target = _mm_set1_ps(max_v);
+  for (i = 0; i <= size - 4; i += 4) {
+    int mask = _mm_movemask_ps(_mm_cmpeq_ps(_mm_loadu_ps(data + i), target));
+    if (mask) {
+      for (int j = 0; j < 4; ++j) {
+        if (mask & (1 << j)) return i + j;
+      }
+    }
+  }
+  for (; i < size; ++i) {
+    if (data[i] == max_v) return i;
+  }
+  return 0;
+}
+
+int FindMaxIndexSse2Int16(const int16_t* data, int size) {
+  // NOLINTBEGIN
+  if (size <= 0) return 0;
+  __m128i max_v8 = _mm_set1_epi16(std::numeric_limits<int16_t>::lowest());
+  int i = 0;
+  for (; i <= size - 8; i += 8) {
+    max_v8 = _mm_max_epi16(
+        max_v8, _mm_loadu_si128(reinterpret_cast<const __m128i*>(data + i)));
+  }
+  // Horizontal max reduction.
+  __m128i shuf =
+      _mm_shufflehi_epi16(_mm_shufflelo_epi16(max_v8, _MM_SHUFFLE(1, 0, 3, 2)),
+                          _MM_SHUFFLE(1, 0, 3, 2));
+  max_v8 = _mm_max_epi16(max_v8, shuf);
+  shuf = _mm_shuffle_epi32(max_v8, _MM_SHUFFLE(1, 0, 3, 2));
+  max_v8 = _mm_max_epi16(max_v8, shuf);
+  shuf = _mm_shufflelo_epi16(max_v8, _MM_SHUFFLE(0, 1, 2, 3));
+  max_v8 = _mm_max_epi16(max_v8, shuf);
+  int16_t max_v = static_cast<int16_t>(_mm_extract_epi16(max_v8, 0));
+  for (; i < size; ++i) {
+    if (data[i] > max_v) max_v = data[i];
+  }
+
+  // Second pass: find first index matching max_v.
+  __m128i target = _mm_set1_epi16(max_v);
+  for (i = 0; i <= size - 8; i += 8) {
+    __m128i cmp = _mm_cmpeq_epi16(
+        _mm_loadu_si128(reinterpret_cast<const __m128i*>(data + i)), target);
+    int mask = _mm_movemask_epi8(cmp);
+    if (mask) {
+      // Each int16 produces 2 bits in the mask; check every other bit.
+      for (int j = 0; j < 8; ++j) {
+        if (mask & (1 << (j * 2))) return i + j;
+      }
+    }
+  }
+  for (; i < size; ++i) {
+    if (data[i] == max_v) return i;
+  }
+  return 0;
+}
+
+int FindMaxIndexSse2Int8(const int8_t* data, int size) {
+  if (size <= 0) return 0;
+  // SSE2 only has _mm_max_epu8 (unsigned). XOR with 0x80 to convert signed
+  // comparison to unsigned: signed_max(a,b) == unsigned_max(a^0x80, b^0x80).
+  __m128i bias = _mm_set1_epi8(static_cast<char>(0x80));
+  __m128i max_v16 = _mm_set1_epi8(0);  // lowest unsigned after bias
+  int i = 0;
+  for (; i <= size - 16; i += 16) {
+    __m128i vals = _mm_xor_si128(
+        _mm_loadu_si128(reinterpret_cast<const __m128i*>(data + i)), bias);
+    max_v16 = _mm_max_epu8(max_v16, vals);
+  }
+  // Horizontal max reduction (16 bytes → 8 → 4 → 2 → 1).
+  __m128i shuf = _mm_shuffle_epi32(max_v16, _MM_SHUFFLE(1, 0, 3, 2));
+  max_v16 = _mm_max_epu8(max_v16, shuf);
+  shuf = _mm_shuffle_epi32(max_v16, _MM_SHUFFLE(0, 0, 0, 1));
+  max_v16 = _mm_max_epu8(max_v16, shuf);
+  shuf = _mm_shufflelo_epi16(max_v16, _MM_SHUFFLE(0, 0, 0, 1));
+  max_v16 = _mm_max_epu8(max_v16, shuf);
+  shuf = _mm_srli_epi16(max_v16, 8);
+  max_v16 = _mm_max_epu8(max_v16, shuf);
+  // Extract lowest byte and convert back to signed.
+  uint8_t max_unsigned =
+      static_cast<uint8_t>(_mm_extract_epi16(max_v16, 0) & 0xFF);
+  int8_t max_v = static_cast<int8_t>(max_unsigned ^ 0x80);
+  for (; i < size; ++i) {
+    if (data[i] > max_v) max_v = data[i];
+  }
+
+  // Second pass: find first index matching max_v.
+  __m128i target = _mm_set1_epi8(max_v);
+  for (i = 0; i <= size - 16; i += 16) {
+    __m128i cmp = _mm_cmpeq_epi8(
+        _mm_loadu_si128(reinterpret_cast<const __m128i*>(data + i)), target);
+    int mask = _mm_movemask_epi8(cmp);
+    if (mask) {
+      for (int j = 0; j < 16; ++j) {
+        if (mask & (1 << j)) return i + j;
+      }
+    }
+  }
+  for (; i < size; ++i) {
+    if (data[i] == max_v) return i;
+  }
+  return 0;
+  // NOLINTEND
 }
 #endif
 

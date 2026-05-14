@@ -217,6 +217,191 @@ TEST_F(ExecutorUtilsTest, ApplyGreedySamplingCrossVerify) {
   }
 }
 
+#if defined(__x86_64__) || defined(_M_X64)
+
+TEST_F(ExecutorUtilsTest, FindMaxIndexSse2FloatBasic) {
+  // 17 elements: 4 SIMD iterations + 1 scalar tail.
+  std::vector<float> data = {1.0f,  3.0f, 2.0f,  5.0f, 4.0f, 0.0f,
+                             -1.0f, 2.5f, 3.5f,  4.5f, 9.0f, 1.5f,
+                             2.0f,  0.5f, -2.0f, 3.0f, 7.0f};
+  EXPECT_EQ(FindMaxIndexSse2Float(data.data(), data.size()), 10);
+}
+
+TEST_F(ExecutorUtilsTest, FindMaxIndexSse2FloatEdgeCases) {
+  // Empty.
+  EXPECT_EQ(FindMaxIndexSse2Float(nullptr, 0), 0);
+
+  // Single element.
+  std::vector<float> single = {42.0f};
+  EXPECT_EQ(FindMaxIndexSse2Float(single.data(), single.size()), 0);
+
+  // Max at start (18 elements: 4 SIMD iterations + 2 scalar tail).
+  std::vector<float> start(18, 1.0f);
+  start[0] = 10.0f;
+  EXPECT_EQ(FindMaxIndexSse2Float(start.data(), start.size()), 0);
+
+  // Max at end.
+  std::vector<float> end(18, 1.0f);
+  end[17] = 10.0f;
+  EXPECT_EQ(FindMaxIndexSse2Float(end.data(), end.size()), 17);
+
+  // Duplicate max returns first occurrence.
+  std::vector<float> dup(18, 1.0f);
+  dup[5] = 5.0f;
+  dup[13] = 5.0f;
+  EXPECT_EQ(FindMaxIndexSse2Float(dup.data(), dup.size()), 5);
+
+  // Negative values.
+  std::vector<float> neg(18, -5.0f);
+  neg[11] = -1.0f;
+  EXPECT_EQ(FindMaxIndexSse2Float(neg.data(), neg.size()), 11);
+}
+
+TEST_F(ExecutorUtilsTest, FindMaxIndexSse2FloatLarge) {
+  int size = 1027;  // Not a multiple of 4 to test scalar tail.
+  std::vector<float> data(size);
+  std::mt19937 gen(42);
+  std::uniform_real_distribution<float> dis(-100.0f, 100.0f);
+  for (int i = 0; i < size; ++i) data[i] = dis(gen);
+
+  int expected = ReferenceFindMaxIndex(data);
+  EXPECT_EQ(FindMaxIndexSse2Float(data.data(), size), expected);
+
+  // Place max at various positions.
+  for (int pos : {0, size / 2, size - 1}) {
+    std::vector<float> d = data;
+    float mx = *std::max_element(d.begin(), d.end());
+    d[pos] = mx + 1.0f;
+    EXPECT_EQ(FindMaxIndexSse2Float(d.data(), size), pos) << "pos=" << pos;
+  }
+}
+
+TEST_F(ExecutorUtilsTest, FindMaxIndexSse2Int16Basic) {
+  // 35 elements: 4 SIMD iterations + 3 scalar tail.
+  std::vector<int16_t> data(35, 0);
+  data[27] = 500;
+  EXPECT_EQ(FindMaxIndexSse2Int16(data.data(), data.size()), 27);
+}
+
+TEST_F(ExecutorUtilsTest, FindMaxIndexSse2Int16EdgeCases) {
+  // Empty.
+  EXPECT_EQ(FindMaxIndexSse2Int16(nullptr, 0), 0);
+
+  // Single element.
+  std::vector<int16_t> single = {42};
+  EXPECT_EQ(FindMaxIndexSse2Int16(single.data(), single.size()), 0);
+
+  // Max at start (34 elements: 4 SIMD iterations + 2 scalar tail).
+  std::vector<int16_t> start(34, 1);
+  start[0] = 1000;
+  EXPECT_EQ(FindMaxIndexSse2Int16(start.data(), start.size()), 0);
+
+  // Max at end.
+  std::vector<int16_t> end(34, 1);
+  end[33] = 1000;
+  EXPECT_EQ(FindMaxIndexSse2Int16(end.data(), end.size()), 33);
+
+  // Duplicate max returns first occurrence.
+  std::vector<int16_t> dup(34, 1);
+  dup[9] = 500;
+  dup[25] = 500;
+  EXPECT_EQ(FindMaxIndexSse2Int16(dup.data(), dup.size()), 9);
+
+  // Negative values.
+  std::vector<int16_t> neg(34, -500);
+  neg[20] = -100;
+  EXPECT_EQ(FindMaxIndexSse2Int16(neg.data(), neg.size()), 20);
+
+  // Extreme values (34 elements).
+  std::vector<int16_t> extreme(34, 0);
+  extreme[0] = std::numeric_limits<int16_t>::lowest();
+  extreme[17] = std::numeric_limits<int16_t>::max();
+  EXPECT_EQ(FindMaxIndexSse2Int16(extreme.data(), extreme.size()), 17);
+}
+
+TEST_F(ExecutorUtilsTest, FindMaxIndexSse2Int16Large) {
+  int size = 1033;  // Not a multiple of 8 to test scalar tail.
+  std::vector<int16_t> data(size);
+  std::mt19937 gen(42);
+  std::uniform_int_distribution<int16_t> dis(-1000, 1000);
+  for (int i = 0; i < size; ++i) data[i] = dis(gen);
+
+  int expected = ReferenceFindMaxIndex(data);
+  EXPECT_EQ(FindMaxIndexSse2Int16(data.data(), size), expected);
+
+  // Place max at various positions.
+  for (int pos : {0, size / 2, size - 1}) {
+    std::vector<int16_t> d = data;
+    int16_t mx = *std::max_element(d.begin(), d.end());
+    d[pos] = mx + 1;
+    EXPECT_EQ(FindMaxIndexSse2Int16(d.data(), size), pos) << "pos=" << pos;
+  }
+}
+
+TEST_F(ExecutorUtilsTest, FindMaxIndexSse2Int8Basic) {
+  // 67 elements: 4 SIMD iterations + 3 scalar tail.
+  std::vector<int8_t> data(67, 0);
+  data[50] = 100;
+  EXPECT_EQ(FindMaxIndexSse2Int8(data.data(), data.size()), 50);
+}
+
+TEST_F(ExecutorUtilsTest, FindMaxIndexSse2Int8EdgeCases) {
+  // Empty.
+  EXPECT_EQ(FindMaxIndexSse2Int8(nullptr, 0), 0);
+
+  // Single element.
+  std::vector<int8_t> single = {42};
+  EXPECT_EQ(FindMaxIndexSse2Int8(single.data(), single.size()), 0);
+
+  // Max at start (65 elements: 4 SIMD iterations + 1 scalar tail).
+  std::vector<int8_t> start(65, 0);
+  start[0] = 100;
+  EXPECT_EQ(FindMaxIndexSse2Int8(start.data(), start.size()), 0);
+
+  // Max at end.
+  std::vector<int8_t> end(65, 0);
+  end[64] = 100;
+  EXPECT_EQ(FindMaxIndexSse2Int8(end.data(), end.size()), 64);
+
+  // Duplicate max returns first occurrence.
+  std::vector<int8_t> dup(65, 1);
+  dup[18] = 50;
+  dup[45] = 50;
+  EXPECT_EQ(FindMaxIndexSse2Int8(dup.data(), dup.size()), 18);
+
+  // Negative values.
+  std::vector<int8_t> neg(65, -50);
+  neg[40] = -10;
+  EXPECT_EQ(FindMaxIndexSse2Int8(neg.data(), neg.size()), 40);
+
+  // Extreme values including signed boundary (65 elements).
+  std::vector<int8_t> extreme(65, 0);
+  extreme[0] = std::numeric_limits<int8_t>::lowest();
+  extreme[33] = std::numeric_limits<int8_t>::max();
+  EXPECT_EQ(FindMaxIndexSse2Int8(extreme.data(), extreme.size()), 33);
+}
+
+TEST_F(ExecutorUtilsTest, FindMaxIndexSse2Int8Large) {
+  int size = 1041;  // Not a multiple of 16 to test scalar tail.
+  std::vector<int8_t> data(size);
+  std::mt19937 gen(42);
+  std::uniform_int_distribution<int> dis(-100, 100);
+  for (int i = 0; i < size; ++i) data[i] = static_cast<int8_t>(dis(gen));
+
+  int expected = ReferenceFindMaxIndex(data);
+  EXPECT_EQ(FindMaxIndexSse2Int8(data.data(), size), expected);
+
+  // Place max at various positions.
+  for (int pos : {0, size / 2, size - 1}) {
+    std::vector<int8_t> d = data;
+    int8_t mx = *std::max_element(d.begin(), d.end());
+    d[pos] = mx + 1;
+    EXPECT_EQ(FindMaxIndexSse2Int8(d.data(), size), pos) << "pos=" << pos;
+  }
+}
+
+#endif  // defined(__x86_64__) || defined(_M_X64)
+
 TEST_F(ExecutorUtilsTest, HWKVCacheUpdateBasic) {
   int hidden_dim = 4;
   int cache_seq = 10;

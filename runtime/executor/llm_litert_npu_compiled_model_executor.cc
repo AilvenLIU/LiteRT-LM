@@ -2488,6 +2488,12 @@ absl::StatusOr<int> GetLogitsAtBatchIndex(const TensorBuffer& logits_buffer,
                                    vocab_size);
     }
 #endif
+#if defined(__x86_64__) || defined(_M_X64)
+    if (enable_neon_sampling) {
+      return FindMaxIndexSse2Float(reinterpret_cast<const float*>(logits_ptr),
+                                   vocab_size);
+    }
+#endif
     return find_max_index_plain(reinterpret_cast<const float*>(logits_ptr));
   } else if (tensor_type.ElementType() == ::litert::ElementType::Int16) {
 #if defined(__ANDROID__) && defined(__ARM_NEON)
@@ -2496,11 +2502,23 @@ absl::StatusOr<int> GetLogitsAtBatchIndex(const TensorBuffer& logits_buffer,
                                    vocab_size);
     }
 #endif
+#if defined(__x86_64__) || defined(_M_X64)
+    if (enable_neon_sampling) {
+      return FindMaxIndexSse2Int16(reinterpret_cast<const int16_t*>(logits_ptr),
+                                   vocab_size);
+    }
+#endif
     return find_max_index_plain(reinterpret_cast<const int16_t*>(logits_ptr));
   } else if (tensor_type.ElementType() == ::litert::ElementType::Int8) {
 #if defined(__ANDROID__) && defined(__ARM_NEON)
     if (enable_neon_sampling) {
       return FindMaxIndexInt8Neon(reinterpret_cast<const int8_t*>(logits_ptr),
+                                  vocab_size);
+    }
+#endif
+#if defined(__x86_64__) || defined(_M_X64)
+    if (enable_neon_sampling) {
+      return FindMaxIndexSse2Int8(reinterpret_cast<const int8_t*>(logits_ptr),
                                   vocab_size);
     }
 #endif
