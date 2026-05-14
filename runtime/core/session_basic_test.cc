@@ -31,6 +31,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
+#include "absl/strings/str_replace.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/synchronization/notification.h"  // from @com_google_absl
 #include "absl/time/clock.h"  // from @com_google_absl
@@ -168,14 +169,26 @@ class ExtendedTokenizer : public Tokenizer {
   absl::StatusOr<std::string> TokenIdsToText(
       const std::vector<int>& token_ids) override {
     std::vector<std::string> token_strs;
+    std::vector<int> current_standard_tokens;
     for (int token_id : token_ids) {
       if (id_to_extended_tokens_.contains(token_id)) {
+        if (!current_standard_tokens.empty()) {
+          ASSIGN_OR_RETURN(auto std_text,
+                           tokenizer_->TokenIdsToText(current_standard_tokens));
+          token_strs.push_back(std_text);
+          current_standard_tokens.clear();
+        }
         token_strs.push_back(id_to_extended_tokens_[token_id]);
       } else {
-        token_strs.push_back(tokenizer_->TokenIdsToText({token_id}).value());
+        current_standard_tokens.push_back(token_id);
       }
     }
-    return absl::StrJoin(token_strs, "");
+    if (!current_standard_tokens.empty()) {
+      ASSIGN_OR_RETURN(auto std_text,
+                       tokenizer_->TokenIdsToText(current_standard_tokens));
+      token_strs.push_back(std_text);
+    }
+    return absl::StrReplaceAll(absl::StrJoin(token_strs, ""), {{"▁", " "}});
   }
 
   absl::StatusOr<int> TokenToId(absl::string_view token) override {
@@ -377,6 +390,10 @@ TEST_F(SessionBasicTest, RunDecode) {
   // The response is " How's it going?" since "!" is the stop token which is
   // not included in the response.
   EXPECT_EQ(responses->GetTexts()[0], " How's it going?");
+  EXPECT_THAT(responses->GetTokenIds()[0],
+              testing::ElementsAre(224, 24, 8, 66, 246, 18, 2295));
+  EXPECT_EQ(tokenizer_->TokenIdsToText(responses->GetTokenIds()[0]).value(),
+            responses->GetTexts()[0]);
 }
 
 TEST_F(SessionBasicTest, RunDecodeWithMaxOutputTokens) {
@@ -409,6 +426,9 @@ TEST_F(SessionBasicTest, RunDecodeWithMaxOutputTokens) {
   // Expect a single output candidate.
   EXPECT_EQ(responses->GetTexts().size(), 1);
   EXPECT_EQ(responses->GetTexts()[0], " How'");
+  EXPECT_THAT(responses->GetTokenIds()[0], testing::ElementsAre(224, 24));
+  EXPECT_EQ(tokenizer_->TokenIdsToText(responses->GetTokenIds()[0]).value(),
+            responses->GetTexts()[0]);
 }
 
 TEST_F(SessionBasicTest, RunDecodeWithMultipleOutputCandidates) {
@@ -446,8 +466,20 @@ TEST_F(SessionBasicTest, RunDecodeWithMultipleOutputCandidates) {
   // The response is " How's it going?" since "!" is the stop token which is
   // not included in the response.
   EXPECT_EQ(responses->GetTexts()[0], " How's it going?");
+  EXPECT_THAT(responses->GetTokenIds()[0],
+              testing::ElementsAre(224, 24, 8, 66, 246, 18, 2295));
+  EXPECT_EQ(tokenizer_->TokenIdsToText(responses->GetTokenIds()[0]).value(),
+            responses->GetTexts()[0]);
   EXPECT_EQ(responses->GetTexts()[1], " Hello World");
+  EXPECT_THAT(responses->GetTokenIds()[1],
+              testing::ElementsAre(90, 547, 58, 735, 210, 466));
+  EXPECT_EQ(tokenizer_->TokenIdsToText(responses->GetTokenIds()[1]).value(),
+            responses->GetTexts()[1]);
   EXPECT_EQ(responses->GetTexts()[2], " How's it going?");
+  EXPECT_THAT(responses->GetTokenIds()[2],
+              testing::ElementsAre(224, 24, 8, 66, 246, 18, 2295));
+  EXPECT_EQ(tokenizer_->TokenIdsToText(responses->GetTokenIds()[2]).value(),
+            responses->GetTexts()[2]);
 }
 
 TEST_F(SessionBasicTest, RunDecodeWithSamplerAndConstrainedDecoding) {
@@ -493,6 +525,9 @@ TEST_F(SessionBasicTest, RunDecodeWithSamplerAndConstrainedDecoding) {
   // Expect a single output candidate.
   EXPECT_EQ(responses.GetTexts().size(), 1);
   EXPECT_EQ(responses.GetTexts()[0], "'s it");
+  EXPECT_THAT(responses.GetTokenIds()[0], testing::ElementsAre(24, 8, 66));
+  EXPECT_EQ(tokenizer_->TokenIdsToText(responses.GetTokenIds()[0]).value(),
+            responses.GetTexts()[0]);
 }
 
 TEST_F(SessionBasicTest, RunDecodeWithConstrainedDecodingNoSampler) {
@@ -526,6 +561,9 @@ TEST_F(SessionBasicTest, RunDecodeWithConstrainedDecodingNoSampler) {
   // Expect a single output candidate.
   EXPECT_EQ(responses.GetTexts().size(), 1);
   EXPECT_EQ(responses.GetTexts()[0], "'s it");
+  EXPECT_THAT(responses.GetTokenIds()[0], testing::ElementsAre(24, 8, 66));
+  EXPECT_EQ(tokenizer_->TokenIdsToText(responses.GetTokenIds()[0]).value(),
+            responses.GetTexts()[0]);
 }
 
 absl::AnyInvocable<void(absl::StatusOr<Responses>)> CreateTestCallback(
