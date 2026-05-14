@@ -1,4 +1,3 @@
-#![allow(nonstandard_style)]
 // Generated from AntlrFcParser.g4 by ANTLR 4.13.2
 
 // Copyright 2026 The ODML Authors.
@@ -18,69 +17,74 @@
 use super::antlrfcparser::*;
 use antlr4rust::tree::ParseTreeListener;
 
-pub trait AntlrFcParserListener<'input>:
+// A complete Visitor for a parse tree produced by AntlrFcParser.
+
+pub trait AntlrFcParserBaseListener<'input>:
     ParseTreeListener<'input, AntlrFcParserContextType>
 {
     /**
-     * Enter a parse tree produced by {@link AntlrFcParser#start}.
+     * Enter a parse tree produced by \{@link AntlrFcParserBaseParser#s}.
      * @param ctx the parse tree
      */
     fn enter_start(&mut self, _ctx: &StartContext<'input>) {}
     /**
-     * Exit a parse tree produced by {@link AntlrFcParser#start}.
+     * Exit a parse tree produced by \{@link  AntlrFcParserBaseParser#s}.
      * @param ctx the parse tree
      */
     fn exit_start(&mut self, _ctx: &StartContext<'input>) {}
+
     /**
-     * Enter a parse tree produced by {@link AntlrFcParser#functionCall}.
+     * Enter a parse tree produced by \{@link AntlrFcParserBaseParser#s}.
      * @param ctx the parse tree
      */
-    fn enter_functionCall(&mut self, _ctx: &FunctionCallContext<'input>) {}
+    fn enter_functioncall(&mut self, _ctx: &FunctionCallContext<'input>) {}
     /**
-     * Exit a parse tree produced by {@link AntlrFcParser#functionCall}.
+     * Exit a parse tree produced by \{@link  AntlrFcParserBaseParser#s}.
      * @param ctx the parse tree
      */
-    fn exit_functionCall(&mut self, _ctx: &FunctionCallContext<'input>) {}
+    fn exit_functioncall(&mut self, _ctx: &FunctionCallContext<'input>) {}
+
     /**
-     * Enter a parse tree produced by {@link AntlrFcParser#object}.
+     * Enter a parse tree produced by \{@link AntlrFcParserBaseParser#s}.
      * @param ctx the parse tree
      */
     fn enter_object(&mut self, _ctx: &ObjectContext<'input>) {}
     /**
-     * Exit a parse tree produced by {@link AntlrFcParser#object}.
+     * Exit a parse tree produced by \{@link  AntlrFcParserBaseParser#s}.
      * @param ctx the parse tree
      */
     fn exit_object(&mut self, _ctx: &ObjectContext<'input>) {}
+
     /**
-     * Enter a parse tree produced by {@link AntlrFcParser#pair}.
+     * Enter a parse tree produced by \{@link AntlrFcParserBaseParser#s}.
      * @param ctx the parse tree
      */
     fn enter_pair(&mut self, _ctx: &PairContext<'input>) {}
     /**
-     * Exit a parse tree produced by {@link AntlrFcParser#pair}.
+     * Exit a parse tree produced by \{@link  AntlrFcParserBaseParser#s}.
      * @param ctx the parse tree
      */
     fn exit_pair(&mut self, _ctx: &PairContext<'input>) {}
+
     /**
-     * Enter a parse tree produced by {@link AntlrFcParser#value}.
+     * Enter a parse tree produced by \{@link AntlrFcParserBaseParser#s}.
      * @param ctx the parse tree
      */
     fn enter_value(&mut self, _ctx: &ValueContext<'input>) {}
     /**
-     * Exit a parse tree produced by {@link AntlrFcParser#value}.
+     * Exit a parse tree produced by \{@link  AntlrFcParserBaseParser#s}.
      * @param ctx the parse tree
      */
     fn exit_value(&mut self, _ctx: &ValueContext<'input>) {}
+
     /**
-     * Enter a parse tree produced by {@link AntlrFcParser#array}.
+     * Enter a parse tree produced by \{@link AntlrFcParserBaseParser#s}.
      * @param ctx the parse tree
      */
     fn enter_array(&mut self, _ctx: &ArrayContext<'input>) {}
     /**
-     * Exit a parse tree produced by {@link AntlrFcParser#array}.
+     * Exit a parse tree produced by \{@link  AntlrFcParserBaseParser#s}.
      * @param ctx the parse tree
      */
     fn exit_array(&mut self, _ctx: &ArrayContext<'input>) {}
 }
-
-antlr4rust::coerce_from! { 'input : AntlrFcParserListener<'input> }
