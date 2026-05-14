@@ -68,29 +68,85 @@ class EngineTest(LiteRtLmTestBase):
     ):
       litert_lm.Engine("/non/existent/path")
 
+  @mock.patch("sys.platform", "win32")
   def test_engine_init_with_npu_backend(self):
     lib = litert_lm._ffi._get_lib()
     if hasattr(lib, "litert_lm_engine_settings_set_litert_dispatch_lib_dir"):
       orig_set_dir = lib.litert_lm_engine_settings_set_litert_dispatch_lib_dir
       mock_set_dir = mock.MagicMock(side_effect=orig_set_dir)
 
+      mock_ov = mock.MagicMock()
+      mock_ov.__file__ = "path/to/openvino/__init__.py"
+      mock_ov.Core.return_value.available_devices = ["CPU", "NPU"]
+
       with mock.patch.object(
           lib,
           "litert_lm_engine_settings_set_litert_dispatch_lib_dir",
           mock_set_dir,
       ):
-        try:
-          litert_lm.Engine(
-              self.model_path,
-              litert_lm.Backend.NPU(native_library_dir="my_custom_dir"),
-              cache_dir=":nocache",
-          )
-        except Exception:  # pylint: disable=broad-exception-caught
-          pass
+        with mock.patch.dict("sys.modules", {"openvino": mock_ov}):
+          with mock.patch("importlib.resources.files") as mock_files:
+            try:
+              npu = litert_lm.Backend.NPU()
+              npu.litert_dispatch_lib_dir = "my_custom_dir"
+              litert_lm.Engine(
+                  self.model_path,
+                  npu,
+                  cache_dir=":nocache",
+              )
+            except Exception:  # pylint: disable=broad-exception-caught
+              pass
 
-        mock_set_dir.assert_called_once()
-        args, _ = mock_set_dir.call_args
-        self.assertEqual(args[1], "my_custom_dir")
+            mock_set_dir.assert_called_once()
+            args, _ = mock_set_dir.call_args
+            self.assertEqual(args[1], "my_custom_dir")
+
+  @mock.patch("sys.platform", "linux")
+  def test_npu_backend_non_windows(self):
+    with self.assertRaisesRegex(
+        RuntimeError, "NPU is supported only for Intel OpenVINO on Windows"
+    ):
+      litert_lm.Backend.NPU()
+
+  @mock.patch("sys.platform", "win32")
+  def test_npu_backend_windows_no_openvino(self):
+    with mock.patch.dict("sys.modules", {"openvino": None}):
+      with self.assertRaisesRegex(
+          RuntimeError, "NPU is supported only for Intel OpenVINO on Windows"
+      ):
+        litert_lm.Backend.NPU()
+
+  @mock.patch("sys.platform", "win32")
+  def test_npu_backend_windows_openvino_no_npu(self):
+    mock_ov = mock.MagicMock()
+    mock_ov.Core.return_value.available_devices = ["CPU", "GPU"]
+    with mock.patch.dict("sys.modules", {"openvino": mock_ov}):
+      with self.assertRaisesRegex(
+          RuntimeError, "NPU is supported only for Intel OpenVINO on Windows"
+      ):
+        litert_lm.Backend.NPU()
+
+  @mock.patch("sys.platform", "win32")
+  def test_npu_backend_windows_openvino_with_npu(self):
+    mock_ov = mock.MagicMock()
+    mock_ov.__file__ = "path/to/openvino/__init__.py"
+    mock_ov.Core.return_value.available_devices = ["CPU", "NPU"]
+
+    mock_path = mock.MagicMock()
+    mock_path.__truediv__.return_value = "mocked_resolved_path"
+
+    with mock.patch.dict("sys.modules", {"openvino": mock_ov}):
+      with mock.patch("importlib.resources.files") as mock_files:
+        mock_files.return_value = mock_path
+        npu = litert_lm.Backend.NPU()
+
+        mock_files.assert_called_once_with(
+            "litert_lm"
+        )
+        mock_path.__truediv__.assert_called_once_with(
+            "vendors/intel_openvino/dispatch/"
+        )
+        self.assertEqual(npu.litert_dispatch_lib_dir, "mocked_resolved_path")
 
   def test_engine_init_with_legacy_backend_class(self):
     with warnings.catch_warnings(record=True) as w:

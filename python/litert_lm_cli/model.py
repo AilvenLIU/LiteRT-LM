@@ -28,8 +28,6 @@ import click
 import litert_lm
 
 
-
-
 def get_attachment_type(path: str) -> str:
   """Returns the attachment type (audio or image) from the file path.
 
@@ -102,14 +100,14 @@ def load_preset(preset: str):
 
 
 def _parse_backend(
-    backend: str, npu_library_dir: str = ""
+    backend: str,
 ) -> litert_lm.Backend:
   """Parses the backend string and returns the corresponding Backend enum."""
   backend_lower = backend.lower()
   if backend_lower == "gpu":
     return litert_lm.Backend.GPU()
   if backend_lower == "npu":
-    return litert_lm.Backend.NPU(native_library_dir=npu_library_dir)
+    return litert_lm.Backend.NPU()
   return litert_lm.Backend.CPU()
 
 

@@ -19,6 +19,9 @@ from __future__ import annotations
 import abc
 import collections.abc
 import dataclasses
+from importlib import resources
+import os
+import sys
 from typing import Any
 
 from ._messages import Contents
@@ -57,18 +60,30 @@ class NPU(Backend):
     native_library_dir: The directory containing the NPU libraries.
   """
 
-  def __init__(self, *, native_library_dir: str = ""):
-    """Initializes the NPU backend.
+  def __init__(self):
+    """Initializes the NPU backend."""
+    self.litert_dispatch_lib_dir = ""
+    if sys.platform == "win32":
+      try:
+        import openvino as ov  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
 
-    Args:
-      native_library_dir: The directory containing the NPU libraries.
-    """
-    self.native_library_dir = native_library_dir
+        if "NPU" in ov.Core().available_devices:
+          self.litert_dispatch_lib_dir = str(
+              resources.files(__package__) / "vendors/intel_openvino/dispatch/"
+          )
 
-  def __eq__(self, other: Any) -> bool:
-    if not super().__eq__(other):
-      return False
-    return self.native_library_dir == other.native_library_dir
+          # openvino package place the NPU libs in "libs".
+          # Includes to PATH so Windows can load it.
+          libs_dir = os.path.join(os.path.dirname(ov.__file__), "libs")
+          os.environ["PATH"] = os.environ["PATH"] + ";" + libs_dir
+      except ImportError:
+        pass
+
+    if not self.litert_dispatch_lib_dir:
+      raise RuntimeError(
+          "NPU is supported only for Intel OpenVINO on Windows. It is expected"
+          " to install the 'openvino' package and have an NPU available."
+      )
 
 
 Backend.CPU = CPU

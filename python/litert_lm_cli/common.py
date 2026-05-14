@@ -87,11 +87,6 @@ Speculative decoding mode ("auto", "true", "false").
       default="cpu",
       help="The backend to use.",
   )(f)
-  f = click.option(
-      "--npu-library-dir",
-      default="",
-      help="The directory containing NPU libraries for NPU backend.",
-  )(f)
   return f
 
 

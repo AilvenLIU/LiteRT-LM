@@ -90,10 +90,10 @@ class Engine(interfaces.AbstractEngine):
 
     if (
         isinstance(self.backend, interfaces.Backend.NPU)
-        and self.backend.native_library_dir
+        and self.backend.litert_dispatch_lib_dir
     ):
       self._lib.litert_lm_engine_settings_set_litert_dispatch_lib_dir(
-          settings, self.backend.native_library_dir
+          settings, self.backend.litert_dispatch_lib_dir
       )
 
     if not settings:

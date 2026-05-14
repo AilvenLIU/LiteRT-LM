@@ -185,7 +185,6 @@ def run_interactive(
     top_p: float | None = None,
     temperature: float | None = None,
     seed: int | None = None,
-    npu_library_dir: str = "",
 ):
   """Runs the model interactively or with a single prompt."""
   if not model_obj.exists():
@@ -201,16 +200,12 @@ def run_interactive(
   state = SessionState()
 
   try:
-    backend_val = model._parse_backend(backend, npu_library_dir)
+    backend_val = model._parse_backend(backend)
     vision_backend_val = (
-        model._parse_backend(vision_backend, npu_library_dir)
-        if vision_backend
-        else None
+        model._parse_backend(vision_backend) if vision_backend else None
     )
     audio_backend_val = (
-        model._parse_backend(audio_backend, npu_library_dir)
-        if audio_backend
-        else None
+        model._parse_backend(audio_backend) if audio_backend else None
     )
 
     sampler_config = None
@@ -469,7 +464,6 @@ def run(
     top_p: float | None = None,
     temperature: float | None = None,
     seed: int | None = None,
-    npu_library_dir: str = "",
 ):
   r"""Runs a LiteRT-LM model interactively or with a single prompt.
 
@@ -499,7 +493,6 @@ def run(
     top_p: The cumulative probability threshold for nucleus sampling.
     temperature: The temperature to use for sampling.
     seed: The seed to use for randomization.
-    npu_library_dir: The directory containing NPU libraries.
   """
   if attachment and no_template:
     click.echo(
@@ -616,7 +609,6 @@ def run(
       top_p=top_p,
       temperature=temperature,
       seed=seed,
-      npu_library_dir=npu_library_dir,
   )
 
 

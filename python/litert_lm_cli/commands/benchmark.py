@@ -40,7 +40,6 @@ def run_benchmark(
     backend: str = "cpu",
     enable_speculative_decoding: bool | None = None,
     max_num_tokens: int | None = None,
-    npu_library_dir: str = "",
 ):
   """Benchmarks the model."""
   if not model_obj.exists():
@@ -54,7 +53,7 @@ def run_benchmark(
     return
 
   try:
-    backend_val = model._parse_backend(backend, npu_library_dir)
+    backend_val = model._parse_backend(backend)
     cache_dir_val = (
         ":memory"
         if isinstance(backend_val, litert_lm.Backend.CPU)
@@ -171,7 +170,6 @@ def benchmark(
     from_huggingface_repo: str | None = None,
     huggingface_token: str | None = None,
     max_num_tokens: int | None = None,
-    npu_library_dir: str = "",
 ):
   """Benchmarks a LiteRT-LM model.
 
@@ -189,7 +187,6 @@ def benchmark(
     from_huggingface_repo: The HuggingFace repository ID.
     huggingface_token: The HuggingFace API token.
     max_num_tokens: Maximum number of tokens for the KV cache.
-    npu_library_dir: The directory containing NPU libraries.
   """
   if verbose:
     litert_lm.set_min_log_severity(litert_lm.LogSeverity.VERBOSE)
@@ -217,7 +214,6 @@ def benchmark(
       backend=backend,
       enable_speculative_decoding=enable_speculative_decoding,
       max_num_tokens=max_num_tokens,
-      npu_library_dir=npu_library_dir,
   )
 
 
