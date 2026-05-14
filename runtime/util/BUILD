@@ -539,6 +539,28 @@ cc_library(
     }),
 )
 
+cc_test(
+    name = "litert_util_test",
+    srcs = ["litert_util_test.cc"],
+    data = ["//runtime/testdata"],
+    deps = [
+        ":litert_util",
+        ":scoped_file",
+        ":test_utils",  # buildcleaner: keep
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@litert//litert/cc:litert_environment",
+        "@litert//litert/cc:litert_environment_options",
+        "@litert//litert/cc:litert_model",
+        "//runtime/components:model_resources",
+        "//runtime/components:tokenizer",
+        "//runtime/engine:engine_settings",
+        "//runtime/executor:executor_settings_base",
+    ],
+)
+
 cc_library(
     name = "litert_lm_loader",
     srcs = ["litert_lm_loader.cc"],

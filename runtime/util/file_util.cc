@@ -19,6 +19,7 @@
 #include <filesystem>  // NOLINT: Required for file metadata retrieval.
 #include <string>
 #include <system_error>  // NOLINT: Required for file metadata retrieval.
+#include <unordered_map>
 #include <utility>
 
 #include "runtime/util/scoped_file.h"
@@ -92,8 +93,16 @@ absl::string_view Dirname(absl::string_view path) {
 }
 
 absl::StatusOr<std::string> GetFileCacheIdentifier(absl::string_view path) {
+  static auto* cached_identifiers =
+      new std::unordered_map<std::string, std::string>();
+  std::string path_str(path);
+  if (auto it = cached_identifiers->find(path_str);
+      it != cached_identifiers->end()) {
+    return it->second;
+  }
+
   std::error_code ec;
-  std::filesystem::path p{std::string(path)};
+  std::filesystem::path p{path_str};
 
   if (!std::filesystem::exists(p, ec) || ec) {
     return absl::InternalError(absl::StrCat("File does not exist: ", path));
@@ -120,7 +129,9 @@ absl::StatusOr<std::string> GetFileCacheIdentifier(absl::string_view path) {
   auto seconds =
       std::chrono::duration_cast<std::chrono::seconds>(duration).count();
 
-  return absl::StrCat(seconds, "_", size);
+  std::string identifier = absl::StrCat(seconds, "_", size);
+  (*cached_identifiers)[path_str] = identifier;
+  return identifier;
 }
 
 #if defined(_WIN32)
