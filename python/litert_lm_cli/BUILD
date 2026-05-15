@@ -193,8 +193,8 @@ genrule(
     name = "gen_requires",
     outs = ["requires.txt"],
     cmd = select({
-        "//python:dev_build": "echo 'litert-lm-api-nightly==" + VERSION + ".dev$(DEV_VERSION)' > $@",
-        "//conditions:default": "echo 'litert-lm-api==" + VERSION + "' > $@",
+        "//python:dev_build": "echo 'litert-lm-api-nightly==" + VERSION + ".dev$(DEV_VERSION)' > $@ && echo 'litert-lm-builder-nightly==" + VERSION + ".dev$(DEV_VERSION)' >> $@",
+        "//conditions:default": "echo 'litert-lm-api==" + VERSION + "' > $@ && echo 'litert-lm-builder==" + VERSION + "' >> $@",
     }) + """
         echo 'click' >> $@
         echo 'huggingface_hub' >> $@
