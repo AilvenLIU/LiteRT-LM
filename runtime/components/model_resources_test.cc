@@ -28,6 +28,7 @@
 #include "runtime/util/litert_lm_loader.h"
 #include "runtime/util/model_asset_bundle_resources.h"
 #include "runtime/util/scoped_file.h"
+#include "runtime/util/test_utils.h"  // IWYU pragma: keep
 
 namespace {
 
@@ -39,6 +40,32 @@ using ::litert::lm::ModelType;
 using ::litert::lm::ModelTypeToString;
 using ::litert::lm::ScopedFile;
 using ::litert::lm::StringToModelType;
+
+TEST(ModelResourcesTest, InitializeWithFileBackedLiteRtModel) {
+#if defined(_WIN32)
+  GTEST_SKIP() << "File-backed LiteRT model loading is not supported on "
+                  "Windows.";
+#endif
+  const auto model_path =
+      std::filesystem::path(::testing::SrcDir()) /
+      "litert_lm/runtime/testdata/test_lm.litertlm";
+  ASSERT_OK_AND_ASSIGN(auto model_file, ScopedFile::Open(model_path.string()));
+  ASSERT_OK_AND_ASSIGN(auto loader,
+                       LitertLmLoader::Create(std::move(model_file)));
+
+  const auto expected_model_size =
+      loader->GetTFLiteModel(ModelType::kTfLitePrefillDecode).Size();
+  ASSERT_GT(expected_model_size, 0);
+
+  auto model_resources = ModelResourcesLitertLm::Create(
+      std::move(loader), /*enable_file_backed_model_loading=*/true);
+  ASSERT_OK(model_resources);
+
+  auto tflite_model =
+      model_resources.value()->GetTFLiteModel(ModelType::kTfLitePrefillDecode);
+  ASSERT_OK(tflite_model);
+  ASSERT_GT(tflite_model.value()->GetNumSignatures(), 0);
+}
 
 #ifdef ENABLE_SENTENCEPIECE_TOKENIZER
 TEST(ModelResourcesTest, InitializeWithValidLitertLmLoader) {
