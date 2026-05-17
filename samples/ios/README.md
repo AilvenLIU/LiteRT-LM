@@ -38,6 +38,16 @@ Add the LiteRT-LM package to your Xcode project using Swift Package Manager:
 3. Select the package from the list and click **Add Package**.
 4. Select the target app you want to add the dependency to and click **Finish**.
 
+> [!NOTE]
+> If you see an error like `no such module LiteRTLM` after adding the package:
+> 1. Click on your project in the project navigator.
+> 2. Select your app target.
+> 3. Go to the **General** tab.
+> 4. Scroll down to **Frameworks, Libraries, and Embedded Content**.
+> 5. Click the **`+`** button.
+> 6. Select **LiteRTLM Package** -> **LiteRTLM**.
+> 7. Click **Add**.
+
 ### 2. Add a Model File
 
 1. Obtain a compatible `.litertlm` model file.
@@ -89,3 +99,9 @@ linked C API**, you can enable GPU acceleration:
    top center of the window.
 3. Click the **Run** button (or press `Cmd + R`) to build and run the app on
    your device!
+
+> [!TIP]
+> If your physical device's iOS version is lower than the deployment target set
+> in Xcode, you can change it by going to the **General** tab, and under
+> **Minimum Deployments** (or **Deployment Info**), change the iOS version to
+> match your device's version.
