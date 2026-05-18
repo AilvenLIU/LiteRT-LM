@@ -50,18 +50,17 @@ class SessionAdvanced : public Engine::Session {
    public:
     AdvancedTaskController(TaskId task_id,
                            std::shared_ptr<std::atomic<bool>> cancelled,
-                           std::weak_ptr<ExecutionManager> execution_manager)
+                           ExecutionManager* execution_manager)
         : task_id_(task_id),
           cancelled_(cancelled),
           execution_manager_(execution_manager) {}
 
     absl::Status WaitUntilDone(absl::Duration timeout) override {
-      auto execution_manager_lock = execution_manager_.lock();
-      if (execution_manager_lock == nullptr) {
+      if (execution_manager_ == nullptr) {
         return absl::FailedPreconditionError(
             "Execution manager is not available.");
       }
-      return execution_manager_lock->WaitUntilDone(task_id_, timeout);
+      return execution_manager_->WaitUntilDone(task_id_, timeout);
     }
 
     absl::Status Cancel() override {
@@ -77,14 +76,15 @@ class SessionAdvanced : public Engine::Session {
     std::shared_ptr<std::atomic<bool>> cancelled_;
 
     // The execution manager used for the session.
-    std::weak_ptr<ExecutionManager> execution_manager_;
+    ExecutionManager* execution_manager_;
   };
 
   // Creates a SessionAdvanced object.
   static absl::StatusOr<std::unique_ptr<SessionAdvanced>> Create(
-      std::weak_ptr<ExecutionManager> execution_manager,
+      ExecutionManager* absl_nonnull execution_manager,
       Tokenizer* absl_nonnull tokenizer, const SessionConfig& session_config,
-      std::optional<BenchmarkInfo> benchmark_info);
+      std::optional<BenchmarkInfo> benchmark_info,
+      std::atomic<int>* living_sessions_count = nullptr);
 
   // Destroys the SessionAdvanced object. It will wait for all tasks to be
   // done and release the session from the execution manager.
@@ -163,12 +163,11 @@ class SessionAdvanced : public Engine::Session {
   // Conversation.
   void CancelProcess() override {
     ABSL_LOG(INFO) << "SessionAdvanced::CancelProcess";
-    auto execution_manager_lock = execution_manager_.lock();
-    if (execution_manager_lock == nullptr) {
+    if (execution_manager_ == nullptr) {
       ABSL_LOG(ERROR) << "Execution manager is not available.";
       return;
     }
-    auto status = execution_manager_lock->CancelAllTasksInSession(session_id_);
+    auto status = execution_manager_->CancelAllTasksInSession(session_id_);
     if (!status.ok()) {
       ABSL_LOG(ERROR) << "Failed to cancel all tasks in session: " << status;
     }
@@ -179,13 +178,12 @@ class SessionAdvanced : public Engine::Session {
   }
 
   absl::Status WaitUntilDone() override {
-    auto execution_manager_lock = execution_manager_.lock();
-    if (execution_manager_lock == nullptr) {
+    if (execution_manager_ == nullptr) {
       return absl::FailedPreconditionError(
           "Execution manager is not available.");
     }
-    return execution_manager_lock->WaitUntilSessionDone(
-        session_id_, Engine::kDefaultTimeout);
+    return execution_manager_->WaitUntilSessionDone(session_id_,
+                                                    Engine::kDefaultTimeout);
   }
 
   // TODO b/409401231 - Add unit tests for this function.
@@ -212,17 +210,23 @@ class SessionAdvanced : public Engine::Session {
   enum class SessionState : int { kFresh, kPrefilled, kDecoded };
 
   explicit SessionAdvanced(SessionId session_id,
-                           std::weak_ptr<ExecutionManager> execution_manager,
+                           ExecutionManager* execution_manager,
                            Tokenizer* absl_nonnull tokenizer,
                            std::shared_ptr<const SessionInfo> session_info,
                            SessionState session_state = SessionState::kFresh,
-                           absl::flat_hash_set<TaskId> last_task_ids = {})
+                           absl::flat_hash_set<TaskId> last_task_ids = {},
+                           std::atomic<int>* living_sessions_count = nullptr)
       : session_id_(session_id),
         execution_manager_(execution_manager),
         tokenizer_(tokenizer),
         session_info_(session_info),
         session_state_(session_state),
-        last_task_ids_(last_task_ids) {}
+        last_task_ids_(last_task_ids),
+        living_sessions_count_(living_sessions_count) {
+    if (living_sessions_count_) {
+      (*living_sessions_count_)++;
+    }
+  }
 
   // The implementation of CloneAsync which assumes mutex_ is locked.
   absl::StatusOr<std::unique_ptr<Session>> CloneAsyncLocked(
@@ -233,7 +237,7 @@ class SessionAdvanced : public Engine::Session {
   SessionId session_id_;
 
   // The execution manager used for the session.
-  std::weak_ptr<ExecutionManager> execution_manager_;
+  ExecutionManager* execution_manager_;
 
   // The tokenizer used for the session.
   Tokenizer* absl_nonnull tokenizer_;
@@ -258,6 +262,9 @@ class SessionAdvanced : public Engine::Session {
 
   // Mutex for protecting the session state and last task IDs.
   absl::Mutex mutex_;
+
+  // Pointer to the counter of living sessions in Engine.
+  std::atomic<int>* living_sessions_count_;
 };
 
 }  // namespace litert::lm

@@ -12,16 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <filesystem>  // NOLINT: Required for path manipulation.
-#include <future>      // NOLINT(build/c++11)
+#include <atomic>
+#include <future>  // NOLINT(build/c++11)
 #include <memory>
 #include <optional>
-#include <string>
 #include <utility>
-#include <vector>
 
-#include "absl/base/no_destructor.h"  // from @com_google_absl
-#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/log/check.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
@@ -57,9 +53,6 @@
 #include "runtime/util/status_macros.h"  // NOLINT
 
 namespace litert::lm {
-namespace {
-
-}  // namespace
 
 class EngineAdvancedImpl : public Engine {
  public:
@@ -68,6 +61,17 @@ class EngineAdvancedImpl : public Engine {
     if (!status.ok()) {
       ABSL_LOG(ERROR) << "Failed to wait for engine to finish: " << status;
     }
+
+    if (living_sessions_ > 0) {
+      ABSL_LOG(WARNING) << "EngineAdvancedImpl destructed with "
+                        << living_sessions_ << " living sessions!";
+    }
+
+    execution_manager_.reset();
+    litert_model_resources_.reset();
+    tokenizer_.reset();
+
+    ABSL_LOG(INFO) << "EngineAdvancedImpl destructed";
   }
 
   static absl::StatusOr<std::unique_ptr<Engine>> Create(
@@ -106,10 +110,10 @@ class EngineAdvancedImpl : public Engine {
           "Model resources are not initialized.");
     }
 
-    ASSIGN_OR_RETURN(
-        auto session,
-        SessionAdvanced::Create(execution_manager_, tokenizer_.get(), config,
-                                std::move(session_benchmark_info)));
+    ASSIGN_OR_RETURN(auto session,
+                     SessionAdvanced::Create(
+                         execution_manager_.get(), tokenizer_.get(), config,
+                         std::move(session_benchmark_info), &living_sessions_));
 
     if (benchmark_info_.has_value()) {
       auto session_benchmark_info_or = session->GetMutableBenchmarkInfo();
@@ -153,7 +157,10 @@ class EngineAdvancedImpl : public Engine {
   std::unique_ptr<Tokenizer> tokenizer_;
 
   // Execution manager for the engine.
-  std::shared_ptr<ExecutionManager> execution_manager_;
+  std::unique_ptr<ExecutionManager> execution_manager_;
+
+  // Counter for living sessions.
+  std::atomic<int> living_sessions_{0};
 
   // Benchmark info for the engine.
   std::optional<BenchmarkInfo> benchmark_info_;

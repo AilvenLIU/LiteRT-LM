@@ -213,7 +213,7 @@ class SessionAdvancedTest : public testing::Test {
             /*audio_executor_settings=*/nullptr,
             /*litert_env=*/nullptr));
 
-    return SessionAdvanced::Create(execution_manager_, tokenizer_.get(),
+    return SessionAdvanced::Create(execution_manager_.get(), tokenizer_.get(),
                                    session_config,
                                    /*benchmark_info=*/std::nullopt);
   }
@@ -291,7 +291,7 @@ TEST_F(SessionAdvancedTest, RunPrefill) {
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
   std::vector<InputData> inputs;
   inputs.emplace_back(InputText("Hello World!"));
@@ -313,7 +313,7 @@ TEST_F(SessionAdvancedTest, EmptyInputTextReturnsError) {
                                        /*litert_env=*/nullptr));
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
   std::vector<InputData> inputs;
   inputs.emplace_back(InputText(""));
@@ -346,7 +346,7 @@ TEST_F(SessionAdvancedTest, RunDecodeWithInternalSampler) {
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
   std::vector<InputData> inputs;
   inputs.emplace_back(InputText("Hello World!"));
@@ -384,7 +384,7 @@ TEST_F(SessionAdvancedTest, RunDecodeWithMaxOutputTokens) {
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
   std::vector<InputData> inputs;
   inputs.emplace_back(InputText("Hello World!"));
@@ -425,7 +425,7 @@ TEST_F(SessionAdvancedTest, RunDecodeWithExternalSampler) {
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
   std::vector<InputData> inputs;
   inputs.emplace_back(InputText("Hello World!"));
@@ -471,7 +471,7 @@ TEST_F(SessionAdvancedTest,
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
   std::vector<InputData> inputs;
   inputs.emplace_back(InputText("Hello World!"));
@@ -520,7 +520,7 @@ TEST_F(SessionAdvancedTest,
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
   std::vector<InputData> inputs;
   inputs.emplace_back(InputText("Hello World!"));
@@ -574,7 +574,7 @@ TEST_F(SessionAdvancedTest,
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
@@ -629,7 +629,7 @@ TEST_F(SessionAdvancedTest,
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
@@ -677,7 +677,7 @@ TEST_F(SessionAdvancedTest, RunPrefillAsync) {
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
@@ -714,7 +714,7 @@ TEST_F(SessionAdvancedTest, RunDecodeAsyncWithInternalSampler) {
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
@@ -753,8 +753,8 @@ TEST_F(SessionAdvancedTest, RunDecodeAsyncWithExternalSampler) {
                                        /*litert_env=*/nullptr));
 
   ASSERT_OK_AND_ASSIGN(
-      auto session, SessionAdvanced::Create(execution_manager, tokenizer_.get(),
-                                            session_config,
+      auto session, SessionAdvanced::Create(execution_manager.get(),
+                                            tokenizer_.get(), session_config,
                                             /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
@@ -807,7 +807,7 @@ TEST_F(SessionAdvancedTest,
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
@@ -873,7 +873,7 @@ TEST_F(SessionAdvancedTest,
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
@@ -980,7 +980,7 @@ TEST_F(SessionAdvancedTest, RunPrefillAndDecodeAsyncWithInternalSampler) {
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
@@ -1027,7 +1027,7 @@ TEST_F(SessionAdvancedTest, RunPrefillAndDecodeAsyncWithExternalSampler) {
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
@@ -1072,7 +1072,7 @@ TEST_F(SessionAdvancedTest, GenerateContentStream) {
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
@@ -1115,7 +1115,7 @@ TEST_F(SessionAdvancedTest, RunPrefillEmptyInput) {
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
@@ -1154,7 +1154,7 @@ TEST_F(SessionAdvancedTest, RunPrefillAsyncFailed) {
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
@@ -1200,7 +1200,7 @@ TEST_F(SessionAdvancedTest, RunDecodeAsyncFailed) {
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
@@ -1246,7 +1246,7 @@ TEST_F(SessionAdvancedTest, RunDecodeAsyncWithCancellationWithInternalSampler) {
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
@@ -1303,7 +1303,7 @@ TEST_F(SessionAdvancedTest, RunDecodeAsyncWithCancellationWithExternalSampler) {
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
@@ -1359,7 +1359,7 @@ TEST_F(SessionAdvancedTest,
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
@@ -1417,7 +1417,7 @@ TEST_F(SessionAdvancedTest,
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
@@ -1500,8 +1500,9 @@ TEST_P(SessionAdvancedCancellationTest,
                                        /*litert_env=*/nullptr));
 
   ASSERT_OK_AND_ASSIGN(
-      auto session, SessionAdvanced::Create(execution_manager, tokenizer_.get(),
-                                            session_config, benchmark_info));
+      auto session,
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
+                              session_config, benchmark_info));
 
   std::vector<InputData> inputs;
   inputs.emplace_back(InputText("Hello World!"));
@@ -1576,8 +1577,9 @@ TEST_P(SessionAdvancedCancellationTest,
                                        /*litert_env=*/nullptr));
 
   ASSERT_OK_AND_ASSIGN(
-      auto session, SessionAdvanced::Create(execution_manager, tokenizer_.get(),
-                                            session_config, benchmark_info));
+      auto session,
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
+                              session_config, benchmark_info));
 
   std::vector<InputData> inputs;
   inputs.emplace_back(InputText("Hello World!"));
@@ -1643,7 +1645,7 @@ TEST_F(SessionAdvancedTest, RunPrefillAsyncOnCancelledSession) {
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   session->CancelProcess();
@@ -1700,8 +1702,9 @@ TEST_F(SessionAdvancedTest,
                                        /*litert_env=*/nullptr));
 
   ASSERT_OK_AND_ASSIGN(
-      auto session, SessionAdvanced::Create(execution_manager, tokenizer_.get(),
-                                            session_config, benchmark_info));
+      auto session,
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
+                              session_config, benchmark_info));
 
   std::vector<InputData> inputs;
   inputs.emplace_back(InputText("Hello World!"));
@@ -1744,8 +1747,9 @@ TEST_F(SessionAdvancedTest,
                                        /*litert_env=*/nullptr));
 
   ASSERT_OK_AND_ASSIGN(
-      auto session, SessionAdvanced::Create(execution_manager, tokenizer_.get(),
-                                            session_config, benchmark_info));
+      auto session,
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
+                              session_config, benchmark_info));
 
   std::vector<InputData> inputs;
   inputs.emplace_back(InputText("Hello World!"));
@@ -1792,7 +1796,7 @@ TEST_F(SessionAdvancedTest,
                                        /*litert_env=*/nullptr));
 
   auto session =
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt);
 
   std::vector<InputData> inputs;
@@ -1859,7 +1863,7 @@ TEST_F(SessionAdvancedTest,
                                        /*litert_env=*/nullptr));
 
   auto session =
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt);
 
   std::vector<InputData> inputs;
@@ -1925,7 +1929,7 @@ TEST_F(SessionAdvancedTest, RunIncrementalPrefillWithDecode) {
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   {
@@ -2002,7 +2006,7 @@ TEST_F(SessionAdvancedTest, ProcessAndCombineContentsTextAndAudioSuccess) {
           /*litert_env=*/&env));
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
@@ -2071,7 +2075,7 @@ TEST_F(SessionAdvancedTest, ProcessAndCombineContentsTextAudioTextSuccess) {
 
   ASSERT_OK_AND_ASSIGN(
       auto session,
-      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+      SessionAdvanced::Create(execution_manager.get(), tokenizer_.get(),
                               session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
