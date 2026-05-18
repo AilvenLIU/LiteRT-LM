@@ -520,11 +520,13 @@ cc_library(
     hdrs = ["litert_util.h"],
     deps = [
         ":logging",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/synchronization",
         "@litert//litert/cc:litert_macros",
         "//runtime/components:model_resources",
         "//runtime/engine:engine_settings",

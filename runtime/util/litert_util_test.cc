@@ -15,7 +15,7 @@
 #include "runtime/util/litert_util.h"
 
 #include <cstddef>
-#include <filesystem>  // NOLINT
+#include <filesystem>  // NOLINT(build/c++17)
 #include <functional>
 #include <memory>
 #include <optional>
@@ -83,11 +83,13 @@ class FakeModelResources : public ModelResources {
   }
 };
 
-TEST(LiteRtUtilTest, GetEnvironment_CPUGPUFirst_IncludesNPUOptions) {
-  auto task_path = std::filesystem::path(::testing::SrcDir()) /
-                   "google3/runtime/testdata/"
-                   "test_lm_new_metadata.task";
-  auto model_assets = ModelAssets::Create(task_path.string());
+TEST(LiteRtUtilTest, GetEnvironment_CPUGPUFirst_ExcludesNPUOptions) {
+  std::string task_path =
+      (std::filesystem::path(::testing::SrcDir()) /
+       "google3/runtime/testdata/"
+       "test_lm_new_metadata.task")
+          .string();
+  auto model_assets = ModelAssets::Create(task_path);
   ASSERT_OK(model_assets);
 
   auto cpu_settings =
@@ -106,24 +108,46 @@ TEST(LiteRtUtilTest, GetEnvironment_CPUGPUFirst_IncludesNPUOptions) {
 
   auto dispatch_lib_status =
       options.GetOption(EnvironmentOptions::Tag::kDispatchLibraryDir);
-#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
-  ASSERT_TRUE(dispatch_lib_status.HasValue())
-      << "kDispatchLibraryDir was not initialized on the Environment singleton "
+  ASSERT_FALSE(dispatch_lib_status.HasValue())
+      << "kDispatchLibraryDir was initialized on the Environment singleton "
          "when CPU was used first.";
 
-  auto dispatch_lib_dir = std::get<const char*>(*dispatch_lib_status);
-  std::filesystem::path expected_path(task_path.parent_path());
-  EXPECT_EQ(std::string(dispatch_lib_dir), expected_path.string());
+  // Initialize NPU second in the same process session.
+  auto npu_settings =
+      EngineSettings::CreateDefault(*model_assets, Backend::NPU);
+  ASSERT_OK(npu_settings);
+  npu_settings->GetMutableMainExecutorSettings().SetLitertDispatchLibDir("");
+
+  auto npu_env_status = GetEnvironment(*npu_settings, nullptr);
+  ASSERT_OK(npu_env_status);
+  auto& npu_env = *npu_env_status;
+
+  auto npu_options_status = npu_env.GetOptions();
+  ASSERT_TRUE(npu_options_status.HasValue());
+  const auto& npu_options = *npu_options_status;
+
+  auto npu_dispatch_lib_status =
+      npu_options.GetOption(EnvironmentOptions::Tag::kDispatchLibraryDir);
+#if !defined(LITERT_DISABLE_NPU)
+  ASSERT_TRUE(npu_dispatch_lib_status.HasValue())
+      << "kDispatchLibraryDir was not initialized when NPU was used second.";
+
+  auto npu_dispatch_lib_dir = std::get<const char*>(*npu_dispatch_lib_status);
+  std::string expected_path =
+      std::filesystem::path(task_path).parent_path().string();
+  EXPECT_EQ(std::string(npu_dispatch_lib_dir), expected_path);
 #else
-  ASSERT_FALSE(dispatch_lib_status.HasValue());
+  ASSERT_FALSE(npu_dispatch_lib_status.HasValue());
 #endif
 }
 
 TEST(LiteRtUtilTest, GetEnvironment_NPUFirst_IncludesNPUOptions) {
-  auto task_path = std::filesystem::path(::testing::SrcDir()) /
-                   "google3/runtime/testdata/"
-                   "test_lm_new_metadata.task";
-  auto model_assets = ModelAssets::Create(task_path.string());
+  std::string task_path =
+      (std::filesystem::path(::testing::SrcDir()) /
+       "google3/runtime/testdata/"
+       "test_lm_new_metadata.task")
+          .string();
+  auto model_assets = ModelAssets::Create(task_path);
   ASSERT_OK(model_assets);
 
   auto npu_settings =
@@ -141,13 +165,14 @@ TEST(LiteRtUtilTest, GetEnvironment_NPUFirst_IncludesNPUOptions) {
 
   auto dispatch_lib_status =
       options.GetOption(EnvironmentOptions::Tag::kDispatchLibraryDir);
-#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
+#if !defined(LITERT_DISABLE_NPU)
   ASSERT_TRUE(dispatch_lib_status.HasValue())
       << "kDispatchLibraryDir was not initialized when NPU was used first.";
 
   auto dispatch_lib_dir = std::get<const char*>(*dispatch_lib_status);
-  std::filesystem::path expected_path(task_path.parent_path());
-  EXPECT_EQ(std::string(dispatch_lib_dir), expected_path.string());
+  std::string expected_path =
+      std::filesystem::path(task_path).parent_path().string();
+  EXPECT_EQ(std::string(dispatch_lib_dir), expected_path);
 #else
   ASSERT_FALSE(dispatch_lib_status.HasValue());
 #endif
