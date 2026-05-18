@@ -31,6 +31,8 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "nlohmann/json.hpp"  // from @nlohmann_json
 #include "runtime/components/constrained_decoding/constraint.h"
+#include "runtime/components/prompt_template.h"
+#include "runtime/conversation/model_data_processor/model_data_processor.h"
 #if !defined(LITERT_LM_FST_CONSTRAINTS_DISABLED)
 #include "runtime/components/constrained_decoding/gemma_model_constraint_provider.h"
 #endif
@@ -45,6 +47,7 @@
 #include "runtime/conversation/io_types.h"
 #include "runtime/conversation/model_data_processor/data_utils.h"
 #include "runtime/conversation/model_data_processor/gemma4_data_processor_config.h"
+#include "runtime/conversation/prompt_utils.h"
 #include "runtime/engine/io_types.h"
 #include "runtime/util/memory_mapped_file.h"
 #include "runtime/util/status_macros.h"
@@ -351,6 +354,9 @@ Gemma4DataProcessor::ToInputDataVectorImpl(
         if (item.is_string()) {
           continue;
         }
+        if (!item.contains("type")) {
+          continue;
+        }
         ASSIGN_OR_RETURN(std::unique_ptr<MemoryMappedFile> mmap_file,
                          LoadItemData(item));
         if (item["type"] == "image") {
@@ -468,6 +474,19 @@ absl::StatusOr<Message> Gemma4DataProcessor::ToMessageImpl(
   }
   return message;
 }
+
+absl::StatusOr<ModelDataProcessor::SingleTurnTemplateRenderResult>
+Gemma4DataProcessor::RenderSingleTurnTemplate(
+    std::vector<Message>& history, const Preface& preface,
+    const Message& message, const PromptTemplate& prompt_template,
+    bool current_is_appending_message, bool append_message,
+    std::optional<nlohmann::ordered_json> extra_context) const {
+  return RenderSingleTurnTemplateCommon(
+      *this, history, preface, message, prompt_template,
+      current_is_appending_message, append_message, extra_context,
+      /*push_dummy_user_message_to_preface=*/false);
+}
+
 
 absl::StatusOr<nlohmann::ordered_json> Gemma4DataProcessor::FormatTools(
     const nlohmann::ordered_json& tools) const {
