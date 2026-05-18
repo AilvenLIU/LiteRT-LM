@@ -30,7 +30,7 @@ STAGING_DIR="/tmp/litertlm_builder"
 
 echo "Building Proto and FlatBuffer bindings..."
 bazel build --config=hermetic_linux //runtime/proto:all
-bazel build --config=hermetic_linux //schema/core:litertlm_header_schema_py
+bazel build --config=hermetic_linux //python/litert_lm_builder:litertlm_header_schema_py
 
 
 # Create a temporary staging directory
@@ -43,12 +43,9 @@ mkdir -p "${STAGING_DIR}"
 # This assumes pyproject.toml is in ${WORKSPACE_ROOT}/python/litert_lm_builder
 echo "Copying python/litert_lm_builder contents..."
 mkdir -p "${STAGING_DIR}/litert_lm_builder"
-mkdir -p "${STAGING_DIR}/litert_lm_builder/schema/core"
 mkdir -p "${STAGING_DIR}/litert_lm_builder/runtime/proto"
 
 # Create necessary __init__.py files for sub-packages
-touch "${STAGING_DIR}/litert_lm_builder/schema/__init__.py"
-touch "${STAGING_DIR}/litert_lm_builder/schema/core/__init__.py"
 touch "${STAGING_DIR}/litert_lm_builder/runtime/__init__.py"
 touch "${STAGING_DIR}/litert_lm_builder/runtime/proto/__init__.py"
 
@@ -68,7 +65,7 @@ find "${STAGING_DIR}/litert_lm_builder/runtime/proto" -name "*_pb2.py" -exec sed
 
 # Copy the generated FlatBuffer Python file
 echo "Copying FlatBuffer bindings..."
-find "${WORKSPACE_ROOT}/bazel-bin/schema/core" -name "*.py" -exec cp -f {} "${STAGING_DIR}/litert_lm_builder/schema/core/" \;
+cp -f "${WORKSPACE_ROOT}/bazel-bin/python/litert_lm_builder/"*_generated.py "${STAGING_DIR}/litert_lm_builder/"
 
 # Rewrite imports in all Python files in the package to use the new layout
 echo "Rewriting imports in all Python files..."

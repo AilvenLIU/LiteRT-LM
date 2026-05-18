@@ -25,6 +25,11 @@ package(
 
 licenses(["notice"])
 
+exports_files(
+    ["litertlm_header_schema.fbs"],
+    visibility = ["//:internal"],
+)
+
 cc_library(
     name = "litertlm_utils",
     srcs = ["litertlm_utils.cc"],

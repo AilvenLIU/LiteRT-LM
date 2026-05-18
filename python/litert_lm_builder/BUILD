@@ -14,6 +14,7 @@
 
 load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_binary", "pytype_strict_library")
 load("@rules_python//python:defs.bzl", "py_test")
+load("@flatbuffers//:build_defs.bzl", "flatbuffer_py_library")
 
 package(
     default_hdrs_check = "strict",
@@ -24,11 +25,16 @@ package(
 
 licenses(["notice"])
 
+flatbuffer_py_library(
+    name = "litertlm_header_schema_py",
+    srcs = ["//schema/core:litertlm_header_schema.fbs"],
+)
+
 pytype_strict_library(
     name = "litertlm_core",
     srcs = ["litertlm_core.py"],
     deps = [
-        "//schema/core:litertlm_header_schema_py",
+        ":litertlm_header_schema_py",
         "@absl_py//absl:app",
     ],
 )
@@ -39,7 +45,7 @@ py_test(
     imports = [".."],
     deps = [
         ":litertlm_core",
-        "//schema/core:litertlm_header_schema_py",
+        ":litertlm_header_schema_py",
         "@absl_py//absl/testing:absltest",
         "@absl_py//absl/testing:parameterized",
     ],
@@ -50,8 +56,8 @@ pytype_strict_library(
     srcs = ["litertlm_peek.py"],
     deps = [
         ":litertlm_core",
+        ":litertlm_header_schema_py",
         "//runtime/proto:llm_metadata_py_pb2",
-        "//schema/core:litertlm_header_schema_py",
         "@com_google_protobuf//:protobuf_python",
     ],
 )
@@ -88,9 +94,9 @@ pytype_strict_library(
     visibility = ["//visibility:public"],
     deps = [
         ":litertlm_core",
+        ":litertlm_header_schema_py",
         "@flatbuffers//:runtime_py",
         "//runtime/proto:llm_metadata_py_pb2",
-        "//schema/core:litertlm_header_schema_py",
         "@com_google_protobuf//:protobuf_python",
     ],
 )
