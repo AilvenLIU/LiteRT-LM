@@ -22,7 +22,7 @@ from google.protobuf import text_format
 from litert_lm_builder import litertlm_builder
 from litert_lm_builder import litertlm_core
 from litert_lm_builder import litertlm_peek
-from litert_lm.runtime.proto import llm_metadata_pb2
+from runtime.proto import llm_metadata_pb2
 
 _TOML_TEMPLATE = """
 # A template for testing the TOML parser.

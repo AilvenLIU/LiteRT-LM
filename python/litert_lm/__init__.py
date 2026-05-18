@@ -14,12 +14,6 @@
 
 """LiteRT LM is a library for running GenAI models on devices."""
 
-# pylint: disable=g-import-not-at-top
-
-import pkgutil
-
-__path__ = pkgutil.extend_path(__path__, __name__)
-
 from ._ffi import LogSeverity
 from ._ffi import set_min_log_severity
 from ._messages import Content
