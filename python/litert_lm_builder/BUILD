@@ -18,6 +18,7 @@ load("@flatbuffers//:build_defs.bzl", "flatbuffer_py_library")
 
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//:version.bzl", "VERSION")
+load("@custom_pip_deps//:requirements.bzl", "requirement")
 
 package(
     default_hdrs_check = "strict",
@@ -101,6 +102,7 @@ pytype_strict_library(
         "@flatbuffers//:runtime_py",
         "//runtime/proto:llm_metadata_py_pb2",
         "@com_google_protobuf//:protobuf_python",
+        requirement("tomli"),
     ],
 )
 

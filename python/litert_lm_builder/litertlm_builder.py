@@ -45,7 +45,6 @@ import enum
 import os
 import pathlib
 import shutil
-import tomllib
 from typing import Any, BinaryIO, Callable, Optional, TypeVar
 import uuid
 import zlib
@@ -53,6 +52,9 @@ import zlib
 import flatbuffers
 from google.protobuf import message
 from google.protobuf import text_format
+# TODO(b/514828153): Migrate to standard library tomllib when Python 3.10
+# support is dropped.
+import tomli as tomllib
 
 from litert_lm_builder import litertlm_core
 from litert_lm_builder import litertlm_header_schema_py_generated as schema
@@ -197,7 +199,7 @@ class TfLiteModelType(enum.Enum):
 
 
 @enum.unique
-class Backend(enum.StrEnum):
+class Backend(str, enum.Enum):
   """Backend enum."""
 
   CPU = "cpu"
