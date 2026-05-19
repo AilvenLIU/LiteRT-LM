@@ -200,12 +200,12 @@ def run_interactive(
   state = SessionState()
 
   try:
-    backend_val = model._parse_backend(backend)
+    backend_val = model.parse_backend(backend, model_obj=model_obj)
     vision_backend_val = (
-        model._parse_backend(vision_backend) if vision_backend else None
+        model.parse_backend(vision_backend) if vision_backend else None
     )
     audio_backend_val = (
-        model._parse_backend(audio_backend) if audio_backend else None
+        model.parse_backend(audio_backend) if audio_backend else None
     )
 
     sampler_config = None

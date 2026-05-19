@@ -64,9 +64,10 @@ mock_litert_lm.Engine = mock_engine.Engine
 mock_litert_lm.set_min_log_severity = mock_ffi.set_min_log_severity
 
 # 4. Also mock model as it imports litert_lm too.
-mock_model_mod = mock.Mock(spec_set=["Model"])
+mock_model_mod = mock.Mock(spec_set=["Model", "parse_backend"])
 mock_model_mod.Model = mock.Mock(spec_set=["from_model_id"])
 mock_model_mod.Model.from_model_id = mock.Mock()
+mock_model_mod.parse_backend = mock.Mock()
 sys.modules["litert_lm_cli.model"] = (
     mock_model_mod
 )
@@ -84,6 +85,8 @@ class ServeTest(parameterized.TestCase):
     mock_litert_lm.Engine.reset_mock()  # pytype: disable=attribute-error
     mock_model_mod.Model.from_model_id.reset_mock()
     mock_model_mod.Model.from_model_id.side_effect = None
+    mock_model_mod.parse_backend.reset_mock()
+    mock_model_mod.parse_backend.return_value = interfaces.Backend.CPU()
 
   @parameterized.named_parameters(
       dict(

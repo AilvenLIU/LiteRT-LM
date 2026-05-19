@@ -15,12 +15,10 @@
 from __future__ import annotations
 
 import http.server
-import io
 
 import click
 
 import litert_lm
-from litert_lm_builder import litertlm_peek
 from litert_lm_cli import model
 
 
@@ -35,40 +33,6 @@ class LiteRTLMServer(http.server.HTTPServer):
     super().__init__(server_address, RequestHandlerClass)
     self.litert_lm_engine: litert_lm.Engine | None = None
     self.model_id: str | None = None
-
-
-def _select_backend(model_path: str) -> litert_lm.Backend:
-  """Inspects the .litertlm file metadata to select the appropriate execution backend.
-
-  Args:
-    model_path: The absolute filesystem path to the .litertlm model bundle.
-
-  Returns:
-    Backend.GPU() if the model metadata specifies 'gpu_artisan' as the backend
-    constraint, otherwise Backend.CPU().
-  """
-  try:
-    dummy_out = io.StringIO()
-    metadata = litertlm_peek.read_litertlm_header(model_path, dummy_out)
-    section_metadata = metadata.SectionMetadata()
-    if not section_metadata:
-      return litert_lm.Backend.CPU()
-    for i in range(section_metadata.ObjectsLength()):
-      section = section_metadata.Objects(i)
-      if not section or section.ItemsLength() == 0:
-        continue
-      for j in range(section.ItemsLength()):
-        item_dict = litertlm_peek.kvp_to_dict(section.Items(j))
-        if item_dict.get("key") != "backend_constraint":
-          continue
-        val = item_dict.get("value")
-        if isinstance(val, str) and val.lower() == "gpu_artisan":
-          return litert_lm.Backend.GPU()
-  except Exception as e:  # pylint: disable=broad-exception-caught
-    click.echo(
-        click.style(f"Failed to inspect model metadata: {e!r}", fg="yellow")
-    )
-  return litert_lm.Backend.CPU()
 
 
 def get_or_initialize_server_engine(
@@ -112,7 +76,7 @@ def get_or_initialize_server_engine(
   click.echo(
       click.style(f"Initializing engine for model: {m.model_path}", fg="cyan")
   )
-  backend = _select_backend(m.model_path)
+  backend = model.parse_backend("cpu", model_obj=m)
   engine = litert_lm.Engine(m.model_path, backend=backend)
   engine.__enter__()
   server.litert_lm_engine = engine

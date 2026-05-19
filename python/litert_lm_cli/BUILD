@@ -44,6 +44,7 @@ pytype_strict_library(
     srcs = ["model.py"],
     deps = [
         "//python/litert_lm",
+        "//python/litert_lm_builder:litertlm_peek",
         requirement("click"),
     ],
     imports = [".."],

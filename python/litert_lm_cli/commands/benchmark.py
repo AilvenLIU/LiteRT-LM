@@ -53,7 +53,7 @@ def run_benchmark(
     return
 
   try:
-    backend_val = model._parse_backend(backend)
+    backend_val = model.parse_backend(backend, model_obj=model_obj)
     cache_dir_val = (
         ":memory"
         if isinstance(backend_val, litert_lm.Backend.CPU)
@@ -84,7 +84,8 @@ def run_benchmark(
     click.echo(
         f"Benchmarking model: {model_obj.to_str()} ({model_obj.model_path})"
     )
-    click.echo(f"Backend                    : {backend}")
+    resolved_backend_str = backend_val.get_name()
+    click.echo(f"Backend                    : {resolved_backend_str}")
     click.echo(f"Number of tokens in prefill: {prefill_tokens}")
     click.echo(f"Number of tokens in decode : {decode_tokens}")
     if max_num_tokens is not None:
