@@ -19,6 +19,7 @@ load(
 # [Google-internal load of `cc_binary`]
 
 load("@rules_python//python:defs.bzl", "py_test")
+load("//python/litert_lm:cc_runfiles.bzl", "cc_runfiles")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -355,9 +356,19 @@ filegroup(
     }),
 )
 
+# On Windows, copy the .dll from runfiles to avoid the Bazel duplicated
+# labels.
+cc_runfiles(
+    name = "litert_lm_windows_runfiles",
+    cc_binary = ":litert-lm",
+)
+
 filegroup(
     name = "default_libs",
-    srcs = ["//python/litert_lm:litert-lm"] + select({
+    srcs = select({
+        "@platforms//os:windows": [":litert_lm_windows_runfiles"],
+        "//conditions:default": ["//python/litert_lm:litert-lm"],
+    }) + select({
         "@platforms//os:macos": [":copy_prebuilt_libs_dylib"],
         "@platforms//os:windows": [
             ":copy_dxcompiler_dll",
