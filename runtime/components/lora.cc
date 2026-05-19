@@ -53,8 +53,10 @@ constexpr char kDecodeSignatureRunner[] = "decode";
 
 absl::StatusOr<std::unique_ptr<LoRA>> LoRA::Create(
     std::unique_ptr<LoraData> lora_data,
-    const litert::CompiledModel& compiled_model) {
-  auto lora = absl::WrapUnique(new LoRA(std::move(lora_data), compiled_model));
+    const litert::CompiledModel& compiled_model,
+    absl::string_view signature_name) {
+  auto lora = absl::WrapUnique(
+      new LoRA(std::move(lora_data), compiled_model, signature_name));
   RETURN_IF_ERROR(lora->Init());
   return lora;
 }
@@ -63,7 +65,7 @@ absl::Status LoRA::Init() {
   // Get the input names from the default signature.
   LITERT_ASSIGN_OR_RETURN(
       auto input_names,
-      compiled_model_.GetSignatureInputNames(kDecodeSignatureRunner));
+      compiled_model_.GetSignatureInputNames(signature_name_));
 
   for (const auto& input_name : input_names) {
     if (!IsLoRAInputName(input_name)) {
@@ -72,7 +74,7 @@ absl::Status LoRA::Init() {
     // Create the input buffer for the LoRA tensor.
     LITERT_ASSIGN_OR_RETURN(
         litert::TensorBuffer tensor_buffer,
-        compiled_model_.CreateInputBuffer(kDecodeSignatureRunner, input_name));
+        compiled_model_.CreateInputBuffer(signature_name_, input_name));
 
     LITERT_ASSIGN_OR_RETURN(
         auto lock_and_addr, litert::TensorBufferScopedLock::Create(
