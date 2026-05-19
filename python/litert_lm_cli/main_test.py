@@ -456,6 +456,82 @@ class MainTest(absltest.TestCase):
     mock_run_interactive.assert_not_called()
 
   @unittest.mock.patch(
+      "litert_lm_cli.model.Model.from_model_reference"
+  )
+  @unittest.mock.patch(
+      "litert_lm_cli.commands.run.run_interactive"
+  )
+  def test_run_cache_flag(self, mock_run_interactive, mock_from_model_ref):
+    mock_model = unittest.mock.MagicMock()
+    mock_from_model_ref.return_value = mock_model
+    mock_model.exists.return_value = True
+
+    for val in ["auto", "file", "memory", "no"]:
+      mock_run_interactive.reset_mock()
+      runner = CliRunner()
+      result = runner.invoke(
+          main.cli,
+          [
+              "run",
+              "my-model",
+              "--cache",
+              val,
+              "--prompt",
+              "Hi",
+          ],
+      )
+
+      self.assertEqual(result.exit_code, 0)
+      mock_run_interactive.assert_called_once()
+      kwargs = mock_run_interactive.call_args.kwargs
+      self.assertEqual(kwargs["cache"], val)
+
+  def test_run_cache_flag_invalid(self):
+    runner = CliRunner()
+    result = runner.invoke(
+        main.cli,
+        [
+            "run",
+            "my-model",
+            "--cache",
+            "invalid_val",
+            "--prompt",
+            "Hi",
+        ],
+    )
+    self.assertNotEqual(result.exit_code, 0)
+    self.assertIn("Invalid value for '--cache'", result.output)
+
+  @unittest.mock.patch(
+      "litert_lm_cli.model.Model.from_model_reference"
+  )
+  @unittest.mock.patch(
+      "litert_lm_cli.commands.benchmark.run_benchmark"
+  )
+  def test_benchmark_cache_flag(self, mock_run_benchmark, mock_from_model_ref):
+    mock_model = unittest.mock.MagicMock()
+    mock_from_model_ref.return_value = mock_model
+    mock_model.exists.return_value = True
+
+    for val in ["auto", "file", "memory", "no"]:
+      mock_run_benchmark.reset_mock()
+      runner = CliRunner()
+      result = runner.invoke(
+          main.cli,
+          [
+              "benchmark",
+              "my-model",
+              "--cache",
+              val,
+          ],
+      )
+
+      self.assertEqual(result.exit_code, 0)
+      mock_run_benchmark.assert_called_once()
+      kwargs = mock_run_benchmark.call_args.kwargs
+      self.assertEqual(kwargs["cache"], val)
+
+  @unittest.mock.patch(
       "litert_lm_cli.commands.list.os.stat"
   )
   @unittest.mock.patch(

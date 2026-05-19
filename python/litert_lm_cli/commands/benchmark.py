@@ -40,6 +40,7 @@ def run_benchmark(
     backend: str = "cpu",
     enable_speculative_decoding: bool | None = None,
     max_num_tokens: int | None = None,
+    cache: str = "auto",
 ):
   """Benchmarks the model."""
   if not model_obj.exists():
@@ -54,11 +55,19 @@ def run_benchmark(
 
   try:
     backend_val = model._parse_backend(backend)
-    cache_dir_val = (
-        ":memory"
-        if isinstance(backend_val, litert_lm.Backend.CPU)
-        else ":nocache"
-    )
+    cache_dir_val = ""
+    if cache == "no":
+      cache_dir_val = ":nocache"
+    elif cache == "memory":
+      cache_dir_val = ":memory"
+    elif cache == "file":
+      cache_dir_val = ""
+    elif cache == "auto":
+      cache_dir_val = (
+          ":memory"
+          if isinstance(backend_val, litert_lm.Backend.CPU)
+          else ":nocache"
+      )
 
     if is_android:
       if not _HAS_ADB:
@@ -96,6 +105,16 @@ def run_benchmark(
     elif enable_speculative_decoding is False:
       spec_dec_str = "false"
     click.echo(f"Speculative decoding       : {spec_dec_str}")
+    cache_resolved_str = "file"
+    if cache_dir_val == ":nocache":
+      cache_resolved_str = "no"
+    elif cache_dir_val == ":memory":
+      cache_resolved_str = "memory"
+
+    cache_display_str = cache_resolved_str
+    if cache == "auto":
+      cache_display_str = f"{cache_resolved_str} (auto)"
+    click.echo(f"Cache                      : {cache_display_str}")
     if is_android:
       click.echo("Target                     : Android")
 
@@ -170,6 +189,7 @@ def benchmark(
     from_huggingface_repo: str | None = None,
     huggingface_token: str | None = None,
     max_num_tokens: int | None = None,
+    cache: str = "auto",
 ):
   """Benchmarks a LiteRT-LM model.
 
@@ -214,6 +234,7 @@ def benchmark(
       backend=backend,
       enable_speculative_decoding=enable_speculative_decoding,
       max_num_tokens=max_num_tokens,
+      cache=cache,
   )
 
 

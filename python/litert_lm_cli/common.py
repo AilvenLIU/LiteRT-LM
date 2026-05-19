@@ -70,6 +70,18 @@ def common_inference_options(f):
       help="Whether to enable verbose logging.",
   )(f)
   f = click.option(
+      "--cache",
+      type=click.Choice(["auto", "file", "memory", "no"]),
+      default="auto",
+      help="""\b
+Caching mode for compiled model artifacts.
+  - auto: Automatically chooses the best option (defaults to 'file' in run mode, and backend-dependent in benchmark mode).
+  - file: Uses the file cache located with the model file.
+  - memory: Uses in-memory cache (CPU only).
+  - no: Disables caching.
+""",
+  )(f)
+  f = click.option(
       "--enable-speculative-decoding",
       type=click.Choice(["auto", "true", "false"], case_sensitive=False),
       default="auto",

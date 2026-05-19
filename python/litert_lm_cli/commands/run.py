@@ -185,6 +185,7 @@ def run_interactive(
     top_p: float | None = None,
     temperature: float | None = None,
     seed: int | None = None,
+    cache: str = "auto",
 ):
   """Runs the model interactively or with a single prompt."""
   if not model_obj.exists():
@@ -233,6 +234,14 @@ def run_interactive(
           audio_backend=audio_backend_val,
       )
     else:
+      cache_dir_val = ""
+      if cache == "no":
+        cache_dir_val = ":nocache"
+      elif cache == "memory":
+        cache_dir_val = ":memory"
+      elif cache == "file" or cache == "auto":
+        cache_dir_val = ""
+
       engine_cm = litert_lm.Engine(
           model_obj.model_path,
           backend=backend_val,
@@ -240,6 +249,7 @@ def run_interactive(
           max_num_tokens=max_num_tokens,
           vision_backend=vision_backend_val,
           audio_backend=audio_backend_val,
+          cache_dir=cache_dir_val,
       )
 
     with engine_cm as engine:
@@ -464,6 +474,7 @@ def run(
     top_p: float | None = None,
     temperature: float | None = None,
     seed: int | None = None,
+    cache="auto",
 ):
   r"""Runs a LiteRT-LM model interactively or with a single prompt.
 
@@ -609,6 +620,7 @@ def run(
       top_p=top_p,
       temperature=temperature,
       seed=seed,
+      cache=cache,
   )
 
 
