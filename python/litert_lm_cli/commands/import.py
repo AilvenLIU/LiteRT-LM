@@ -55,7 +55,9 @@ def _stream_download(
   Returns:
     The absolute path to the temporary file where the response body was written.
   """
-  tmp_file = tempfile.NamedTemporaryFile(delete=False)
+  download_dir = os.path.join(model.get_cli_base_dir(), ".downloading")
+  os.makedirs(download_dir, exist_ok=True)
+  tmp_file = tempfile.NamedTemporaryFile(dir=download_dir, delete=False)
   tmp_file_path = tmp_file.name
   try:
     with tmp_file:
@@ -102,7 +104,7 @@ def download_experimental_model(
     click.ClickException: If the download fails.
   """
   url = f"https://dl.google.com/litert-lm/experimental/{urllib.parse.quote(model_id)}/model.litertlm"
-  click.echo(f"Downloading experimental model from {url}...")
+  click.echo(f"Downloading experimental model {model_id!r}...")
 
   req = urllib.request.Request(url, headers={"User-Agent": user_agent})
 
