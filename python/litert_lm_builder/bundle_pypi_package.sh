@@ -28,19 +28,19 @@ WHEEL_DIR="${BAZEL_BIN}/python/litert_lm_builder"
 rm -rf "${WHEEL_DIR}"
 
 echo "Building wheel using Bazelisk..."
-bazelisk build //python/litert_lm_builder:wheel
+bazelisk build //python/litert_lm_builder:wheel "$@"
 
 # --- Testing / Verification Steps ---
 echo "Setting up temporary virtual environment for verification..."
 TEST_VENV="${WORKSPACE_ROOT}/python/litert_lm_builder/test_venv"
 rm -rf "${TEST_VENV}"
-python3 -m venv "${TEST_VENV}"
+uv venv --python=3.10 "${TEST_VENV}"
 
 # Activate venv and install the wheel
 source "${TEST_VENV}/bin/activate"
 
 echo "Installing the built wheel directly from bazel-bin..."
-pip install --index-url https://pypi.org/simple "${WHEEL_DIR}"/*.whl
+uv pip install --index-url https://pypi.org/simple "${WHEEL_DIR}"/*.whl
 
 echo "Verifying CLI tools..."
 litert-lm-builder --help
