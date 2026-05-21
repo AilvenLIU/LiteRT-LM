@@ -18,6 +18,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <random>
@@ -1795,11 +1796,15 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
     if (advanced_settings.has_value() &&
         advanced_settings->enable_speculative_decoding) {
       RET_CHECK_NE(embedding_lookup, nullptr);
-      RET_CHECK_NE(per_layer_embedding_lookup, nullptr);
+      std::optional<std::reference_wrapper<EmbeddingLookupManager>>
+          ple_manager_opt;
+      if (per_layer_embedding_lookup) {
+        ple_manager_opt = std::ref(*per_layer_embedding_lookup);
+      }
       ASSIGN_OR_RETURN(mtp_drafter, LlmLiteRtMtpDrafter::Create(
                                         lrt_env, resources, executor_settings,
                                         *compiled_model, *embedding_lookup,
-                                        *per_layer_embedding_lookup));
+                                        ple_manager_opt));
     }
   }
 
