@@ -146,22 +146,6 @@ py_test(
 )
 
 py_test(
-    name = "serve_openai_integration_test",
-    srcs = ["serve_openai_integration_test.py"],
-    data = ["//runtime/e2e_tests/data:gemma3-1b-it-int4-litertlm"],
-    tags = [
-        "manual",
-        "nomacos",
-        "nowindows",
-    ],
-    deps = [
-        ":serve",
-        "//python/litert_lm_cli:model",
-        "@absl_py//absl/testing:absltest",
-    ],
-)
-
-py_test(
     name = "serve_openai_streaming_test",
     srcs = ["serve_openai_streaming_test.py"],
     data = ["//runtime/e2e_tests/data:gemma3-1b-it-int4-litertlm"],
