@@ -22,12 +22,14 @@ https://developers.openai.com/api/reference/resources/chat/subresources/completi
 from __future__ import annotations
 
 import abc
+import base64
 import dataclasses
 import datetime
 import http.server
 import json
 import traceback
 from typing import Any
+import urllib.request
 
 import click
 
@@ -50,6 +52,28 @@ def _sse_data(data: str, event: str | None = None) -> bytes:
 def _format_sse_final() -> bytes:
   """Formats the final [DONE] event for Server-Sent Events."""
   return b"data: [DONE]\n\n"
+
+
+def _parse_sampler_config(
+    body: dict[str, Any],
+) -> litert_lm.SamplerConfig | None:
+  """Parses and validates sampler parameters from the request body."""
+  temperature = body.get("temperature")
+  top_p = body.get("top_p")
+  # Note: 'top_k' is not officially supported by the OpenAI API spec,
+  # but we support it here as a custom parameter passed in the request body.
+  top_k = body.get("top_k")
+  seed = body.get("seed")
+
+  if all(v is None for v in (temperature, top_p, top_k, seed)):
+    return None
+
+  return litert_lm.SamplerConfig(
+      temperature=temperature,
+      top_p=top_p,
+      top_k=top_k,
+      seed=seed,
+  )
 
 
 class _OpenAIStreamFormatter(abc.ABC):
@@ -216,6 +240,123 @@ class OpenAIResponse:
 
   id: str
   output: list[ResponseOutput]
+
+
+def _translate_openai_message(msg: Any) -> dict[str, Any]:
+  """Translates an OpenAI message to a LiteRT-LM message format.
+
+  This function takes a message dictionary, typically from an OpenAI Chat
+  Completions request, and transforms its content to a format understood
+  by LiteRT-LM's `send_message_async`. Specifically, it handles multimodal
+  inputs like image URLs and audio data.
+
+  The input `msg` is expected to be a dictionary with at least a "role" and
+  potentially a "content" field. The "content" field can be a string or
+  a list of content parts. This function focuses on translating list-based
+  content parts.
+
+  Supported translations for `msg["content"]` items:
+  -   `{"type": "text", "text": ...}`: Passed through as is.
+  -   `{"type": "image_url", "image_url": {"url": "..."}}`:
+      -   If `url` starts with "data:", it's assumed to be a base64 encoded
+          image and translated to `{"type": "image", "blob": <base64_data>}`.
+      -   If `url` starts with "http://" or "https://", the image is fetched,
+          base64 encoded, and translated to
+          `{"type": "image", "blob": <base64_data>}`.
+      -   If `url` starts with "file://", it's translated to
+          `{"type": "image", "path": <local_path>}`.
+      -   Other URLs are treated as local paths.
+  -   `{"type": "input_audio", "input_audio": {"data": "..."}}`:
+      Translated to `{"type": "audio", "blob": <base64_data>}`.
+  -   Other content part types are passed through without modification.
+
+  Args:
+    msg: The message object, expected to be a dictionary.
+
+  Returns:
+    A dictionary representing the message in a LiteRT-LM compatible format,
+    with multimodal content (like images/audio) transformed.
+
+  Raises:
+    ValueError: If `msg` is not a dictionary, or if an unsupported data URL
+      format is provided for an image, or if a data URL is invalid.
+    RuntimeError: If an error occurs while downloading an image from a URL.
+  """
+  if not isinstance(msg, dict):
+    raise ValueError("Message must be an object")
+
+  role = msg.get("role")
+  content = msg.get("content")
+
+  if not isinstance(content, list):
+    return msg
+
+  translated_content = []
+  for part in content:
+    if not isinstance(part, dict):
+      translated_content.append(part)
+      continue
+
+    part_type = part.get("type")
+    if part_type == "text":
+      translated_content.append(part)
+    elif part_type == "image_url":
+      image_url = part.get("image_url", {})
+      url = image_url.get("url", "")
+      if url.startswith("data:"):
+        try:
+          header, data = url.split(",", 1)
+          if "base64" in header:
+            translated_content.append({
+                "type": "image",
+                "blob": data,
+            })
+          else:
+            raise ValueError(
+                "Unsupported data URL format (only base64 is supported)"
+            )
+        except ValueError as e:
+          if "Unsupported data URL format" in str(e):
+            raise
+          raise ValueError("Invalid data URL format") from e
+      elif url.startswith(("http://", "https://")):
+        try:
+          with urllib.request.urlopen(url, timeout=10) as response:
+            data = response.read()
+            base64_data = base64.b64encode(data).decode("utf-8")
+            translated_content.append({
+                "type": "image",
+                "blob": base64_data,
+            })
+        except Exception as e:
+          raise RuntimeError(
+              f"Failed to download image from {url}: {e!r}"
+          ) from e
+      else:
+        path = url
+        if path.startswith("file://"):
+          path = path[7:]
+        translated_content.append({
+            "type": "image",
+            "path": path,
+        })
+    elif part_type == "input_audio":
+      # The OpenAI Chat Completions API protocol only supports audio input
+      # inline via base64-encoded bytes in the 'data' field (no URL-based
+      # audio).
+      input_audio = part.get("input_audio", {})
+      data = input_audio.get("data", "")
+      translated_content.append({
+          "type": "audio",
+          "blob": data,
+      })
+    else:
+      translated_content.append(part)
+
+  return {
+      "role": role,
+      "content": translated_content,
+  }
 
 
 class OpenAIHandler(http.server.BaseHTTPRequestHandler):
@@ -446,8 +587,14 @@ class OpenAIHandler(http.server.BaseHTTPRequestHandler):
 
     model_spec = body.get("model")
     messages = body.get("messages")
+    translated_messages = []
     if isinstance(messages, list) and messages:
-      last_msg = messages[-1]
+      try:
+        translated_messages = [_translate_openai_message(m) for m in messages]
+      except ValueError as e:
+        self.send_error(400, f"Invalid messages: {e}")
+        return
+      last_msg = translated_messages[-1]
       prompt = last_msg if isinstance(last_msg, dict) else body.get("input")
     else:
       prompt = body.get("input")
@@ -463,6 +610,27 @@ class OpenAIHandler(http.server.BaseHTTPRequestHandler):
       self.send_error(400, "".join(traceback.format_exception_only(e)))
       return
 
+    need_vision = False
+    need_audio = False
+    if translated_messages:
+      for msg in translated_messages:
+        if isinstance(msg, dict):
+          content = msg.get("content")
+          if isinstance(content, list):
+            for part in content:
+              if isinstance(part, dict):
+                part_type = part.get("type")
+                if part_type == "image":
+                  need_vision = True
+                elif part_type == "audio":
+                  need_audio = True
+        if need_vision and need_audio:
+          break
+
+    # TODO: b/515805503 - Make the backend customizable..
+    vision_backend = litert_lm.Backend.CPU() if need_vision else None
+    audio_backend = litert_lm.Backend.CPU() if need_audio else None
+
     try:
       assert isinstance(self.server, serve_util.LiteRTLMServer)
       engine = serve_util.get_or_initialize_server_engine(
@@ -470,6 +638,8 @@ class OpenAIHandler(http.server.BaseHTTPRequestHandler):
           model_id=model_id,
           backend=spec.backend,
           max_num_tokens=spec.max_num_tokens,
+          vision_backend=vision_backend,
+          audio_backend=audio_backend,
       )
     except FileNotFoundError as e:
       self.send_error(404, "".join(traceback.format_exception_only(e)))
@@ -480,15 +650,28 @@ class OpenAIHandler(http.server.BaseHTTPRequestHandler):
 
     stream = body.get("stream", False)
 
+    sampler_config = None
+    if is_chat_completions:
+      try:
+        sampler_config = _parse_sampler_config(body)
+      except ValueError as e:
+        self.send_error(
+            400,
+            "Invalid sampler parameters: "
+            + "".join(traceback.format_exception_only(e)),
+        )
+        return
+
     try:
       context_messages = (
-          messages[:-1]
-          if is_chat_completions and isinstance(messages, list)
+          translated_messages[:-1]
+          if is_chat_completions and translated_messages
           else []
       )
       with engine.create_conversation(
           messages=context_messages,
           automatic_tool_calling=False,
+          sampler_config=sampler_config,
       ) as conv:
         now = datetime.datetime.now(datetime.timezone.utc)
         now_str = now.strftime("%Y%m%d%H%M%S%f")
