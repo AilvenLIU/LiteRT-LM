@@ -52,6 +52,28 @@ def _format_sse_final() -> bytes:
   return b"data: [DONE]\n\n"
 
 
+def _parse_sampler_config(
+    body: dict[str, Any],
+) -> litert_lm.SamplerConfig | None:
+  """Parses and validates sampler parameters from the request body."""
+  temperature = body.get("temperature")
+  top_p = body.get("top_p")
+  # Note: 'top_k' is not officially supported by the OpenAI API spec,
+  # but we support it here as a custom parameter passed in the request body.
+  top_k = body.get("top_k")
+  seed = body.get("seed")
+
+  if all(v is None for v in (temperature, top_p, top_k, seed)):
+    return None
+
+  return litert_lm.SamplerConfig(
+      temperature=temperature,
+      top_p=top_p,
+      top_k=top_k,
+      seed=seed,
+  )
+
+
 class _OpenAIStreamFormatter(abc.ABC):
   """A formatter for OpenAI API compatible Server-Sent Events."""
 
@@ -480,6 +502,18 @@ class OpenAIHandler(http.server.BaseHTTPRequestHandler):
 
     stream = body.get("stream", False)
 
+    sampler_config = None
+    if is_chat_completions:
+      try:
+        sampler_config = _parse_sampler_config(body)
+      except ValueError as e:
+        self.send_error(
+            400,
+            "Invalid sampler parameters: "
+            + "".join(traceback.format_exception_only(e)),
+        )
+        return
+
     try:
       context_messages = (
           messages[:-1]
@@ -489,6 +523,7 @@ class OpenAIHandler(http.server.BaseHTTPRequestHandler):
       with engine.create_conversation(
           messages=context_messages,
           automatic_tool_calling=False,
+          sampler_config=sampler_config,
       ) as conv:
         now = datetime.datetime.now(datetime.timezone.utc)
         now_str = now.strftime("%Y%m%d%H%M%S%f")
