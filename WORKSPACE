@@ -2,14 +2,14 @@
 
 workspace(name = "litert_lm")
 
-# UPDATED = 2026-05-14
-LITERT_REF = "d865fd82cd7fe6752908b3a0836895461c305679"
+# UPDATED = 2026-05-22
+LITERT_REF = "b677704fe851d4133ef6b48d7d9bff79bc79c3b3"
 
-LITERT_SHA256 = "5c1568c2374aad0e334abd57c41e3974ec0877c0902eb470d694ef0018e01918"
+LITERT_SHA256 = "4ae1e9a3ecb2a0b111d55664d84dcb41111e15fa8e3d1c482de4e2cfdf890987"
 
-TENSORFLOW_REF = "49e7f1937d1509dd7fea41bff9ccc994baa97258"
+TENSORFLOW_REF = "1e026c0609761e210da8fabfcd9907a172de3474"
 
-TENSORFLOW_SHA256 = "977114079cda0d6aa9d05bc73ae2c2e3d36705fbb041e631a564e4d42e1e1dd9"
+TENSORFLOW_SHA256 = "8ad9e7b274210939250c9188ee4f5f2c200306af762859012ceec26bfa499d07"
 
 # buildifier: disable=load-on-top
 
@@ -536,4 +536,3 @@ filegroup(
     sha256 = "ae13e2effe077e829be759182396b931d8f85cfb9cfe9d49385516ea367ef7b2",
     url = "https://github.com/NixOS/patchelf/releases/download/0.18.0/patchelf-0.18.0-aarch64.tar.gz",
 )
-
