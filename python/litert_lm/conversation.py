@@ -243,3 +243,8 @@ class Conversation(interfaces.AbstractConversation):
   def cancel_process(self) -> None:
     if self._ptr:
       self._lib.litert_lm_conversation_cancel_process(self._ptr)
+
+  def get_tokens_count(self) -> int:
+    if not self._ptr:
+      raise RuntimeError("Conversation is closed.")
+    return self._lib.litert_lm_conversation_get_tokens_count(self._ptr)

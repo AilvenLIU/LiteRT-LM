@@ -796,6 +796,13 @@ LITERT_LM_C_API_EXPORT
 LiteRtLmBenchmarkInfo* litert_lm_conversation_get_benchmark_info(
     LiteRtLmConversation* conversation);
 
+// Gets the number of tokens in the conversation KV Cache (prefill + decode).
+//
+// @param conversation The conversation instance.
+// @return The number of tokens, or a negative value on failure.
+LITERT_LM_C_API_EXPORT
+int litert_lm_conversation_get_tokens_count(LiteRtLmConversation* conversation);
+
 // Tokenizes text using the engine's tokenizer.
 //
 // @param engine The engine instance.

@@ -395,6 +395,10 @@ class AbstractConversation(abc.ABC):
         The rendered string.
     """
 
+  @abc.abstractmethod
+  def get_tokens_count(self) -> int:
+    """Gets the number of tokens in the KV Cache (prefill + decode)."""
+
   def cancel_process(self) -> None:
     """Cancels the current inference process."""
 
