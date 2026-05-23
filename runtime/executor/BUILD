@@ -1208,3 +1208,23 @@ cc_test(
         ],
     }),
 )
+
+cc_test(
+    name = "audio_executor_utils_test",
+    srcs = ["audio_executor_utils_test.cc"],
+    data = ["//runtime/testdata"],
+    deps = [
+        ":audio_executor_utils",
+        ":executor_settings_base",
+        ":litert_compiled_model_executor_utils",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+        "@litert//litert/cc:litert_model",
+        "//runtime/components:model_resources",
+        "//runtime/components:tokenizer",
+        "//runtime/util:scoped_file",
+        "//runtime/util:test_utils",
+    ],
+)
