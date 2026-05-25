@@ -270,14 +270,14 @@ absl::Status LitertLmLoader::Initialize() {
 std::optional<litert::BufferRef<uint8_t>> LitertLmLoader::GetSectionBuffer(
     BufferKey buffer_key) {
   {
-    absl::ReaderMutexLock lock(&section_buffers_mutex_);
+    absl::ReaderMutexLock lock(section_buffers_mutex_);
     auto section_buffer_it = section_buffers_.find(buffer_key);
     if (section_buffer_it != section_buffers_.end()) {
       return section_buffer_it->second;
     }
   }
 
-  absl::MutexLock lock(&section_buffers_mutex_);
+  absl::MutexLock lock(section_buffers_mutex_);
   // Check again in case another thread has mapped it.
   auto section_buffer_it = section_buffers_.find(buffer_key);
   if (section_buffer_it != section_buffers_.end()) {
