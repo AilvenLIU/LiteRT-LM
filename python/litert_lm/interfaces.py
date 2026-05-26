@@ -20,6 +20,7 @@ import abc
 import collections.abc
 import dataclasses
 from importlib import resources
+import json
 import logging
 import os
 import sys
@@ -405,6 +406,7 @@ class AbstractEngine(abc.ABC):
       lora_config: LoraConfig | None = None,
       max_output_tokens: int | None = None,
       chat_template: str | None = None,
+      enable_response_format: bool = False,
   ) -> AbstractConversation:
     """Creates a new conversation for this engine.
 
@@ -427,6 +429,8 @@ class AbstractEngine(abc.ABC):
         max_output_tokens: The maximum number of output tokens.
         chat_template: The Jinja chat template content to use for formatting. If
           not set, use the default provided by the model or the engine.
+        enable_response_format: Whether to enable response format (constrained
+          decoding). If True, initializes the constraint provider LLGuidance.
     """
 
   @abc.abstractmethod
@@ -467,6 +471,47 @@ class AbstractEngine(abc.ABC):
   @abc.abstractmethod
   def detokenize(self, token_ids: list[int]) -> str:
     """Decodes token ids using the engine's tokenizer."""
+
+
+@dataclasses.dataclass
+class ResponseFormat:
+  """Response format for constrained decoding.
+
+  Currently supports JSON Schema and Regex.
+  """
+
+  class Type:
+    NONE = 0
+    REGEX = 1
+    JSON_OBJECT = 2
+
+  type: int
+  schema_or_pattern: str
+
+  @classmethod
+  def json(cls, schema: dict[str, Any] | str) -> ResponseFormat:
+    """Creates a JSON Schema response format.
+
+    Args:
+      schema: The JSON schema as a dictionary or a JSON string.
+    """
+    if isinstance(schema, dict):
+      schema = json.dumps(schema)
+    elif isinstance(schema, str):
+      try:
+        json.loads(schema)
+      except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON schema string: {e}") from e
+    return cls(type=cls.Type.JSON_OBJECT, schema_or_pattern=schema)
+
+  @classmethod
+  def regex(cls, pattern: str) -> ResponseFormat:
+    """Creates a Regex response format.
+
+    Args:
+      pattern: The regex pattern string.
+    """
+    return cls(type=cls.Type.REGEX, schema_or_pattern=pattern)
 
 
 class AbstractConversation(abc.ABC):
@@ -553,6 +598,7 @@ class AbstractConversation(abc.ABC):
       suppress_tokens_config: SuppressTokensConfig | None = None,
       max_output_tokens: int | None = None,
       thinking_config: ThinkingConfig | None = None,
+      response_format: ResponseFormat | None = None,
   ) -> collections.abc.Mapping[str, Any]:
     """Sends a message and returns the response.
 
@@ -569,6 +615,8 @@ class AbstractConversation(abc.ABC):
         suppress_tokens_config: Configuration for suppressing specific tokens.
         max_output_tokens: The maximum number of output tokens.
         thinking_config: Configuration for thinking/reasoning generation.
+        response_format: The expected format of the response. If provided, the
+          response will be constrained to this format.
 
     Returns:
         A dictionary containing the model's response. The structure is:
@@ -585,6 +633,7 @@ class AbstractConversation(abc.ABC):
       suppress_tokens_config: SuppressTokensConfig | None = None,
       max_output_tokens: int | None = None,
       thinking_config: ThinkingConfig | None = None,
+      response_format: ResponseFormat | None = None,
   ) -> collections.abc.Iterator[collections.abc.Mapping[str, Any]]:
     """Sends a message and streams the response.
 
@@ -601,6 +650,8 @@ class AbstractConversation(abc.ABC):
         suppress_tokens_config: Configuration for suppressing specific tokens.
         max_output_tokens: The maximum number of output tokens.
         thinking_config: Configuration for thinking/reasoning generation.
+        response_format: The expected format of the response. If provided, the
+          response will be constrained to this format.
 
     Returns:
         An iterator yielding dictionaries containing chunks of the model's

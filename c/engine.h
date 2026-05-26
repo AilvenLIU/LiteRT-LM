@@ -161,6 +161,18 @@ LITERT_LM_C_API_EXPORT
 void litert_lm_sampler_params_set_seed(LiteRtLmSamplerParams* params,
                                        int32_t seed);
 
+// Represents the type of constraint for constrained decoding.
+typedef enum {
+  kLiteRtLmConstraintTypeNone = 0,
+  kLiteRtLmConstraintTypeRegex = 1,
+  kLiteRtLmConstraintTypeJsonSchema = 2,
+} LiteRtLmConstraintType;
+
+// Represents the type of constraint provider.
+typedef enum {
+  kLiteRtLmConstraintProviderTypeLlGuidance = 1,
+} LiteRtLmConstraintProviderType;
+
 // Creates a LiteRT LM Session Config.
 // The caller is responsible for destroying the config using
 // `litert_lm_session_config_delete`.
@@ -268,6 +280,14 @@ void litert_lm_conversation_config_set_prompt_template(
 LITERT_LM_C_API_EXPORT
 void litert_lm_conversation_config_set_enable_constrained_decoding(
     LiteRtLmConversationConfig* config, bool enable_constrained_decoding);
+
+// Sets the constraint provider type for this conversation config.
+// @param config The config to modify.
+// @param provider_type The constraint provider type to use, or NULL to unset.
+LITERT_LM_C_API_EXPORT
+void litert_lm_conversation_config_set_constraint_provider(
+    LiteRtLmConversationConfig* config,
+    const LiteRtLmConstraintProviderType* provider_type);
 
 // Sets whether to filter channel content from the KV cache.
 // @param config The config to modify.
@@ -565,6 +585,14 @@ void litert_lm_conversation_optional_args_set_thinking_config(
     LiteRtLmConversationOptionalArgs* optional_args,
     const LiteRtLmThinkingConfig* thinking_config);
 
+// Sets the constraint for the conversation optional args.
+// @param optional_args The optional args to modify.
+// @param constraint_type The type of constraint.
+// @param constraint_string The constraint pattern/schema/grammar string.
+LITERT_LM_C_API_EXPORT
+void litert_lm_conversation_optional_args_set_constraint(
+    LiteRtLmConversationOptionalArgs* optional_args,
+    LiteRtLmConstraintType constraint_type, const char* constraint_string);
 // Represents the log severity / level.
 typedef enum {
   kLiteRtLmLogSeverityVerbose = 0,

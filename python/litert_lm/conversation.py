@@ -23,6 +23,7 @@ import queue
 from typing import Any
 
 from . import interfaces
+from ._ffi import LiteRtLmConstraintType
 from ._ffi import STREAM_CALLBACK_TYPE
 from ._messages import Contents
 from ._messages import Message
@@ -49,6 +50,7 @@ class Conversation(interfaces.AbstractConversation):
       lora_config=None,
       max_output_tokens=None,
       chat_template=None,
+      enable_response_format=False,
   ):
     super().__init__(
         messages=messages,
@@ -66,6 +68,7 @@ class Conversation(interfaces.AbstractConversation):
     self._ptr = conv_ptr
     self._engine = engine  # Keep engine alive
     self._tools_map = tools_map or {}
+    self.enable_response_format = enable_response_format
     # Keep the active ctypes callback alive to prevent SIGSEGV if the C++ thread
     # calls it after the local variable is garbage collected during
     # cancellation.
@@ -127,13 +130,38 @@ class Conversation(interfaces.AbstractConversation):
 
     return tool_responses
 
+  def _resolve_response_format(
+      self,
+      current_message: Any,
+      response_format: interfaces.ResponseFormat | None,
+  ) -> interfaces.ResponseFormat | None:
+    is_tool_response = (
+        isinstance(current_message, list)
+        and len(current_message) > 0
+        and isinstance(current_message[0], collections.abc.Mapping)
+        and current_message[0].get("role") == "tool"
+    ) or (
+        isinstance(current_message, collections.abc.Mapping)
+        and current_message.get("role") == "tool"
+    )
+    if self.automatic_tool_calling and self._tools_map and not is_tool_response:
+      return None
+    return response_format
+
   def _create_optional_args(
       self,
-      repetition_penalty_config: interfaces.RepetitionPenaltyConfig | None,
-      no_repeat_ngram_config: interfaces.NoRepeatNgramConfig | None,
-      suppress_tokens_config: interfaces.SuppressTokensConfig | None,
-      max_output_tokens: int | None,
-      thinking_config: interfaces.ThinkingConfig | None,
+      repetition_penalty_config: (
+          interfaces.RepetitionPenaltyConfig | None
+      ) = None,
+      no_repeat_ngram_config: interfaces.NoRepeatNgramConfig | None = None,
+      suppress_tokens_config: interfaces.SuppressTokensConfig | None = None,
+      max_output_tokens: int | None = None,
+      thinking_config: interfaces.ThinkingConfig | None = None,
+      current_message: (
+          collections.abc.Mapping[str, Any]
+          | list[collections.abc.Mapping[str, Any]]
+      ) | None = None,
+      response_format: interfaces.ResponseFormat | None = None,
   ) -> ctypes.c_void_p | None:
     """Creates a C pointer for ConversationOptionalArgs if needed."""
     if (
@@ -142,9 +170,13 @@ class Conversation(interfaces.AbstractConversation):
         and suppress_tokens_config is None
         and max_output_tokens is None
         and thinking_config is None
+        and not response_format
     ):
       return None
-    ptr = self._lib.litert_lm_conversation_optional_args_create()
+    optional_args_ptr = self._lib.litert_lm_conversation_optional_args_create()
+    if not optional_args_ptr:
+      raise RuntimeError("Failed to create optional args")
+
     try:
       if repetition_penalty_config is not None:
         rpp_ptr = self._lib.litert_lm_repetition_penalty_config_create()
@@ -166,7 +198,7 @@ class Conversation(interfaces.AbstractConversation):
                 rpp_ptr, repetition_penalty_config.window_size
             )
           self._lib.litert_lm_conversation_optional_args_set_repetition_penalty_config(
-              ptr, rpp_ptr
+              optional_args_ptr, rpp_ptr
           )
         finally:
           if rpp_ptr:
@@ -183,7 +215,7 @@ class Conversation(interfaces.AbstractConversation):
                 nrn_ptr, no_repeat_ngram_config.window_size
             )
           self._lib.litert_lm_conversation_optional_args_set_no_repeat_ngram_config(
-              ptr, nrn_ptr
+              optional_args_ptr, nrn_ptr
           )
         finally:
           if nrn_ptr:
@@ -198,28 +230,37 @@ class Conversation(interfaces.AbstractConversation):
                 st_ptr, tokens_array, len(tokens_list)
             )
           self._lib.litert_lm_conversation_optional_args_set_suppress_tokens_config(
-              ptr, st_ptr
+              optional_args_ptr, st_ptr
           )
         finally:
           if st_ptr:
             self._lib.litert_lm_suppress_tokens_config_delete(st_ptr)
       if max_output_tokens is not None:
         self._lib.litert_lm_conversation_optional_args_set_max_output_tokens(
-            ptr, max_output_tokens
+            optional_args_ptr, max_output_tokens
         )
       if thinking_config is not None:
         tc_ptr = thinking_config_to_params(self._lib, thinking_config)
         try:
           self._lib.litert_lm_conversation_optional_args_set_thinking_config(
-              ptr, tc_ptr
+              optional_args_ptr, tc_ptr
           )
         finally:
           if tc_ptr:
             self._lib.litert_lm_thinking_config_delete(tc_ptr)
-      return ptr
-    except Exception:
-      self._lib.litert_lm_conversation_optional_args_delete(ptr)
-      raise
+      if response_format:
+        c_type = LiteRtLmConstraintType.NONE
+        if response_format.type == interfaces.ResponseFormat.Type.REGEX:
+          c_type = LiteRtLmConstraintType.REGEX
+        elif response_format.type == interfaces.ResponseFormat.Type.JSON_OBJECT:
+          c_type = LiteRtLmConstraintType.JSON_SCHEMA
+        self._lib.litert_lm_conversation_optional_args_set_constraint(
+            optional_args_ptr, c_type, response_format.schema_or_pattern
+        )
+      return optional_args_ptr
+    except Exception as e:
+      self._lib.litert_lm_conversation_optional_args_delete(optional_args_ptr)
+      raise e
 
   def _delete_optional_args(self, ptr: ctypes.c_void_p | None) -> None:
     """Deletes the ConversationOptionalArgs C pointer."""
@@ -238,8 +279,14 @@ class Conversation(interfaces.AbstractConversation):
       suppress_tokens_config: interfaces.SuppressTokensConfig | None = None,
       max_output_tokens: int | None = None,
       thinking_config: interfaces.ThinkingConfig | None = None,
+      response_format: interfaces.ResponseFormat | None = None,
   ) -> collections.abc.Mapping[str, Any]:
     """See base class."""
+    if response_format and not self.enable_response_format:
+      raise ValueError(
+          "response_format cannot be used unless enable_response_format=True "
+          "was passed to create_conversation."
+      )
     if not self._ptr:
       raise RuntimeError("Conversation is closed.")
     current_message = normalize_message(message)
@@ -248,12 +295,18 @@ class Conversation(interfaces.AbstractConversation):
       msg_json = json.dumps(current_message)
       ctx_json = json.dumps(getattr(self, "extra_context", {}))
 
+      active_response_format = self._resolve_response_format(
+          current_message, response_format
+      )
+
       optional_args_ptr = self._create_optional_args(
-          repetition_penalty_config,
-          no_repeat_ngram_config,
-          suppress_tokens_config,
-          max_output_tokens,
-          thinking_config,
+          repetition_penalty_config=repetition_penalty_config,
+          no_repeat_ngram_config=no_repeat_ngram_config,
+          suppress_tokens_config=suppress_tokens_config,
+          max_output_tokens=max_output_tokens,
+          thinking_config=thinking_config,
+          current_message=current_message,
+          response_format=active_response_format,
       )
       try:
         resp_ptr = self._lib.litert_lm_conversation_send_message(
@@ -295,8 +348,14 @@ class Conversation(interfaces.AbstractConversation):
       suppress_tokens_config: interfaces.SuppressTokensConfig | None = None,
       max_output_tokens: int | None = None,
       thinking_config: interfaces.ThinkingConfig | None = None,
+      response_format: interfaces.ResponseFormat | None = None,
   ) -> collections.abc.Iterator[collections.abc.Mapping[str, Any]]:
     """See base class."""
+    if response_format and not self.enable_response_format:
+      raise ValueError(
+          "response_format cannot be used unless enable_response_format=True "
+          "was passed to create_conversation."
+      )
     if not self._ptr:
       raise RuntimeError("Conversation is closed.")
     current_message = normalize_message(message)
@@ -319,12 +378,18 @@ class Conversation(interfaces.AbstractConversation):
       c_callback = STREAM_CALLBACK_TYPE(callback)
       self._current_callback = c_callback
 
+      active_response_format = self._resolve_response_format(
+          current_message, response_format
+      )
+
       optional_args_ptr = self._create_optional_args(
-          repetition_penalty_config,
-          no_repeat_ngram_config,
-          suppress_tokens_config,
-          max_output_tokens,
-          thinking_config,
+          repetition_penalty_config=repetition_penalty_config,
+          no_repeat_ngram_config=no_repeat_ngram_config,
+          suppress_tokens_config=suppress_tokens_config,
+          max_output_tokens=max_output_tokens,
+          thinking_config=thinking_config,
+          current_message=current_message,
+          response_format=active_response_format,
       )
       try:
         res = self._lib.litert_lm_conversation_send_message_stream(

@@ -35,6 +35,7 @@ from .interfaces import LoraConfig
 from .interfaces import LoraRankConfig
 from .interfaces import NoRepeatNgramConfig
 from .interfaces import RepetitionPenaltyConfig
+from .interfaces import ResponseFormat
 from .interfaces import Responses
 from .interfaces import SamplerConfig
 from .interfaces import SuppressTokensConfig
@@ -63,6 +64,7 @@ __all__ = (
     "Message",
     "NoRepeatNgramConfig",
     "RepetitionPenaltyConfig",
+    "ResponseFormat",
     "Responses",
     "Role",
     "SamplerConfig",

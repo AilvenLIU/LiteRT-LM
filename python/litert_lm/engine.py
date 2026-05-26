@@ -25,6 +25,7 @@ from . import interfaces
 from . import tools as litert_tools
 from ._ffi import _get_lib
 from ._ffi import ActivationDataType
+from ._ffi import LiteRtLmConstraintProviderType
 from ._messages import Message
 from .conversation import Conversation
 from .session import Session
@@ -228,6 +229,7 @@ class Engine(interfaces.AbstractEngine):
       lora_config: interfaces.LoraConfig | None = None,
       max_output_tokens: int | None = None,
       chat_template: str | None = None,
+      enable_response_format: bool = False,
   ) -> Conversation:
     session_config = self._lib.litert_lm_session_config_create()
     if sampler_config:
@@ -336,6 +338,14 @@ class Engine(interfaces.AbstractEngine):
           if tc_ptr:
             self._lib.litert_lm_thinking_config_delete(tc_ptr)
 
+      if enable_response_format:
+        self._lib.litert_lm_conversation_config_set_constraint_provider(
+            conv_config,
+            ctypes.byref(
+                ctypes.c_int(LiteRtLmConstraintProviderType.LL_GUIDANCE)
+            ),
+        )
+
       conv_ptr = self._lib.litert_lm_conversation_create(
           self._engine_ptr, conv_config
       )
@@ -360,6 +370,7 @@ class Engine(interfaces.AbstractEngine):
         lora_config=lora_config,
         max_output_tokens=max_output_tokens,
         chat_template=chat_template,
+        enable_response_format=enable_response_format,
     )
 
   def create_session(

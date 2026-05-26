@@ -35,6 +35,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "nlohmann/json.hpp"  // from @nlohmann_json
+#include "runtime/components/logits_processor/constrained_decoding/llg_constraint_config.h"
 #include "runtime/components/logits_processor/no_repeat_ngram_config.h"
 #include "runtime/components/logits_processor/repetition_penalty_config.h"
 #include "runtime/components/logits_processor/suppress_tokens_config.h"
@@ -94,6 +95,8 @@ struct LiteRtLmConversationOptionalArgs {
   std::optional<int> visual_token_budget;
   std::optional<int> max_output_tokens;
   std::optional<litert::lm::ThinkingConfig> thinking_config;
+  LiteRtLmConstraintType constraint_type = kLiteRtLmConstraintTypeNone;
+  std::string constraint_string;
 };
 
 namespace {
@@ -216,6 +219,21 @@ litert::lm::OptionalArgs CreateOptionalArgs(
     if (optional_args->max_output_tokens.has_value()) {
       litert_lm_optional_args.max_output_tokens =
           optional_args->max_output_tokens;
+    }
+    if (optional_args->constraint_type != kLiteRtLmConstraintTypeNone) {
+      litert::lm::LlGuidanceConstraintArg constraint_arg;
+      if (optional_args->constraint_type == kLiteRtLmConstraintTypeRegex) {
+        constraint_arg.constraint_type = litert::lm::LlgConstraintType::kRegex;
+      } else if (optional_args->constraint_type ==
+                 kLiteRtLmConstraintTypeJsonSchema) {
+        constraint_arg.constraint_type =
+            litert::lm::LlgConstraintType::kJsonSchema;
+      } else {
+        ABSL_LOG(ERROR) << "Unknown constraint type: "
+                        << optional_args->constraint_type;
+      }
+      constraint_arg.constraint_string = optional_args->constraint_string;
+      litert_lm_optional_args.decoding_constraint = constraint_arg;
     }
     if (optional_args->thinking_config.has_value()) {
       litert_lm_optional_args.thinking_config = *optional_args->thinking_config;
@@ -386,6 +404,7 @@ struct LiteRtLmConversationConfig {
   bool stream_tool_calls = false;
   std::string stream_tool_calls_channel_name = "tool_call";
   std::optional<litert::lm::ThinkingConfig> thinking_config;
+  std::optional<LiteRtLmConstraintProviderType> constraint_provider_type;
 };
 
 struct LiteRtLmDetokenizeResult {
@@ -594,6 +613,20 @@ void litert_lm_conversation_config_set_enable_constrained_decoding(
     LiteRtLmConversationConfig* config, bool enable_constrained_decoding) {
   if (config) {
     config->enable_constrained_decoding = enable_constrained_decoding;
+  }
+}
+
+void litert_lm_conversation_config_set_constraint_provider(
+    LiteRtLmConversationConfig* config,
+    const LiteRtLmConstraintProviderType* provider_type) {
+  if (config) {
+    if (provider_type != nullptr) {
+      config->constraint_provider_type = *provider_type;
+      config->enable_constrained_decoding = true;
+    } else {
+      config->constraint_provider_type = std::nullopt;
+      config->enable_constrained_decoding = false;
+    }
   }
 }
 
@@ -865,6 +898,18 @@ void litert_lm_conversation_optional_args_set_thinking_config(
   }
 }
 
+void litert_lm_conversation_optional_args_set_constraint(
+    LiteRtLmConversationOptionalArgs* optional_args,
+    LiteRtLmConstraintType constraint_type, const char* constraint_string) {
+  if (optional_args) {
+    optional_args->constraint_type = constraint_type;
+    if (constraint_string) {
+      optional_args->constraint_string = constraint_string;
+    } else {
+      optional_args->constraint_string.clear();
+    }
+  }
+}
 void litert_lm_conversation_optional_args_delete(
     LiteRtLmConversationOptionalArgs* args) {
   delete args;
@@ -1544,6 +1589,13 @@ LiteRtLmConversation* litert_lm_conversation_create(
 
     builder.SetPreface(json_preface);
     builder.SetEnableConstrainedDecoding(c_config->enable_constrained_decoding);
+
+    if (c_config->constraint_provider_type.has_value() &&
+        *c_config->constraint_provider_type ==
+            kLiteRtLmConstraintProviderTypeLlGuidance) {
+      builder.SetConstraintProviderConfig(litert::lm::LlGuidanceConfig());
+    }
+
     builder.SetFilterChannelContentFromKvCache(
         c_config->filter_channel_content_from_kv_cache);
     builder.SetStreamToolCalls(c_config->stream_tool_calls,

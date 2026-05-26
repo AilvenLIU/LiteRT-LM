@@ -782,6 +782,36 @@ class EngineTest(LiteRtLmTestBase):
       ) as session:
         self.assertIsNotNone(session)
 
+  def test_response_format_validation(self):
+    with self.assertRaisesRegex(ValueError, "Invalid JSON schema string"):
+      litert_lm.ResponseFormat.json("{invalid_json: true")
+
+  def test_response_format_without_enabling(self):
+    with (
+        self._create_engine() as engine,
+        engine.create_conversation() as conversation,
+    ):
+      with self.assertRaisesRegex(
+          ValueError,
+          "response_format cannot be used unless enable_response_format=True",
+      ):
+        conversation.send_message(
+            "What is the capital of France?",
+            response_format=litert_lm.ResponseFormat.regex("[0-9]{3}"),
+        )
+
+      with self.assertRaisesRegex(
+          ValueError,
+          "response_format cannot be used unless enable_response_format=True",
+      ):
+        # We must iterate the generator to trigger the exception
+        next(
+            conversation.send_message_async(
+                "What is the capital of France?",
+                response_format=litert_lm.ResponseFormat.regex("[0-9]{3}"),
+            )
+        )
+
 
 class FunctionCallingTest(LiteRtLmTestBase):
 

@@ -85,6 +85,17 @@ class ActivationDataType(enum.IntEnum):
     return mapping.get(val.lower())
 
 
+class LiteRtLmConstraintType(enum.IntEnum):
+  NONE = 0
+  REGEX = 1
+  JSON_SCHEMA = 2
+
+
+class LiteRtLmConstraintProviderType(enum.IntEnum):
+  NONE = 0
+  LL_GUIDANCE = 1
+
+
 _LIB: ctypes.CDLL | None = None
 
 
@@ -343,6 +354,10 @@ def _setup_lib_signatures(lib):
       ctypes.c_void_p,
       ctypes.c_bool,
   ]
+  lib.litert_lm_conversation_config_set_constraint_provider.argtypes = [
+      ctypes.c_void_p,
+      ctypes.POINTER(ctypes.c_int),
+  ]
   lib.litert_lm_conversation_config_set_filter_channel_content_from_kv_cache.argtypes = [
       ctypes.c_void_p,
       ctypes.c_bool,
@@ -465,6 +480,16 @@ def _setup_lib_signatures(lib):
   ]
   lib.litert_lm_conversation_get_token_count.restype = ctypes.c_int
   lib.litert_lm_conversation_get_token_count.argtypes = [ctypes.c_void_p]
+
+  # Conversation Optional Args
+  lib.litert_lm_conversation_optional_args_create.restype = ctypes.c_void_p
+  lib.litert_lm_conversation_optional_args_create.argtypes = []
+  lib.litert_lm_conversation_optional_args_delete.argtypes = [ctypes.c_void_p]
+  lib.litert_lm_conversation_optional_args_set_constraint.argtypes = [
+      ctypes.c_void_p,
+      ctypes.c_int,
+      c_string_p,
+  ]
 
   # interfaces.Responses
   lib.litert_lm_responses_delete.argtypes = [ctypes.c_void_p]
