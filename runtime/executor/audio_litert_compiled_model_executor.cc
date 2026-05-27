@@ -15,6 +15,7 @@
 #include "runtime/executor/audio_litert_compiled_model_executor.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -23,6 +24,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
@@ -31,6 +33,7 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_common.h"  // from @litert
@@ -120,10 +123,11 @@ absl::Status SetCpuOptions(const AudioExecutorSettings& executor_settings,
   return absl::OkStatus();
 }
 
+constexpr std::array<absl::string_view, 3> kAudioInputNames = {
+    "audio", "src_inputs", "segment_values"};
 constexpr absl::string_view kFeaturesName = "features";
 constexpr absl::string_view kMaskName = "mask";
 constexpr absl::string_view kMaskOutName = "mask_out";
-constexpr absl::string_view kSrcInputsName = "src_inputs";
 constexpr absl::string_view kSegmentValuesName = "segment_values";
 constexpr absl::string_view kSegmentMaskName = "segment_mask";
 constexpr absl::string_view kPrevMaskName = "prev_mask";
@@ -139,16 +143,21 @@ absl::StatusOr<std::vector<T>> GetDataAsVector(TensorBuffer& tensor_buffer) {
   return data;
 }
 
-// Returns the first valid token count from the mask tensor.
-absl::StatusOr<int> GetValidCount(const TensorBuffer& mask_buffer) {
-  ASSIGN_OR_RETURN(auto mask, GetDataAsVector<uint8_t>(
-                                  const_cast<TensorBuffer&>(mask_buffer)));
+// Returns the first valid token count from the mask span.
+int GetValidCount(absl::Span<const uint8_t> mask) {
   for (int i = mask.size() - 1; i >= 0; --i) {
     if (mask[i] != 0) {
       return i + 1;
     }
   }
   return 0;
+}
+
+// Returns the first valid token count from the mask tensor.
+absl::StatusOr<int> GetValidCount(const TensorBuffer& mask_buffer) {
+  ASSIGN_OR_RETURN(auto mask, GetDataAsVector<uint8_t>(
+                                  const_cast<TensorBuffer&>(mask_buffer)));
+  return GetValidCount(mask);
 }
 
 absl::Status InitializeBuffer(TensorBuffer& buffer) {
@@ -303,28 +312,27 @@ AudioLiteRtCompiledModelExecutor::AudioStaticEncoder::Initialize() {
   }
 
   // Get pointers to specific buffers after the map is fully populated.
-  if (!input_buffers_map_.contains(kMaskName)) {
-    return absl::InvalidArgumentError(
-        "The Audio Static Encoder model must have a mask input buffer.");
+  std::string src_inputs_name = "";
+  for (const auto& input_name : kAudioInputNames) {
+    if (input_buffers_map_.contains(input_name)) {
+      src_inputs_name = input_name;
+      break;
+    }
   }
-  if (!input_buffers_map_.contains(kSrcInputsName)) {
+  if (src_inputs_name.empty()) {
     return absl::InvalidArgumentError(
-        "The Audio Static Encoder model must have a src_inputs input "
-        "buffer.");
+        "The Audio Static Encoder model must have a src_inputs or audio "
+        "input buffer.");
   }
-  input_mask_buffer_ = &input_buffers_map_[kMaskName];
-  spectrogram_buffer_ = &input_buffers_map_[kSrcInputsName];
+  if (input_buffers_map_.contains(kMaskName)) {
+    input_mask_buffer_ = &input_buffers_map_[kMaskName];
+  }
+  spectrogram_buffer_ = &input_buffers_map_[src_inputs_name];
 
   // Initialize the output buffers.
   LITERT_ASSIGN_OR_RETURN(auto output_buffers,
                           compiled_model_.CreateOutputBuffers(
                               /*signature_index=*/0));
-  if (output_buffers.size() != 2) {
-    return absl::InvalidArgumentError(absl::StrCat(
-        "The Audio Static Encoder model must have exactly two output "
-        "buffer but got ",
-        output_buffers.size()));
-  }
   LITERT_RETURN_IF_ERROR(InitializeBuffers(output_buffers));
   output_names_.reserve(signature.OutputNames().size());
   for (int i = 0; i < signature.OutputNames().size(); ++i) {
@@ -334,18 +342,15 @@ AudioLiteRtCompiledModelExecutor::AudioStaticEncoder::Initialize() {
     output_buffers_map_[output_name_view] = std::move(output_buffers[i]);
   }
   // Get pointers to specific buffers after the map is fully populated.
-  if (!output_buffers_map_.contains(kMaskName) &&
-      !output_buffers_map_.contains(kMaskOutName)) {
-    return absl::InvalidArgumentError(
-        "The Audio Static Encoder model must have a mask output buffer.");
-  }
   if (!output_buffers_map_.contains(kFeaturesName)) {
     return absl::InvalidArgumentError(
         "The Audio Static Encoder model must have a features output buffer.");
   }
-  output_mask_buffer_ = output_buffers_map_.contains(kMaskName)
-                            ? &output_buffers_map_[kMaskName]
-                            : &output_buffers_map_[kMaskOutName];
+  if (output_buffers_map_.contains(kMaskName)) {
+    output_mask_buffer_ = &output_buffers_map_[kMaskName];
+  } else if (output_buffers_map_.contains(kMaskOutName)) {
+    output_mask_buffer_ = &output_buffers_map_[kMaskOutName];
+  }
   output_features_buffer_ = &output_buffers_map_[kFeaturesName];
   return absl::OkStatus();
 }
@@ -450,19 +455,23 @@ AudioLiteRtCompiledModelExecutor::AudioStreamingEncoder::Initialize() {
     input_buffers_map_[input_name_view] = std::move(input_buffers[i]);
   }
 
-  // Get pointers to specific buffers after the map is fully populated.
-  if (!input_buffers_map_.contains(kSegmentMaskName)) {
-    return absl::InvalidArgumentError(
-        "The Audio Streaming Encoder model must have a segment_mask input "
-        "buffer.");
+  if (input_buffers_map_.contains(kSegmentMaskName)) {
+    input_mask_buffer_ = &input_buffers_map_[kSegmentMaskName];
   }
-  if (!input_buffers_map_.contains(kSegmentValuesName)) {
-    return absl::InvalidArgumentError(
-        "The Audio Streaming Encoder model must have a segment_values input "
-        "buffer.");
+  std::string src_inputs_name = "";
+  for (const auto& input_name : kAudioInputNames) {
+    if (input_buffers_map_.contains(input_name)) {
+      src_inputs_name = input_name;
+      break;
+    }
   }
-  input_mask_buffer_ = &input_buffers_map_[kSegmentMaskName];
-  spectrogram_buffer_ = &input_buffers_map_[kSegmentValuesName];
+  if (src_inputs_name.empty()) {
+    return absl::InvalidArgumentError(
+        "The Audio Streaming Encoder model must have an audio input buffer "
+        "with name in " +
+        absl::StrJoin(kAudioInputNames, ", "));
+  }
+  spectrogram_buffer_ = &input_buffers_map_[src_inputs_name];
 
   // Initialize the output buffers.
   LITERT_ASSIGN_OR_RETURN(auto output_buffers,
@@ -477,33 +486,28 @@ AudioLiteRtCompiledModelExecutor::AudioStreamingEncoder::Initialize() {
     output_buffers_map_[output_name_view] = std::move(output_buffers[i]);
   }
   // Get pointers to specific buffers after the map is fully populated.
-  if (!output_buffers_map_.contains(kMaskName)) {
-    return absl::InvalidArgumentError(
-        "The Audio Streaming Encoder model must have a mask output buffer.");
-  }
   if (!output_buffers_map_.contains(kFeaturesName)) {
     return absl::InvalidArgumentError(
         "The Audio Streaming Encoder model must have a features output "
         "buffer.");
   }
-  output_mask_buffer_ = &output_buffers_map_[kMaskName];
+  if (output_buffers_map_.contains(kMaskName)) {
+    output_mask_buffer_ = &output_buffers_map_[kMaskName];
+  }
   output_features_buffer_ = &output_buffers_map_[kFeaturesName];
 
   // Get the feature states tensor type and use it to get the overlap size.
   std::string feature_states_name =
       absl::StrCat(kFeatureStatesNamePattern, "_0");
-  if (!input_buffers_map_.contains(feature_states_name)) {
-    return absl::InvalidArgumentError(
-        "The Audio Streaming Encoder model must have a feature_states input "
-        "buffer.");
+  if (input_buffers_map_.contains(feature_states_name)) {
+    LITERT_ASSIGN_OR_RETURN(
+        auto feature_states_tensor_type,
+        input_buffers_map_[feature_states_name].TensorType());
+    // The overlap size is the number of elements in the feature states tensor,
+    // which is 3 for gemma3n.
+    LITERT_ASSIGN_OR_RETURN(overlap_size_,
+                            feature_states_tensor_type.Layout().NumElements());
   }
-  LITERT_ASSIGN_OR_RETURN(auto feature_states_tensor_type,
-                          input_buffers_map_[feature_states_name].TensorType());
-  // The overlap size is the number of elements in the feature states tensor,
-  // which is 3 for gemma3n.
-  LITERT_ASSIGN_OR_RETURN(overlap_size_,
-                          feature_states_tensor_type.Layout().NumElements());
-
   // Initialize the previous mask buffer to all ones.
   if (input_buffers_map_.contains(kPrevMaskName)) {
     LITERT_ASSIGN_OR_RETURN(auto prev_mask_type,
@@ -541,13 +545,13 @@ AudioLiteRtCompiledModelExecutor::AudioStreamingEncoder::ClearInputBuffers() {
                             GetInputSpectrogramBuffer().PackedSize());
     memset(buffer_lock_and_addr.second, 0, packed_size);
   }
-  {
+  if (GetMutableInputMaskBuffer() != nullptr) {
     LITERT_ASSIGN_OR_RETURN(
         auto buffer_lock_and_addr,
-        TensorBufferScopedLock::Create(GetMutableInputMaskBuffer(),
+        TensorBufferScopedLock::Create(*GetMutableInputMaskBuffer(),
                                        TensorBuffer::LockMode::kWrite));
     LITERT_ASSIGN_OR_RETURN(auto packed_size,
-                            GetInputMaskBuffer().PackedSize());
+                            GetInputMaskBuffer()->PackedSize());
     memset(buffer_lock_and_addr.second, 0, packed_size);
   }
   return absl::OkStatus();
@@ -648,9 +652,9 @@ absl::Status AudioLiteRtCompiledModelExecutor::AudioAdapter::Initialize() {
   }
   LITERT_ASSIGN_OR_RETURN(input_buffers_, compiled_model_.CreateInputBuffers(
                                               /*signature_index=*/0));
-  if (input_buffers_.size() != 2) {
+  if (input_buffers_.size() != 1 && input_buffers_.size() != 2) {
     return absl::InvalidArgumentError(absl::StrCat(
-        "The Audio Adapter model must have exactly two input buffer but got ",
+        "The Audio Adapter model must have 1 or 2 input buffers but got ",
         input_buffers_.size()));
   }
   LITERT_ASSIGN_OR_RETURN(output_buffers_, compiled_model_.CreateOutputBuffers(
@@ -676,10 +680,6 @@ absl::Status AudioLiteRtCompiledModelExecutor::AudioAdapter::Initialize() {
     return absl::InvalidArgumentError(
         "The Audio Adapter model must have a features input buffer.");
   }
-  if (mask_buffer_ == nullptr) {
-    return absl::InvalidArgumentError(
-        "The Audio Adapter model must have a mask input buffer.");
-  }
   return absl::OkStatus();
 }
 
@@ -701,9 +701,10 @@ AudioLiteRtCompiledModelExecutor::Create(
   std::unique_ptr<AudioEncoder> audio_encoder;
   LITERT_ASSIGN_OR_RETURN(auto encoder_signature,
                           audio_encoder_model->GetSignature(0));
-  const bool is_streaming_encoder =
-      IsStreamingEncoder(encoder_signature.InputNames());
-  if (is_streaming_encoder) {
+  LITERT_ASSIGN_OR_RETURN(
+      auto executor_properties,
+      GetAudioExecutorPropertiesFromModelResources(*resources));
+  if (executor_properties.is_streaming_model) {
     ASSIGN_OR_RETURN(audio_encoder,
                      AudioStreamingEncoder::Create(executor_settings, env,
                                                    audio_encoder_model));
@@ -721,10 +722,23 @@ AudioLiteRtCompiledModelExecutor::Create(
     ABSL_LOG(INFO) << "Audio adapter model is not found. Audio encoder output "
                       "will be used directly.";
   }
-  const auto& tmp = audio_encoder->GetInputMaskBuffer();
-  LITERT_ASSIGN_OR_RETURN(auto mask_tensor_type, tmp.TensorType());
-  LITERT_ASSIGN_OR_RETURN(int sequence_length,
-                          mask_tensor_type.Layout().NumElements());
+  int sequence_length = 0;
+  if (audio_encoder->GetInputMaskBuffer() != nullptr) {
+    LITERT_ASSIGN_OR_RETURN(auto mask_tensor_type,
+                            audio_encoder->GetInputMaskBuffer()->TensorType());
+    LITERT_ASSIGN_OR_RETURN(sequence_length,
+                            mask_tensor_type.Layout().NumElements());
+  } else {
+    LITERT_ASSIGN_OR_RETURN(
+        auto spectrogram_tensor_type,
+        audio_encoder->GetInputSpectrogramBuffer().TensorType());
+    const auto& dims = spectrogram_tensor_type.Layout().Dimensions();
+    if (dims.size() < 2) {
+      return absl::InvalidArgumentError(
+          "Spectrogram tensor must have at least 2 dimensions");
+    }
+    sequence_length = dims[dims.size() - 2];
+  }
   LITERT_ASSIGN_OR_RETURN(
       auto spectrogram_tensor_type,
       audio_encoder->GetInputSpectrogramBuffer().TensorType());
@@ -743,11 +757,8 @@ AudioLiteRtCompiledModelExecutor::Create(
     const auto dims = encoder_output_tensor_type.Layout().Dimensions();
     audio_embedding_dimensions = dims.back();
   }
-  LITERT_ASSIGN_OR_RETURN(
-      auto executor_properties,
-      GetAudioExecutorPropertiesFromModelResources(*resources));
   const int encoder_shrinking_factor = executor_properties.audio_shrink_factor;
-  if (!is_streaming_encoder) {
+  if (!executor_properties.is_streaming_model) {
     if (audio_adapter != nullptr) {
       if (audio_encoder->GetOutputBuffersMap().size() !=
           audio_adapter->GetInputBuffers().size()) {
@@ -761,16 +772,26 @@ AudioLiteRtCompiledModelExecutor::Create(
   }
 
   if (audio_adapter != nullptr) {
-    // Make the audio adapter take the audio encoder's mask and features as
-    // input.
-    LITERT_ASSIGN_OR_RETURN(auto encoder_mask_tensor,
-                            audio_encoder->GetOutputMaskBuffer().Duplicate());
-    audio_adapter->GetMutableInputBuffers()[0] = std::move(encoder_mask_tensor);
+    // Make the audio adapter take the audio encoder's mask (if available) and
+    // features as input.
+    if (audio_adapter->GetMaskBuffer() != nullptr) {
+      if (audio_encoder->GetOutputMaskBuffer() == nullptr) {
+        return absl::InvalidArgumentError(
+            "Audio adapter expects a mask input, but audio encoder does not "
+            "provide a mask output.");
+      }
+      LITERT_ASSIGN_OR_RETURN(
+          auto encoder_mask_tensor,
+          audio_encoder->GetOutputMaskBuffer()->Duplicate());
+      *audio_adapter->GetMutableMaskBuffer() = std::move(encoder_mask_tensor);
+    }
+
     LITERT_ASSIGN_OR_RETURN(
         auto encoder_features_type,
         audio_encoder->GetOutputFeaturesBuffer().TensorType());
+
     LITERT_ASSIGN_OR_RETURN(auto adapter_features_type,
-                            audio_adapter->GetInputBuffers()[1].TensorType());
+                            audio_adapter->GetFeaturesBuffer().TensorType());
 
     if (encoder_features_type.ElementType() == litert::ElementType::Float16 &&
         adapter_features_type.ElementType() == litert::ElementType::Float32) {
@@ -780,7 +801,7 @@ AudioLiteRtCompiledModelExecutor::Create(
       LITERT_ASSIGN_OR_RETURN(
           auto encoder_features_tensor,
           audio_encoder->GetMutableOutputFeaturesBuffer().Duplicate());
-      audio_adapter->GetMutableInputBuffers()[1] =
+      audio_adapter->GetMutableFeaturesBuffer() =
           std::move(encoder_features_tensor);
     } else {
       ABSL_LOG(ERROR) << "Unsupported type mismatch between audio encoder ("
@@ -819,9 +840,11 @@ absl::StatusOr<int> AudioLiteRtCompiledModelExecutor::EncodeInternal(
   } else {
     LITERT_RETURN_IF_ERROR(input_buffer.Write<float>(spectrogram_tensor));
   }
-  LITERT_RETURN_IF_ERROR(
-      audio_encoder_->GetMutableInputMaskBuffer().Write<uint8_t>(
-          spectrogram_mask));
+  if (audio_encoder_->GetMutableInputMaskBuffer() != nullptr) {
+    LITERT_RETURN_IF_ERROR(
+        audio_encoder_->GetMutableInputMaskBuffer()->Write<uint8_t>(
+            spectrogram_mask));
+  }
 
   auto& input_buffers_map = audio_encoder_->GetMutableInputBuffersMap();
   if (audio_encoder_->GetMutableLoraManager() != nullptr) {
@@ -840,12 +863,19 @@ absl::StatusOr<int> AudioLiteRtCompiledModelExecutor::EncodeInternal(
   LITERT_RETURN_IF_ERROR(audio_encoder_->GetMutableCompiledModel().Run(
       input_buffers_map, audio_encoder_->GetMutableOutputBuffersMap()));
 
-  ASSIGN_OR_RETURN(int chunk_valid_tokens,
-                   GetValidCount(audio_encoder_->GetOutputMaskBuffer()));
+  int chunk_valid_tokens = 0;
+  if (audio_encoder_->GetOutputMaskBuffer() != nullptr) {
+    ASSIGN_OR_RETURN(chunk_valid_tokens,
+                     GetValidCount(*audio_encoder_->GetOutputMaskBuffer()));
+  } else {
+    int input_valid_tokens = GetValidCount(spectrogram_mask);
+    chunk_valid_tokens =
+        CeilIntDiv(input_valid_tokens, encoder_shrinking_factor_);
+  }
   auto& encoder_output = audio_encoder_->GetMutableOutputFeaturesBuffer();
 
   if (audio_adapter_ != nullptr) {
-    auto& adapter_input = audio_adapter_->GetMutableInputBuffers()[1];
+    auto& adapter_input = audio_adapter_->GetMutableFeaturesBuffer();
 
     LITERT_ASSIGN_OR_RETURN(auto encoder_type, encoder_output.TensorType());
     LITERT_ASSIGN_OR_RETURN(auto adapter_type, adapter_input.TensorType());
@@ -900,7 +930,7 @@ absl::StatusOr<int> AudioLiteRtCompiledModelExecutor::EncodeInternal(
     }
   }
 
-  if (executor_properties_.is_streaming_model) {
+  if (audio_encoder_->IsStreaming()) {
     RETURN_IF_ERROR(
         reinterpret_cast<AudioStreamingEncoder*>(audio_encoder_.get())
             ->SwapInternalStateBuffers());
@@ -911,6 +941,39 @@ absl::StatusOr<int> AudioLiteRtCompiledModelExecutor::EncodeInternal(
 absl::StatusOr<ExecutorAudioData> AudioLiteRtCompiledModelExecutor::Encode(
     const TensorBuffer& spectrogram_tensor,
     const TensorBuffer& spectrogram_mask) {
+  LITERT_ASSIGN_OR_RETURN(auto spectrogram_tensor_type,
+                          spectrogram_tensor.TensorType());
+  LITERT_ASSIGN_OR_RETURN(auto mask_tensor_type, spectrogram_mask.TensorType());
+
+  const auto& spec_dims = spectrogram_tensor_type.Layout().Dimensions();
+  const auto& mask_dims = mask_tensor_type.Layout().Dimensions();
+
+  if (spec_dims.size() < 2) {
+    return absl::InvalidArgumentError(
+        "Spectrogram tensor must have at least 2 dimensions");
+  }
+  if (mask_dims.empty()) {
+    return absl::InvalidArgumentError(
+        "Mask tensor must have at least 1 dimension");
+  }
+
+  int spec_seq_len = spec_dims[spec_dims.size() - 2];
+  int spec_feature_dim = spec_dims.back();
+  int mask_seq_len = mask_dims[mask_dims.size() - 1];
+
+  if (spec_seq_len != mask_seq_len) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Spectrogram sequence length (", spec_seq_len,
+                     ") must match mask sequence length (", mask_seq_len, ")"));
+  }
+
+  if (spec_feature_dim != spectrogram_feature_dimensions_) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Spectrogram feature dimension (", spec_feature_dim,
+                     ") must match model expectation (",
+                     spectrogram_feature_dimensions_, ")"));
+  }
+
   ASSIGN_OR_RETURN(int input_sequence_length, GetValidCount(spectrogram_mask));
   LITERT_ASSIGN_OR_RETURN(
       auto spectrogram_host_buffer,
@@ -996,6 +1059,10 @@ AudioLiteRtCompiledModelExecutor::AudioStreamingEncoder::CreateNewContext() {
       // state.
       continue;
     }
+    if (absl::c_find(kAudioInputNames, name) != kAudioInputNames.end()) {
+      // Skip audio input buffers.
+      continue;
+    }
     LITERT_ASSIGN_OR_RETURN(auto new_buffer, CopyTensorBuffer(env_, buffer));
     if (name == kPrevMaskName) {
       LITERT_ASSIGN_OR_RETURN(auto prev_mask_type, buffer.TensorType());
@@ -1021,6 +1088,10 @@ AudioLiteRtCompiledModelExecutor::AudioStreamingEncoder::CloneContext() {
     if (name == kSegmentValuesName || name == kSegmentMaskName) {
       // Skip the segment values and mask buffers as they are not part of the
       // state.
+      continue;
+    }
+    if (absl::c_find(kAudioInputNames, name) != kAudioInputNames.end()) {
+      // Skip audio input buffers.
       continue;
     }
     LITERT_ASSIGN_OR_RETURN(auto new_buffer, CopyTensorBuffer(env_, buffer));
@@ -1073,7 +1144,7 @@ AudioLiteRtCompiledModelExecutor::AudioStreamingEncoder::RestoreContext(
 
 absl::StatusOr<std::unique_ptr<AudioContext>>
 AudioLiteRtCompiledModelExecutor::CreateNewContext() {
-  if (!executor_properties_.is_streaming_model) {
+  if (!audio_encoder_->IsStreaming()) {
     return absl::UnimplementedError(
         "CreateNewContext is only supported for streaming models.");
   }
@@ -1083,7 +1154,7 @@ AudioLiteRtCompiledModelExecutor::CreateNewContext() {
 
 absl::StatusOr<std::unique_ptr<AudioContext>>
 AudioLiteRtCompiledModelExecutor::CloneContext() {
-  if (!executor_properties_.is_streaming_model) {
+  if (!audio_encoder_->IsStreaming()) {
     return absl::UnimplementedError(
         "CloneContext is only supported for streaming models.");
   }
@@ -1097,7 +1168,7 @@ AudioLiteRtCompiledModelExecutor::CloneContext() {
 absl::StatusOr<std::unique_ptr<AudioContext>>
 AudioLiteRtCompiledModelExecutor::CloneContext(
     const AudioContext& audio_context) {
-  if (!executor_properties_.is_streaming_model) {
+  if (!audio_encoder_->IsStreaming()) {
     return absl::UnimplementedError(
         "CloneContext is only supported for streaming models.");
   }
@@ -1108,7 +1179,7 @@ AudioLiteRtCompiledModelExecutor::CloneContext(
 
 absl::Status AudioLiteRtCompiledModelExecutor::RestoreContext(
     std::unique_ptr<AudioContext> audio_context) {
-  if (!executor_properties_.is_streaming_model) {
+  if (!audio_encoder_->IsStreaming()) {
     return absl::UnimplementedError(
         "RestoreContext is only supported for streaming models.");
   }

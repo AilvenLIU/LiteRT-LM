@@ -168,6 +168,8 @@ class AudioLiteRtCompiledModelExecutor : public AudioExecutor {
     // Sets the current LoRA ID to use.
     virtual absl::Status UseLoRA(std::optional<uint32_t> lora_id);
 
+    virtual bool IsStreaming() const = 0;
+
     const CompiledModel& GetCompiledModel() const { return compiled_model_; }
 
     CompiledModel& GetMutableCompiledModel() { return compiled_model_; }
@@ -192,11 +194,11 @@ class AudioLiteRtCompiledModelExecutor : public AudioExecutor {
       return output_buffers_map_;
     }
 
-    const TensorBuffer& GetInputMaskBuffer() const {
-      return *input_mask_buffer_;
+    const TensorBuffer* GetInputMaskBuffer() const {
+      return input_mask_buffer_;
     }
 
-    TensorBuffer& GetMutableInputMaskBuffer() { return *input_mask_buffer_; }
+    TensorBuffer* GetMutableInputMaskBuffer() { return input_mask_buffer_; }
 
     const TensorBuffer& GetInputSpectrogramBuffer() const {
       return *spectrogram_buffer_;
@@ -206,11 +208,11 @@ class AudioLiteRtCompiledModelExecutor : public AudioExecutor {
       return *spectrogram_buffer_;
     }
 
-    const TensorBuffer& GetOutputMaskBuffer() const {
-      return *output_mask_buffer_;
+    const TensorBuffer* GetOutputMaskBuffer() const {
+      return output_mask_buffer_;
     }
 
-    TensorBuffer& GetMutableOutputMaskBuffer() { return *output_mask_buffer_; }
+    TensorBuffer* GetMutableOutputMaskBuffer() { return output_mask_buffer_; }
 
     const TensorBuffer& GetOutputFeaturesBuffer() const {
       return *output_features_buffer_;
@@ -226,13 +228,13 @@ class AudioLiteRtCompiledModelExecutor : public AudioExecutor {
     CompiledModel compiled_model_;
 
     // The input buffer for the spectrogram mask.
-    TensorBuffer* input_mask_buffer_;
+    TensorBuffer* input_mask_buffer_ = nullptr;
     // The input buffer for the spectrogram tensor.
-    TensorBuffer* spectrogram_buffer_;
+    TensorBuffer* spectrogram_buffer_ = nullptr;
     // The output buffer for the valid tokens mask.
-    TensorBuffer* output_mask_buffer_;
+    TensorBuffer* output_mask_buffer_ = nullptr;
     // The output buffer for the features.
-    TensorBuffer* output_features_buffer_;
+    TensorBuffer* output_features_buffer_ = nullptr;
 
     // The input names for the audio encoder model.
     std::vector<std::string> input_names_;
@@ -271,6 +273,8 @@ class AudioLiteRtCompiledModelExecutor : public AudioExecutor {
     absl::Status ClearInputBuffers() override;
 
     absl::Status Reset() override { return ClearInputBuffers(); }
+
+    bool IsStreaming() const override { return false; }
 
    private:
     AudioStaticEncoder(const AudioExecutorSettings& executor_settings,
@@ -347,6 +351,8 @@ class AudioLiteRtCompiledModelExecutor : public AudioExecutor {
 
     absl::Status Reset() override;
 
+    bool IsStreaming() const override { return true; }
+
     absl::StatusOr<std::unique_ptr<AudioStreamingContext>> CreateNewContext();
 
     absl::StatusOr<std::unique_ptr<AudioStreamingContext>> CloneContext();
@@ -403,9 +409,9 @@ class AudioLiteRtCompiledModelExecutor : public AudioExecutor {
 
     TensorBuffer& GetMutableFeaturesBuffer() { return *features_buffer_; }
 
-    const TensorBuffer& GetMaskBuffer() const { return *mask_buffer_; }
+    const TensorBuffer* GetMaskBuffer() const { return mask_buffer_; }
 
-    TensorBuffer& GetMutableMaskBuffer() { return *mask_buffer_; }
+    TensorBuffer* GetMutableMaskBuffer() { return mask_buffer_; }
 
     const std::vector<TensorBuffer>& GetOutputBuffers() const {
       return output_buffers_;
@@ -426,9 +432,9 @@ class AudioLiteRtCompiledModelExecutor : public AudioExecutor {
     // The input buffers for the audio adapter model.
     std::vector<TensorBuffer> input_buffers_;
     // The input buffers for the input features.
-    TensorBuffer* features_buffer_;
+    TensorBuffer* features_buffer_ = nullptr;
     // The input buffer for the input mask.
-    TensorBuffer* mask_buffer_;
+    TensorBuffer* mask_buffer_ = nullptr;
     // The output buffers for the audio adapter model.
     std::vector<TensorBuffer> output_buffers_;
   };

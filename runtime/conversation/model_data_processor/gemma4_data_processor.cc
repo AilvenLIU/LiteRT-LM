@@ -205,13 +205,15 @@ Gemma4DataProcessor::Create(Gemma4DataProcessorConfig config,
                             const Tokenizer* tokenizer,
                             const std::vector<std::vector<int>>& stop_token_ids,
                             bool enable_constrained_decoding) {
+  const int frame_length = config.skip_mel_spectrogram_extraction ? 640 : 320;
+  const int hop_length = config.skip_mel_spectrogram_extraction ? 640 : 160;
   ASSIGN_OR_RETURN(
       auto audio_preprocessor,
       AudioPreprocessorMiniAudio::Create(AudioPreprocessorConfig::Create(
           /* sample_rate_hz= */ 16000,
           /* num_channels= */ 1,
-          /* frame_length= */ 320,
-          /* hop_length= */ 160,
+          /* frame_length= */ frame_length,
+          /* hop_length= */ hop_length,
           /* fft_length = */ 512,
           /* input_scale = */ 1.0,
           /* pre_emphasis_factor = */ 0.0,

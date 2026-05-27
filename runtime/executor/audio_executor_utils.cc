@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -65,13 +66,32 @@ GetAudioExecutorPropertiesFromModelResources(ModelResources& model_resources) {
       model_resources.GetTFLiteModel(ModelType::kTfLiteAudioAdapter);
   bool has_adapter = audio_adapter_model_or.ok();
   properties.is_streaming_model = IsStreamingEncoder(input_names, has_adapter);
-  LITERT_ASSIGN_OR_RETURN(
-      auto mask_tensor_type,
-      audio_encoder_model->GetInputTensorType(
-          0, properties.is_streaming_model && has_adapter ? kSegmentMaskName
-                                                          : kMaskName));
-  LITERT_ASSIGN_OR_RETURN(int input_sequence_length,
-                          mask_tensor_type.Layout().NumElements());
+
+  absl::string_view mask_name = properties.is_streaming_model && has_adapter
+                                    ? kSegmentMaskName
+                                    : kMaskName;
+
+  bool has_mask = std::find(input_names.begin(), input_names.end(),
+                            mask_name) != input_names.end();
+
+  int input_sequence_length = 0;
+  if (has_mask) {
+    LITERT_ASSIGN_OR_RETURN(
+        auto mask_tensor_type,
+        audio_encoder_model->GetInputTensorType(0, mask_name));
+    LITERT_ASSIGN_OR_RETURN(input_sequence_length,
+                            mask_tensor_type.Layout().NumElements());
+  } else {
+    LITERT_ASSIGN_OR_RETURN(auto input_tensor_type,
+                            audio_encoder_model->GetInputTensorType(0, 0));
+    const auto& dims = input_tensor_type.Layout().Dimensions();
+    if (dims.size() < 2) {
+      return absl::InvalidArgumentError(
+          "Input tensor at index 0 must have at least 2 dimensions");
+    }
+    input_sequence_length = dims[dims.size() - 2];
+  }
+
   int output_sequence_length;
   if (has_adapter) {
     LITERT_ASSIGN_OR_RETURN(
@@ -114,17 +134,7 @@ GetAudioExecutorPropertiesFromModelResources(ModelResources& model_resources) {
     LITERT_ASSIGN_OR_RETURN(properties.streaming_chunk_overlap_size,
                             feature_states_tensor_type.Layout().NumElements());
 
-    // Get the segment mask tensor type and use it to get the chunk size.
-    LITERT_ASSIGN_OR_RETURN(
-        auto segment_mask_tensor_type,
-        audio_encoder_model->GetInputTensorType(0, kSegmentMaskName),
-        _ << "The Audio Streaming Encoder model must have a segment_mask input "
-             "buffer.");
-    // The chunk size is the last dimension of the segment mask tensor, which is
-    // the number of frames in each segment.
-    properties.streaming_chunk_size =
-        segment_mask_tensor_type.Layout().Dimensions()
-            [segment_mask_tensor_type.Layout().Dimensions().size() - 1];
+    properties.streaming_chunk_size = input_sequence_length;
 
     properties.audio_shrink_factor =
         (input_sequence_length - properties.streaming_chunk_overlap_size) /
