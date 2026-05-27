@@ -121,7 +121,9 @@ jobs:
         run: |
           bazel build --disk_cache=~/.cache/bazel-macos \
             //... \
-            //runtime/engine:litert_lm_main
+            //runtime/engine:litert_lm_main \
+            -- \
+            -//python/litert_lm_builder/...
 
       - name: Update litert_lm_main prebuilt for MacOS if new version tag is pushed.
         if: github.ref_type == 'tag'

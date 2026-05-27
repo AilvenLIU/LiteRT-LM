@@ -278,6 +278,7 @@ rust_register_toolchains(
         "aarch64-apple-ios",
         "aarch64-apple-ios-sim",
         "x86_64-linux-android",
+        "x86_64-apple-darwin",
     ],
 )
 

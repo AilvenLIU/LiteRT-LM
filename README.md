@@ -121,6 +121,18 @@ tag.
 
 --------------------------------------------------------------------------------
 
+## 📦 Swift Package Manager Installation
+
+You can integrate LiteRT-LM into your iOS and macOS projects using Swift Package Manager.
+
+Add the following dependency to your `Package.swift` file:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/google-ai-edge/LiteRT-LM", from: "0.12.0")
+]
+```
+
 ## 📦 Releases
 
 -   **v0.12.0**: Added early preview of Swift and Web JavaScript APIs, and
