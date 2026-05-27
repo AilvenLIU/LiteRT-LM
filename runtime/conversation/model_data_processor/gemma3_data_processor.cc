@@ -368,8 +368,10 @@ absl::StatusOr<Message> Gemma3DataProcessor::ToMessageImpl(
         ordered_json content_and_tool_calls,
         ParseTextAndToolCalls(
             response_text, config_.code_fence_start, config_.code_fence_end,
-            GetSyntaxType(config_.syntax_type), config_.escape_fence_strings,
-            config_.tool_code_regex));
+            GetSyntaxType(config_.syntax_type),
+            {.escape_fence_strings = config_.escape_fence_strings,
+             .tool_code_regex = config_.tool_code_regex,
+             .return_error_on_parse_failure = ReturnErrorOnParseFailure()}));
     if (content_and_tool_calls.contains("content")) {
       message["content"] = content_and_tool_calls["content"];
     }

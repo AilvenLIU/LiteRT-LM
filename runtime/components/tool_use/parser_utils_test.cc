@@ -150,10 +150,8 @@ TEST(ParserUtilsTest, ParsePythonCallWithRegex) {
 print(tool_name(x=1))
 ```)",
                             /*code_fence_start=*/"```tool_code\n",
-                            /*code_fence_end=*/"\n```",
-                            /*syntax_type=*/SyntaxType::kPython,
-                            /*escape_fence_strings=*/true,
-                            /*tool_code_regex=*/R"(print\((.+\(.*\))\))"),
+                            /*code_fence_end=*/"\n```", SyntaxType::kPython,
+                            {.tool_code_regex = R"(print\((.+\(.*\))\))"}),
       IsOkAndHolds(nlohmann::ordered_json::parse(R"json({
                 "tool_calls": [
                   {
@@ -176,11 +174,10 @@ print(default_api.get_artwork_price(museum_location="Philadelphia", sculpture_ma
 print(default_api.get_artwork_price(museum_location="New York", sculpture_material="bronze", sculpture_size=[6, 3]))
 ```)",
                   /*code_fence_start=*/"```tool_code\n",
-                  /*code_fence_end=*/"\n```",
-                  /*syntax_type=*/SyntaxType::kPython,
-                  /*escape_fence_strings=*/false,
-                  /*tool_code_regex=*/
-                  R"regex(print\((?:default_api\.)?(.+\(.*\))\))regex"),
+                  /*code_fence_end=*/"\n```", SyntaxType::kPython,
+                  {.escape_fence_strings = false,
+                   .tool_code_regex =
+                       R"regex(print\((?:default_api\.)?(.+\(.*\))\))regex"}),
               IsOkAndHolds(nlohmann::ordered_json::parse(R"json({
               "tool_calls": [
                   {
@@ -614,6 +611,23 @@ tool_name(x=1)
                   }
                 ]
               })json")));
+}
+
+TEST(ParserUtilsTest, InvalidPythonToolCallIsSoftError) {
+  auto result = ParseTextAndToolCalls(
+      "```tool_code\ninvalid_code\n```", "```tool_code\n", "\n```",
+      SyntaxType::kPython, {.return_error_on_parse_failure = false});
+  ASSERT_OK(result);
+  ASSERT_TRUE(result->contains("content"));
+  ASSERT_EQ((*result)["content"].size(), 1);
+  EXPECT_TRUE((*result)["content"][0].contains("error"));
+}
+
+TEST(ParserUtilsTest, InvalidPythonToolCallIsErrorStatus) {
+  auto result = ParseTextAndToolCalls(
+      "```tool_code\ninvalid_code\n```", "```tool_code\n", "\n```",
+      SyntaxType::kPython, {.return_error_on_parse_failure = true});
+  EXPECT_FALSE(result.ok());
 }
 
 }  // namespace

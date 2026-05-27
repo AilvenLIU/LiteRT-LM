@@ -800,6 +800,83 @@ Key3: {{ key3 + "\n"}}
   EXPECT_EQ(response, assistant_message);
 }
 
+TEST_P(ConversationTest, SendMessageWithParserErrorFailFast) {
+  auto mock_session = CreateMockSession();
+  MockSession* mock_session_ptr = mock_session.get();
+  auto mock_engine = CreateMockEngine(std::move(mock_session));
+  JsonPreface preface;
+  preface.tools = {{{"name", "test_tool"}}};
+  ASSERT_OK_AND_ASSIGN(
+      auto conversation_config,
+      ConversationConfig::Builder()
+          .SetSessionConfig(session_config_)
+          .SetPreface(preface)
+          .SetOverwritePromptTemplate(PromptTemplate(kTestJinjaPromptTemplate))
+          .Build(*mock_engine));
+  ASSERT_OK_AND_ASSIGN(auto conversation,
+                       Conversation::Create(*mock_engine, conversation_config));
+  Message user_message = {{"role", "user"}, {"content", "Call tool"}};
+  EXPECT_CALL(*mock_session_ptr, RunPrefillAsync(testing::_, testing::_))
+      .WillOnce([](const std::vector<InputData>& contents,
+                   absl::AnyInvocable<void(absl::StatusOr<Responses>)>
+                       user_callback) {
+        user_callback(Responses(TaskState::kDone));
+        return nullptr;
+      });
+  EXPECT_CALL(*mock_session_ptr, RunDecodeAsync(testing::_, testing::_))
+      .WillOnce(
+          [](absl::AnyInvocable<void(absl::StatusOr<Responses>)> user_callback,
+             const DecodeConfig& decode_config) {
+            user_callback(Responses(TaskState::kProcessing,
+                                    {"```tool_code\ninvalid_code\n```"}));
+            user_callback(Responses(TaskState::kDone));
+            return nullptr;
+          });
+  auto response = conversation->SendMessage(user_message);
+  EXPECT_FALSE(response.ok());
+}
+
+TEST_P(ConversationTest, SendMessageWithParserErrorSoftError) {
+  auto mock_session = CreateMockSession();
+  MockSession* mock_session_ptr = mock_session.get();
+  auto mock_engine = CreateMockEngine(std::move(mock_session));
+  JsonPreface preface;
+  preface.tools = {{{"name", "test_tool"}}};
+  ASSERT_OK_AND_ASSIGN(
+      auto conversation_config,
+      ConversationConfig::Builder()
+          .SetSessionConfig(session_config_)
+          .SetPreface(preface)
+          .SetOverwritePromptTemplate(PromptTemplate(kTestJinjaPromptTemplate))
+          .SetReturnErrorOnParseFailure(false)
+          .Build(*mock_engine));
+  ASSERT_OK_AND_ASSIGN(auto conversation,
+                       Conversation::Create(*mock_engine, conversation_config));
+  Message user_message = {{"role", "user"}, {"content", "Call tool"}};
+  EXPECT_CALL(*mock_session_ptr, RunPrefillAsync(testing::_, testing::_))
+      .WillOnce([](const std::vector<InputData>& contents,
+                   absl::AnyInvocable<void(absl::StatusOr<Responses>)>
+                       user_callback) {
+        user_callback(Responses(TaskState::kDone));
+        return nullptr;
+      });
+  EXPECT_CALL(*mock_session_ptr, RunDecodeAsync(testing::_, testing::_))
+      .WillOnce(
+          [](absl::AnyInvocable<void(absl::StatusOr<Responses>)> user_callback,
+             const DecodeConfig& decode_config) {
+            user_callback(Responses(TaskState::kProcessing,
+                                    {"```tool_code\ninvalid_code\n```"}));
+            user_callback(Responses(TaskState::kDone));
+            return nullptr;
+          });
+  EXPECT_CALL(*mock_session_ptr, WaitUntilDone())
+      .WillOnce(Return(absl::OkStatus()));
+  auto response = conversation->SendMessage(user_message);
+  ASSERT_OK(response);
+  EXPECT_TRUE(response->contains("content"));
+  EXPECT_TRUE((*response)["content"][0].contains("error"));
+}
+
 TEST_P(ConversationTest, SendMultipleMessages) {
   // Set up mock Session.
   auto mock_session = CreateMockSession();
