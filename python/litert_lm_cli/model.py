@@ -247,6 +247,9 @@ def model_id_dir_name(model_id):
 
 def get_cli_base_dir() -> str:
   """Gets the base directory for LiteRT-LM CLI."""
+  env_override = os.environ.get("LITERT_LM_DIR")
+  if env_override:
+    return os.path.abspath(env_override)
   return os.path.join(os.path.expanduser("~"), ".litert-lm")
 
 
