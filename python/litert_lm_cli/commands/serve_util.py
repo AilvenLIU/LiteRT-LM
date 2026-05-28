@@ -53,16 +53,8 @@ class LiteRTLMServer(http.server.HTTPServer):
     self.audio_backend: litert_lm.Backend | None = None
 
 
-def _select_backend(model_path: str) -> litert_lm.Backend:
-  """Inspects the .litertlm file metadata to select the appropriate execution backend.
-
-  Args:
-    model_path: The absolute filesystem path to the .litertlm model bundle.
-
-  Returns:
-    Backend.GPU() if the model metadata specifies 'gpu_artisan' as the backend
-    constraint, otherwise Backend.CPU().
-  """
+def _is_gpu_only_model(model_path: str) -> bool:
+  """Returns True if the model is GPU-only."""
   try:
     dummy_out = io.StringIO()
     metadata = litertlm_peek.read_litertlm_header(model_path, dummy_out)
@@ -70,11 +62,11 @@ def _select_backend(model_path: str) -> litert_lm.Backend:
     click.echo(
         click.style(f"Failed to inspect model metadata: {e!r}", fg="yellow")
     )
-    return litert_lm.Backend.CPU()
+    return False
 
   section_metadata = metadata.SectionMetadata()
   if not section_metadata:
-    return litert_lm.Backend.CPU()
+    return False
   for i in range(section_metadata.ObjectsLength()):
     section = section_metadata.Objects(i)
     if not section or section.ItemsLength() == 0:
@@ -85,8 +77,23 @@ def _select_backend(model_path: str) -> litert_lm.Backend:
         continue
       val = item_dict.get("value")
       if isinstance(val, str) and val.lower() == "gpu_artisan":
-        return litert_lm.Backend.GPU()
+        return True
 
+  return False
+
+
+def _select_backend(model_path: str) -> litert_lm.Backend:
+  """Inspects .litertlm file metadata to select the execution backend.
+
+  Args:
+    model_path: The absolute filesystem path to the .litertlm model bundle.
+
+  Returns:
+    Backend.GPU() if the model metadata specifies 'gpu_artisan' as the backend
+    constraint, otherwise Backend.CPU().
+  """
+  if _is_gpu_only_model(model_path):
+    return litert_lm.Backend.GPU()
   return litert_lm.Backend.CPU()
 
 

@@ -81,6 +81,11 @@ def _parse_sampler_config(
   )
 
 
+def _is_gpu_only_model(model_path: str) -> bool:
+  """Returns True if the model is GPU-only."""
+  return serve_util._is_gpu_only_model(model_path)
+
+
 class _OpenAIStreamFormatter(abc.ABC):
   """A formatter for OpenAI API compatible Server-Sent Events."""
 
@@ -720,8 +725,15 @@ class OpenAIHandler(http.server.BaseHTTPRequestHandler):
           created_ts = int(os.path.getmtime(m.model_path))
         except OSError:
           created_ts = 0
+        if not _is_gpu_only_model(m.model_path):
+          data.append({
+              "id": m.model_id,
+              "object": "model",
+              "created": created_ts,
+              "owned_by": "litert-lm",
+          })
         data.append({
-            "id": m.model_id,
+            "id": f"{m.model_id},gpu",
             "object": "model",
             "created": created_ts,
             "owned_by": "litert-lm",
