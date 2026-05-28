@@ -98,9 +98,16 @@ internal object LiteRtLmJni {
    *
    * @param enginePointer A pointer to the native engine instance.
    * @param samplerConfig The sampler configuration.
+   * @param loraPath Path to the LoRA weights file.
+   * @param audioLoraPath Path to the Audio LoRA weights file.
    * @return A pointer to the native session instance.
    */
-  external fun nativeCreateSession(enginePointer: Long, samplerConfig: SamplerConfig?): Long
+  external fun nativeCreateSession(
+    enginePointer: Long,
+    samplerConfig: SamplerConfig?,
+    loraPath: String?,
+    audioLoraPath: String?,
+  ): Long
 
   /**
    * Delete the LiteRT-LM session.
@@ -208,6 +215,8 @@ internal object LiteRtLmJni {
     enableConversationConstrainedDecoding: Boolean,
     filterChannelContentFromKvCache: Boolean,
     overwritePromptTemplate: String?,
+    loraPath: String?,
+    audioLoraPath: String?,
   ): Long
 
   /**
