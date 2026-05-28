@@ -440,8 +440,10 @@ absl::Status Conversation::SendMessageAsync(
   auto open_channel_name =
       GetOpenChannelName(single_turn_text, config_.GetChannels());
 
+  bool was_history_empty = false;
   {
     absl::MutexLock lock(history_mutex_);  // NOLINT
+    was_history_empty = history_.empty();
     if (message.is_array()) {
       for (const auto& message : message) {
         history_.push_back(message);
@@ -472,10 +474,38 @@ absl::Status Conversation::SendMessageAsync(
     checkpoint_message_index_ = history_.size() - 1;
   }
 
+  nlohmann::ordered_json messages_for_conversion;
+  if (was_history_empty && !config_.prefill_preface_on_init()) {
+    if (std::holds_alternative<JsonPreface>(preface_)) {
+      const auto& json_preface = std::get<JsonPreface>(preface_);
+      if (json_preface.messages.is_array()) {
+        messages_for_conversion = json_preface.messages;
+      } else {
+        messages_for_conversion =
+            nlohmann::ordered_json::array({json_preface.messages});
+      }
+    }
+  }
+  if (messages_for_conversion.is_array()) {
+    if (message.is_array()) {
+      for (const auto& msg : message) {
+        messages_for_conversion.push_back(msg);
+      }
+    } else {
+      messages_for_conversion.push_back(message);
+    }
+  } else {
+    if (message.is_array()) {
+      messages_for_conversion = message;
+    } else {
+      messages_for_conversion = nlohmann::ordered_json::array({message});
+    }
+  }
+
   ASSIGN_OR_RETURN(
       auto session_inputs,
       model_data_processor_->ToInputDataVector(
-          single_turn_text, nlohmann::ordered_json::array({message}),
+          single_turn_text, messages_for_conversion,
           optional_args.args.value_or(std::monostate())));
 
   if (is_appending_message_) {
