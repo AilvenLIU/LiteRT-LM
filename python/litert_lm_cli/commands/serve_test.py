@@ -78,6 +78,7 @@ if "litert_lm_cli" in sys.modules:
   ].model = mock_model_mod
 
 from litert_lm_cli.commands import gemini_handler
+from litert_lm_cli.commands import openai_handler
 from litert_lm_cli.commands import serve
 from litert_lm_cli.commands import serve_util
 
@@ -605,6 +606,76 @@ class ServeTest(parameterized.TestCase):
       self.assertIsNotNone(match)
     else:
       self.assertIsNone(match)
+
+  def test_build_name_by_tool_call_id_map(self):
+    messages = [
+        {"role": "user", "content": "What is the weather in London?"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{
+                "id": "call_123",
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "arguments": '{"location": "London"}',
+                },
+            }],
+        },
+    ]
+
+    # Build mapping.
+    name_by_tool_call_id = openai_handler._build_name_by_tool_call_id_map(
+        messages
+    )
+    self.assertEqual(name_by_tool_call_id, {"call_123": "get_weather"})
+
+  def test_translate_openai_message_tool_resolution(self):
+    message = {
+        "role": "tool",
+        "tool_call_id": "call_123",
+        "content": "Weather in London is sunny.",
+    }
+    name_by_tool_call_id = {"call_123": "get_weather"}
+
+    # Translate the tool message.
+    translated = openai_handler._translate_openai_message(
+        message, name_by_tool_call_id
+    )
+
+    expected = {
+        "role": "tool",
+        "content": [{
+            "type": "tool_response",
+            "name": "get_weather",
+            "response": "Weather in London is sunny.",
+        }],
+    }
+    self.assertEqual(translated, expected)
+
+  def test_translate_openai_message_tool_resolution_unknown_name(self):
+    message = {
+        "role": "tool",
+        "tool_call_id": "call_123",
+        "content": "Weather in London is sunny.",
+    }
+    # Empty mapping to trigger fallback to "unknown".
+    name_by_tool_call_id = {}
+
+    # Translate the tool message.
+    translated = openai_handler._translate_openai_message(
+        message, name_by_tool_call_id
+    )
+
+    expected = {
+        "role": "tool",
+        "content": [{
+            "type": "tool_response",
+            "name": "unknown",
+            "response": "Weather in London is sunny.",
+        }],
+    }
+    self.assertEqual(translated, expected)
 
 
 if __name__ == "__main__":

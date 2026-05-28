@@ -304,7 +304,38 @@ def _parse_tool_arguments(args_str: str) -> dict[str, Any]:
     return {}
 
 
-def _translate_openai_message(msg: Any) -> dict[str, Any]:
+def _build_name_by_tool_call_id_map(
+    messages: Sequence[Any],
+) -> dict[str, str]:
+  """Builds a mapping from tool_call_id to function name from message history."""
+  name_by_tool_call_id = {}
+  for m in messages:
+    if not isinstance(m, dict):
+      continue
+    if m.get("role") != "assistant":
+      continue
+    if "tool_calls" not in m:
+      continue
+    tool_calls = m.get("tool_calls")
+    if not isinstance(tool_calls, list):
+      continue
+    for tc in tool_calls:
+      if not isinstance(tc, dict):
+        continue
+      tc_id = tc.get("id")
+      func = tc.get("function")
+      if not isinstance(func, dict):
+        continue
+      name = func.get("name")
+      if tc_id and name:
+        name_by_tool_call_id[tc_id] = name
+  return name_by_tool_call_id
+
+
+def _translate_openai_message(
+    msg: Any,
+    name_by_tool_call_id: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
   """Translates an OpenAI message to a LiteRT-LM message format.
 
   This function takes a message dictionary, typically from an OpenAI Chat
@@ -334,6 +365,7 @@ def _translate_openai_message(msg: Any) -> dict[str, Any]:
 
   Args:
     msg: The message object, expected to be a dictionary.
+    name_by_tool_call_id: Optional mapping from tool_call_id to tool name.
 
   Returns:
     A dictionary representing the message in a LiteRT-LM compatible format,
@@ -351,11 +383,18 @@ def _translate_openai_message(msg: Any) -> dict[str, Any]:
   content = msg.get("content")
 
   if role == "tool":
+    tool_call_id = msg.get("tool_call_id")
+    if name_by_tool_call_id and tool_call_id:
+      name = name_by_tool_call_id.get(tool_call_id, "unknown")
+    else:
+      # Avoid crashing LiteRT-LM chat template which expects a name.
+      name = "unknown"
+
     return {
         "role": "tool",
         "content": [{
             "type": "tool_response",
-            "name": msg.get("name"),
+            "name": name,
             "response": content,
         }],
     }
@@ -881,13 +920,19 @@ class OpenAIHandler(http.server.BaseHTTPRequestHandler):
       return
 
     messages = body.get("messages")
-    translated_messages = []
     if isinstance(messages, list) and messages:
+      name_by_tool_call_id = _build_name_by_tool_call_id_map(messages)
+
       try:
-        translated_messages = [_translate_openai_message(m) for m in messages]
+        translated_messages = [
+            _translate_openai_message(m, name_by_tool_call_id) for m in messages
+        ]
       except ValueError as e:
         self.send_error(400, f"Invalid messages: {e}")
         return
+    else:
+      name_by_tool_call_id = None
+      translated_messages = []
 
     if translated_messages:
       last_msg = translated_messages[-1]
@@ -898,7 +943,7 @@ class OpenAIHandler(http.server.BaseHTTPRequestHandler):
     if isinstance(prompt, dict):
       try:
         if not translated_messages or prompt is not last_msg:
-          prompt = _translate_openai_message(prompt)
+          prompt = _translate_openai_message(prompt, name_by_tool_call_id)
       except ValueError as e:
         self.send_error(400, f"Invalid prompt: {e}")
         return
