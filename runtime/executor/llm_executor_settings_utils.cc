@@ -104,7 +104,7 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
           !std::holds_alternative<std::string>(*program_cache_file);
       auto weight_cache_file = executor_settings.GetWeightCacheFile(
           cache_suffix.value_or("") +
-              std::string(ExecutorSettingsBase::kMlDriftCacheSuffix),
+              std::string(ExecutorSettingsBase::kMlDriftWeightCacheSuffix),
           /*check_and_clean=*/true);
       bool has_valid_weight_cache_fd =
           weight_cache_file.ok() &&

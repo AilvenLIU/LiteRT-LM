@@ -571,7 +571,8 @@ absl::StatusOr<GpuModelCacheData> GetGpuModelCacheData(
         absl::StrCat(cache_name, ExecutorSettingsBase::kMlDriftCacheSuffix),
         /*check_and_clean=*/true);
     cache_data.weight_cache_file = executor_settings.GetWeightCacheFile(
-        absl::StrCat(cache_name, ExecutorSettingsBase::kMlDriftCacheSuffix),
+        absl::StrCat(cache_name,
+                     ExecutorSettingsBase::kMlDriftWeightCacheSuffix),
         /*check_and_clean=*/true);
     if (!model_path.empty()) {
       ASSIGN_OR_RETURN(std::string metadata_id,
@@ -579,7 +580,7 @@ absl::StatusOr<GpuModelCacheData> GetGpuModelCacheData(
       if (cache_data.program_cache_file.ok() ||
           cache_data.weight_cache_file.ok()) {
         cache_data.cache_key =
-            absl::StrCat(model_basename, cache_name, "_", metadata_id);
+            absl::StrCat(model_basename, "_", metadata_id, cache_name);
       }
     } else {
       // If the model path is empty, we should still set a cache key. This

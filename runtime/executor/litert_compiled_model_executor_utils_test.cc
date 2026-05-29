@@ -737,7 +737,7 @@ TEST(LlmLiteRTCompiledModelExecutorUtilsTest, GetGpuModelCacheData_WithCache) {
   ASSERT_OK_AND_ASSIGN(std::string expected_metadata_id,
                        GetFileCacheIdentifier(model_path.string()));
   std::string expected_cache_key =
-      absl::StrCat("test_lm.task", "test_cache", "_", expected_metadata_id);
+      absl::StrCat("test_lm.task", "_", expected_metadata_id, "test_cache");
   EXPECT_EQ(cache_data.cache_key, expected_cache_key);
 }
 
