@@ -106,8 +106,7 @@ BuildModelResourcesFromTaskFormat(const ModelAssets& model_assets) {
 }
 
 absl::StatusOr<std::unique_ptr<ModelResources>>
-BuildModelResourcesFromLitertLmFormat(const ModelAssets& model_assets,
-                                      bool enable_file_backed_model_loading) {
+BuildModelResourcesFromLitertLmFormat(const ModelAssets& model_assets) {
   std::unique_ptr<LitertLmLoader> loader;
   if (model_assets.HasMemoryMappedFile()) {
     ASSIGN_OR_RETURN(auto memory_mapped_file,
@@ -121,8 +120,7 @@ BuildModelResourcesFromLitertLmFormat(const ModelAssets& model_assets,
     ASSIGN_OR_RETURN(auto duplicate_file, scoped_file->Duplicate());
     ASSIGN_OR_RETURN(loader, LitertLmLoader::Create(std::move(duplicate_file)));
   }
-  return ModelResourcesLitertLm::Create(std::move(loader),
-                                      enable_file_backed_model_loading);
+  return ModelResourcesLitertLm::Create(std::move(loader));
 }
 
 }  // namespace
@@ -391,15 +389,13 @@ absl::Status FillAttentionMask(litert::TensorBuffer& mask, int start_timestep,
 }
 
 absl::StatusOr<std::unique_ptr<ModelResources>>
-BuildLiteRtCompiledModelResources(const ModelAssets& model_assets,
-                                  bool enable_file_backed_model_loading) {
+BuildLiteRtCompiledModelResources(const ModelAssets& model_assets) {
   ASSIGN_OR_RETURN(auto format, GetFileFormat(model_assets));
   switch (format) {
     case FileFormat::TASK:
       return BuildModelResourcesFromTaskFormat(model_assets);
     case FileFormat::LITERT_LM:
-      return BuildModelResourcesFromLitertLmFormat(
-          model_assets, enable_file_backed_model_loading);
+      return BuildModelResourcesFromLitertLmFormat(model_assets);
     default:
       return absl::InvalidArgumentError("Unsupported file format.");
   }

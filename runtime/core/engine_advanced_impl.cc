@@ -183,11 +183,8 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedImpl::Create(
   }
   const auto& model_assets =
       engine_settings.GetMutableMainExecutorSettings().GetModelAssets();
-  const bool enable_file_backed_model_loading =
-      engine_settings.GetMainExecutorSettings().GetBackend() == Backend::NPU;
   ASSIGN_OR_RETURN(auto model_resources,
-                   BuildLiteRtCompiledModelResources(
-                       model_assets, enable_file_backed_model_loading));
+                   BuildLiteRtCompiledModelResources(model_assets));
   if (benchmark_info.has_value()) {
     RETURN_IF_ERROR(benchmark_info->TimeInitPhaseEnd(
         BenchmarkInfo::InitPhase::kModelAssets));
