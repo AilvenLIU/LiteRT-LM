@@ -475,6 +475,44 @@ TEST(EngineCTest, CreateConversationConfigWithNoSamplerParamsNoSystemMessage) {
   EXPECT_EQ(preface.messages, nullptr);
 }
 
+TEST(EngineCTest, CreateConversationConfigWithSamplerBackend) {
+  const std::string task_path = GetTestdataPath(
+      "litert_lm/runtime/testdata/test_lm_new_metadata.task");
+
+  EngineSettingsPtr settings(
+      litert_lm_engine_settings_create(task_path.c_str(), "cpu",
+                                       /* vision_backend_str */ nullptr,
+                                       /* audio_backend_str */ nullptr),
+      &litert_lm_engine_settings_delete);
+  ASSERT_NE(settings, nullptr);
+  litert_lm_engine_settings_set_max_num_tokens(settings.get(), 16);
+
+  EnginePtr engine(litert_lm_engine_create(settings.get()),
+                   &litert_lm_engine_delete);
+  ASSERT_NE(engine, nullptr);
+
+  SessionConfigPtr session_config(litert_lm_session_config_create(),
+                                  &litert_lm_session_config_delete);
+  ASSERT_NE(session_config, nullptr);
+  session_config->config->SetSamplerBackend(litert::lm::Backend::GPU);
+
+  ConversationConfigPtr conversation_config(
+      litert_lm_conversation_config_create(),
+      &litert_lm_conversation_config_delete);
+  ASSERT_NE(conversation_config, nullptr);
+  litert_lm_conversation_config_set_session_config(conversation_config.get(),
+                                                   session_config.get());
+
+  ConversationPtr conversation(
+      litert_lm_conversation_create(engine.get(), conversation_config.get()),
+      &litert_lm_conversation_delete);
+  ASSERT_NE(conversation, nullptr);
+
+  const auto& final_session_config = conversation->conversation->GetConfig()
+                                   .GetSessionConfig();
+  EXPECT_EQ(final_session_config.GetSamplerBackend(), litert::lm::Backend::GPU);
+}
+
 TEST(EngineCTest, CreateConversationConfigWithTools) {
   // 1. Create an engine.
   const std::string task_path = GetTestdataPath(

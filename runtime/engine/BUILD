@@ -345,6 +345,7 @@ cc_test(
         "//runtime/proto:engine_cc_proto",
         "//runtime/proto:llm_metadata_cc_proto",
         "//runtime/proto:llm_model_type_cc_proto",
+        "//runtime/proto:sampler_params_cc_proto",
         "//runtime/proto:token_cc_proto",
         "//runtime/util:test_utils",
     ],
