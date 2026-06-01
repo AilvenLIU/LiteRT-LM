@@ -27,7 +27,7 @@ class EngineTests: XCTestCase {
 
   func testEngineConfig_IsCorrectlySet() async throws {
     let modelResource =
-      "runtime/testdata/test_lm_new_metadata.task"
+      + "runtime/testdata/test_lm_new_metadata.task"
     let modelPath = testDataPath(forResource: modelResource)
     let engineConfig = try EngineConfig(
       modelPath: modelPath, maxNumTokens: 16, cacheDir: NSTemporaryDirectory())
@@ -43,7 +43,7 @@ class EngineTests: XCTestCase {
 
   func testEngineConfigThrowsErrorWithInvalidMaxNumTokens() throws {
     let modelResource =
-      "runtime/testdata/test_lm_new_metadata.task"
+      + "runtime/testdata/test_lm_new_metadata.task"
     let modelPath = testDataPath(forResource: modelResource)
     XCTAssertThrowsError(
       try EngineConfig(
@@ -55,7 +55,7 @@ class EngineTests: XCTestCase {
 
   func testIsInitialized_IsFalseForNewEngine() async throws {
     let modelResource =
-      "runtime/testdata/test_lm_new_metadata.task"
+      + "runtime/testdata/test_lm_new_metadata.task"
     let modelPath = testDataPath(forResource: modelResource)
     let engineConfig = try EngineConfig(
       modelPath: modelPath, maxNumTokens: 16, cacheDir: NSTemporaryDirectory())
@@ -67,7 +67,7 @@ class EngineTests: XCTestCase {
 
   func testInitialize_SetsIsInitializedToTrue() async throws {
     let modelResource =
-      "runtime/testdata/test_lm_new_metadata.task"
+      + "runtime/testdata/test_lm_new_metadata.task"
     let modelPath = testDataPath(forResource: modelResource)
     let engineConfig = try EngineConfig(
       modelPath: modelPath, maxNumTokens: 16, cacheDir: NSTemporaryDirectory())
@@ -79,7 +79,7 @@ class EngineTests: XCTestCase {
 
   func testInitialize_ThrowsIfCalledTwice() async throws {
     let modelResource =
-      "runtime/testdata/test_lm_new_metadata.task"
+      + "runtime/testdata/test_lm_new_metadata.task"
     let modelPath = testDataPath(forResource: modelResource)
     let engineConfig = try EngineConfig(
       modelPath: modelPath, maxNumTokens: 16, cacheDir: NSTemporaryDirectory())
@@ -124,7 +124,7 @@ class EngineTests: XCTestCase {
 
   func testBenchmark_returnsBenchmarkInfo() async throws {
     let modelResource =
-      "runtime/testdata/test_lm.litertlm"
+      + "runtime/testdata/test_lm.litertlm"
     let modelPath = testDataPath(forResource: modelResource)
 
     let info = try await benchmark(
@@ -147,7 +147,7 @@ class EngineTests: XCTestCase {
     // this test will crash or fail.
     func scopeToTriggerDeinit() async throws {
       let modelResource =
-        "runtime/testdata/test_lm_new_metadata.task"
+        + "runtime/testdata/test_lm_new_metadata.task"
       let modelPath = testDataPath(forResource: modelResource)
       let engineConfig = try EngineConfig(
         modelPath: modelPath, maxNumTokens: 16, cacheDir: NSTemporaryDirectory())

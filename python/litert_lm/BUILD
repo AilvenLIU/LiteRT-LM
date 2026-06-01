@@ -62,6 +62,7 @@ cc_binary(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
         "@nlohmann_json//:json",
+        "//runtime/components:tokenizer",
         "//runtime/conversation",
         "//runtime/conversation:io_types",
         "//runtime/conversation/model_data_processor:config_registry",
@@ -78,6 +79,7 @@ cc_binary(
         "//runtime/proto:sampler_params_cc_proto",
         "//runtime/proto:token_cc_proto",
         "//runtime/util:logging",
+        "//runtime/util:scoped_file",
     ],
 )
 

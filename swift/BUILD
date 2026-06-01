@@ -41,7 +41,6 @@ swift_library(
     copts = ["-enable-testing"],
     module_name = "LiteRTLM",
     deps = [
-        ":CLiteRTLM_objc",
 
 
         "//c:engine",
