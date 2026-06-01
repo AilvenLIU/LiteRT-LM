@@ -21,6 +21,7 @@ import click
 import litert_lm
 from litert_lm_cli import common
 from litert_lm_cli import help_formatter
+from litert_lm_cli import huggingface_download
 from litert_lm_cli import model
 
 try:
@@ -194,11 +195,11 @@ def benchmark(
     litert_lm.set_min_log_severity(litert_lm.LogSeverity.VERBOSE)
 
   if from_huggingface_repo:
-    model_path = common.download_from_huggingface(
-        from_huggingface_repo, model_reference, huggingface_token
+    model_path = huggingface_download.download_from_huggingface(
+        repo_id=from_huggingface_repo,
+        filename=model_reference,
+        token=huggingface_token,
     )
-    if not model_path:
-      return
     model_obj = model.Model.from_model_path(model_path)
   else:
     model_obj = model.Model.from_model_reference(model_reference)

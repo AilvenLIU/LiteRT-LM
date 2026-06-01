@@ -70,6 +70,7 @@ pytype_strict_library(
     deps = [
         "//python/litert_lm_cli:common",
         "//python/litert_lm_cli:help_formatter",
+        "//python/litert_lm_cli:huggingface_download",
         "//python/litert_lm_cli:model",
         requirement("click"),
     ],
@@ -105,6 +106,7 @@ pytype_strict_library(
         "//python/litert_lm",
         "//python/litert_lm_cli:common",
         "//python/litert_lm_cli:help_formatter",
+        "//python/litert_lm_cli:huggingface_download",
         "//python/litert_lm_cli:model",
         requirement("click"),
     ] + select({
@@ -121,6 +123,7 @@ pytype_strict_library(
         "//python/litert_lm",
         "//python/litert_lm_cli:common",
         "//python/litert_lm_cli:help_formatter",
+        "//python/litert_lm_cli:huggingface_download",
         "//python/litert_lm_cli:model",
         requirement("click"),
         requirement("prompt_toolkit"),

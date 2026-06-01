@@ -14,12 +14,10 @@
 
 """Import subcommand for LiteRT-LM CLI."""
 
-import collections.abc
-import http.client
 import os
+import pathlib
 import shutil
 import ssl
-import tempfile
 import textwrap
 import urllib.error
 import urllib.parse
@@ -29,74 +27,8 @@ import click
 
 from litert_lm_cli import common
 from litert_lm_cli import help_formatter
+from litert_lm_cli import huggingface_download
 from litert_lm_cli import model
-
-_DOWNLOAD_CHUNK_SIZE = 1024 * 64
-
-
-def _stream_download(
-    response: http.client.HTTPResponse,
-    *,
-    length: int | None,
-    format_progress: collections.abc.Callable[[int], str],
-) -> str:
-  """Streams the response body to a temporary file with a progress bar.
-
-  If any exception occurs during the download or file writing, the temporary
-  file is guaranteed to be cleaned up.
-
-  Args:
-    response: The HTTPResponse object to read the body from.
-    length: The total expected length of the download in bytes, if known. Used
-      for the progress bar's total size.
-    format_progress: A callable that takes the current progress position (in
-      bytes) and returns a formatted string for the progress bar.
-
-  Returns:
-    The absolute path to the temporary file where the response body was written.
-  """
-  # Use a dedicated download directory within the user's home to avoid potential
-  # space limitations or quota issues that might be present in /tmp.
-  download_dir = os.path.join(model.get_cli_base_dir(), "downloading")
-  os.makedirs(download_dir, exist_ok=True)
-  tmp_file = tempfile.NamedTemporaryFile(dir=download_dir, delete=False)
-  tmp_file_path = tmp_file.name
-
-  try:
-    with tmp_file:
-      with click.progressbar(
-          length=length,
-          show_pos=False,
-          show_percent=False,
-          show_eta=False,
-          item_show_func=lambda item: item,
-          bar_template="[%(bar)s]  %(info)s",
-          width=20,
-      ) as bar:
-        current_pos = 0
-        for chunk in iter(lambda: response.read(_DOWNLOAD_CHUNK_SIZE), b""):
-          tmp_file.write(chunk)
-          current_pos += len(chunk)
-          bar.update(len(chunk), current_item=format_progress(current_pos))
-    return tmp_file_path
-  except BaseException:
-    # Ensure the file is closed before attempting to remove it.
-    try:
-      os.remove(tmp_file_path)
-    except OSError:
-      pass
-    raise
-
-
-def _format_size(size_in_bytes: int) -> str:
-  """Formats bytes to a human-readable string (e.g., 18.2GB)."""
-  for unit in ["B", "KB", "MB", "GB", "TB"]:
-    if size_in_bytes < 1024.0:
-      if unit == "B":
-        return f"{int(size_in_bytes)}{unit}"
-      return f"{size_in_bytes:.1f}{unit}"
-    size_in_bytes /= 1024.0
-  return f"{size_in_bytes:.1f}PB"
 
 
 def download_experimental_model(
@@ -123,41 +55,29 @@ def download_experimental_model(
   req = urllib.request.Request(url, headers={"User-Agent": user_agent})
 
   try:
-    response = urllib.request.urlopen(req, context=ssl_context)
+    with urllib.request.urlopen(req, context=ssl_context) as response:
+      total_size = common.parse_total_size(response.getheader("Content-Length"))
+      size_suffix = common.download_size_suffix(total_size)
+
+      click.echo(f"Downloading {model_id!r}{size_suffix}...")
+
+      format_progress = lambda pos: common.format_download_progress(
+          pos, total_size
+      )
+      downloading_dir = pathlib.Path(model.get_cli_base_dir()) / "downloading"
+      return str(
+          common.stream_download(
+              response,
+              download_dir=downloading_dir,
+              length=total_size,
+              format_progress=format_progress,
+          )
+      )
+
   except urllib.error.URLError as e:
     raise click.ClickException(
-        f"Failed to download model '{model_id}': {e!r}"
+        f"Failed to download model {model_id!r}: {e!r}"
     ) from e
-
-  with response:
-    content_length = response.getheader("Content-Length")
-    if content_length is None:
-      total_size = None
-      size_suffix = ""
-    else:
-      try:
-        total_size = int(content_length)
-        size_suffix = f" ({_format_size(total_size)})"
-      except ValueError:
-        total_size = None
-        size_suffix = ""
-
-    click.echo(f"Downloading {model_id!r}{size_suffix}...")
-
-    def format_progress(current_pos_bytes: int) -> str:
-      if total_size and total_size > 0:
-        pct = int((current_pos_bytes / total_size) * 100)
-        return f"{pct}%"
-
-      if current_pos_bytes > 1024 * 1024:
-        return f"{current_pos_bytes / (1024 * 1024):.1f} MB"
-      return f"{current_pos_bytes / 1024:.1f} KB"
-
-    return _stream_download(
-        response,
-        length=total_size,
-        format_progress=format_progress,
-    )
 
 
 def _copy_source(
@@ -263,15 +183,11 @@ def import_model(
   temporary_file = None
 
   if from_huggingface_repo:
-    downloaded_file = common.download_from_huggingface(
-        from_huggingface_repo, model_file, huggingface_token
+    source = huggingface_download.download_from_huggingface(
+        repo_id=from_huggingface_repo,
+        filename=model_file,
+        token=huggingface_token,
     )
-    if not downloaded_file:
-      raise click.ClickException(
-          f"Failed to download model file '{model_file}' from HuggingFace"
-          f" repository '{from_huggingface_repo}'."
-      )
-    source = downloaded_file
   else:
     source = model_file
 

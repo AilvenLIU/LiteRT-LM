@@ -79,11 +79,18 @@ pytype_strict_library(
 pytype_strict_library(
     name = "common",
     srcs = ["common.py"],
+    deps = [requirement("click")],
+    imports = [".."],
+)
+
+pytype_strict_library(
+    name = "huggingface_download",
+    srcs = ["huggingface_download.py"],
     deps = [
+        ":common",
+        ":model",
         requirement("click"),
-    ] + select({
-        "//conditions:default": [requirement("huggingface_hub")],
-    }),
+    ],
     imports = [".."],
 )
 
@@ -94,6 +101,30 @@ py_test(
     deps = [
         ":venv_manager",
         "@absl_py//absl/testing:absltest",
+    ],
+    imports = [".."],
+)
+
+py_test(
+    name = "common_test",
+    srcs = ["common_test.py"],
+    tags = ["nowindows"],
+    deps = [
+        ":common",
+        "@absl_py//absl/testing:absltest",
+    ],
+    imports = [".."],
+)
+
+py_test(
+    name = "huggingface_download_test",
+    srcs = ["huggingface_download_test.py"],
+    tags = ["nowindows"],
+    deps = [
+        ":huggingface_download",
+        ":model",
+        "@absl_py//absl/testing:absltest",
+        requirement("click"),
     ],
     imports = [".."],
 )
@@ -113,7 +144,7 @@ pytype_strict_library(
         "//python/litert_lm_cli/commands:benchmark",
         "//python/litert_lm_cli/commands:convert",
         "//python/litert_lm_cli/commands:delete",
-        "//python/litert_lm_cli/commands:import",
+        "//python/litert_lm_cli/commands:import",  # fixdeps: keep
         "//python/litert_lm_cli/commands:list",
         "//python/litert_lm_cli/commands:rename",
         "//python/litert_lm_cli/commands:run",
@@ -201,7 +232,6 @@ genrule(
         "//conditions:default": "echo 'litert-lm-api==" + VERSION + "' > $@ && echo 'litert-lm-builder==" + VERSION + "' >> $@",
     }) + """
         echo 'click' >> $@
-        echo 'huggingface_hub' >> $@
         echo 'prompt_toolkit' >> $@
     """,
 )
