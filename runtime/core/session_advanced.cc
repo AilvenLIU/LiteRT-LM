@@ -488,6 +488,25 @@ absl::Status SessionAdvanced::RewindToCheckpoint(absl::string_view label) {
   return execution_manager_lock->SetCurrentStep(*session_info_, target_step);
 }
 
+absl::Status SessionAdvanced::RewindToStep(int step) {
+  absl::MutexLock lock(mutex_);
+  auto execution_manager_lock = execution_manager_.lock();
+  if (execution_manager_lock == nullptr) {
+    return absl::FailedPreconditionError("Execution manager is not available.");
+  }
+  if (step > 0) {
+    session_state_ = SessionState::kPrefilled;
+  } else {
+    session_state_ = SessionState::kFresh;
+  }
+
+  // Remove all checkpoints after the current step.
+  absl::erase_if(checkpoint_map_,
+                 [step](const auto& pair) { return pair.second.step > step; });
+
+  return execution_manager_lock->SetCurrentStep(*session_info_, step);
+}
+
 absl::StatusOr<int> SessionAdvanced::GetCurrentStep() const {
   auto execution_manager_lock = execution_manager_.lock();
   if (execution_manager_lock == nullptr) {

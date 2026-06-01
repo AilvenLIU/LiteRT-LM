@@ -278,6 +278,11 @@ class SessionInterface {
     return absl::UnimplementedError("RewindToCheckpoint not implemented.");
   }
 
+  // Rewinds the session to a specific step number.
+  virtual absl::Status RewindToStep(int step) {
+    return absl::UnimplementedError("RewindToStep not implemented.");
+  }
+
   // Get the current step of the session.
   virtual absl::StatusOr<int> GetCurrentStep() const {
     return absl::UnimplementedError("GetCurrentStep not implemented.");

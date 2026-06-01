@@ -1028,6 +1028,46 @@ TEST_F(SessionAdvancedTest, GetCurrentStep) {
   EXPECT_EQ(step3, 10);
 }
 
+TEST_F(SessionAdvancedTest, RewindToStep) {
+  ASSERT_OK_AND_ASSIGN(auto session, CreateTestSession());
+
+  std::vector<InputData> inputs;
+  inputs.emplace_back(InputText("Hello World!"));
+
+  EXPECT_OK(session->RunPrefill(inputs));
+
+  // Initially step should be 8.
+  ASSERT_OK_AND_ASSIGN(int step1, session->GetCurrentStep());
+  EXPECT_EQ(step1, 8);
+
+  auto decode_config = DecodeConfig::CreateDefault();
+  decode_config.SetMaxOutputTokens(2);
+  ASSERT_OK_AND_ASSIGN(auto responses1, session->RunDecode(decode_config));
+  EXPECT_EQ(responses1.GetTexts().size(), 1);
+  EXPECT_EQ(responses1.GetTexts()[0], " How'");
+  EXPECT_THAT(responses1.GetTokenIds()[0], testing::ElementsAre(224, 24));
+
+  // After decode, step should be 10.
+  ASSERT_OK_AND_ASSIGN(int step2, session->GetCurrentStep());
+  EXPECT_EQ(step2, 10);
+
+  // Rewind to step 8.
+  EXPECT_OK(session->RewindToStep(8));
+  ASSERT_OK_AND_ASSIGN(int step3, session->GetCurrentStep());
+  EXPECT_EQ(step3, 8);
+
+  // Decoded tokens should be the same as the first decode call.
+  ASSERT_OK_AND_ASSIGN(auto responses2, session->RunDecode(decode_config));
+  EXPECT_EQ(responses2.GetTexts().size(), 1);
+  EXPECT_EQ(responses2.GetTexts()[0], " How'");
+  EXPECT_THAT(responses2.GetTokenIds()[0], testing::ElementsAre(224, 24));
+
+  // Rewind to step 0.
+  EXPECT_OK(session->RewindToStep(0));
+  ASSERT_OK_AND_ASSIGN(int step4, session->GetCurrentStep());
+  EXPECT_EQ(step4, 0);
+}
+
 TEST_F(SessionAdvancedTest, RunPrefillAndDecodeAsyncWithInternalSampler) {
   const std::vector<std::vector<int>> stop_token_ids = {{2294}};
   SessionConfig session_config = SessionConfig::CreateDefault();
@@ -1777,7 +1817,8 @@ TEST_F(SessionAdvancedTest,
   std::vector<InputData> inputs;
   inputs.emplace_back(InputText("Hello World!"));
   EXPECT_OK(session->RunPrefill(inputs));
-  EXPECT_EQ(session->GetBenchmarkInfo()->GetTotalPrefillTurns(), 1);
+  ASSERT_OK_AND_ASSIGN(auto actual_benchmark_info, session->GetBenchmarkInfo());
+  EXPECT_EQ(actual_benchmark_info.GetTotalPrefillTurns(), 1);
 }
 
 TEST_F(SessionAdvancedTest,
@@ -1821,7 +1862,8 @@ TEST_F(SessionAdvancedTest,
   std::vector<InputData> inputs;
   inputs.emplace_back(InputText("Hello World!"));
   EXPECT_OK(session->RunPrefill(inputs));
-  EXPECT_EQ(session->GetBenchmarkInfo()->GetTotalPrefillTurns(), 1);
+  ASSERT_OK_AND_ASSIGN(auto actual_benchmark_info, session->GetBenchmarkInfo());
+  EXPECT_EQ(actual_benchmark_info.GetTotalPrefillTurns(), 1);
 }
 
 TEST_F(SessionAdvancedTest,
@@ -1862,9 +1904,10 @@ TEST_F(SessionAdvancedTest,
                                        /*audio_executor_settings=*/nullptr,
                                        /*litert_env=*/nullptr));
 
-  auto session =
+  ASSERT_OK_AND_ASSIGN(
+      auto session,
       SessionAdvanced::Create(execution_manager, tokenizer_.get(),
-                              session_config, /*benchmark_info=*/std::nullopt);
+                              session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
   inputs.emplace_back(InputText("How"));
@@ -1876,11 +1919,11 @@ TEST_F(SessionAdvancedTest,
   auto decode_config = DecodeConfig::CreateDefault();
   decode_config.SetConstraint(&constraint);
 
-  EXPECT_OK((*session)->RunPrefill(inputs));
-  ASSERT_OK_AND_ASSIGN(auto task_controller, (*session)->RunDecodeAsync(
-                                                 CreateStreamingTestCallback(
-                                                     status, task_state, texts),
-                                                 decode_config));
+  EXPECT_OK(session->RunPrefill(inputs));
+  ASSERT_OK_AND_ASSIGN(auto task_controller,
+                       session->RunDecodeAsync(CreateStreamingTestCallback(
+                                                   status, task_state, texts),
+                                               decode_config));
 
   EXPECT_OK(task_controller->WaitUntilDone(absl::Seconds(10)));
   EXPECT_OK(status);
@@ -1929,9 +1972,10 @@ TEST_F(SessionAdvancedTest,
                                        /*audio_executor_settings=*/nullptr,
                                        /*litert_env=*/nullptr));
 
-  auto session =
+  ASSERT_OK_AND_ASSIGN(
+      auto session,
       SessionAdvanced::Create(execution_manager, tokenizer_.get(),
-                              session_config, /*benchmark_info=*/std::nullopt);
+                              session_config, /*benchmark_info=*/std::nullopt));
 
   std::vector<InputData> inputs;
   inputs.emplace_back(InputText("How"));
@@ -1942,11 +1986,11 @@ TEST_F(SessionAdvancedTest,
   auto decode_config = DecodeConfig::CreateDefault();
   decode_config.SetConstraint(&constraint);
 
-  EXPECT_OK((*session)->RunPrefill(inputs));
-  ASSERT_OK_AND_ASSIGN(auto task_controller, (*session)->RunDecodeAsync(
-                                                 CreateStreamingTestCallback(
-                                                     status, task_state, texts),
-                                                 decode_config));
+  EXPECT_OK(session->RunPrefill(inputs));
+  ASSERT_OK_AND_ASSIGN(auto task_controller,
+                       session->RunDecodeAsync(CreateStreamingTestCallback(
+                                                   status, task_state, texts),
+                                               decode_config));
 
   EXPECT_OK(task_controller->WaitUntilDone(absl::Seconds(10)));
   EXPECT_OK(status);
@@ -2188,13 +2232,13 @@ TEST_F(SessionAdvancedTest, RunTextScoringWithoutTokenLengthsSuccess) {
   EXPECT_OK(session->RunPrefill(inputs));
   std::vector<absl::string_view> target_texts;
   target_texts.push_back("How's it going?");
-  const auto responses = session->RunTextScoring(target_texts,
-                                                 /*store_token_lengths=*/false);
-  EXPECT_OK(responses);
+  ASSERT_OK_AND_ASSIGN(
+      const auto responses,
+      session->RunTextScoring(target_texts, /*store_token_lengths=*/false));
   // Expect a single output candidate with score 0.0f.
-  EXPECT_EQ(responses->GetScores().size(), 1);
-  EXPECT_EQ(responses->GetScores()[0], 0.0f);
-  EXPECT_FALSE(responses->GetTokenLengths().has_value());
+  EXPECT_EQ(responses.GetScores().size(), 1);
+  EXPECT_EQ(responses.GetScores()[0], 0.0f);
+  EXPECT_FALSE(responses.GetTokenLengths().has_value());
 }
 
 TEST_F(SessionAdvancedTest, RunTextScoringWithTokenLengthsSuccess) {
@@ -2204,15 +2248,15 @@ TEST_F(SessionAdvancedTest, RunTextScoringWithTokenLengthsSuccess) {
   EXPECT_OK(session->RunPrefill(inputs));
   std::vector<absl::string_view> target_texts;
   target_texts.push_back("How's it going?");
-  const auto responses = session->RunTextScoring(target_texts,
-                                                 /*store_token_lengths=*/true);
-  EXPECT_OK(responses);
+  ASSERT_OK_AND_ASSIGN(
+      const auto responses,
+      session->RunTextScoring(target_texts, /*store_token_lengths=*/true));
   // Expect a single output candidate with score 0.0f and token length 7.
-  EXPECT_EQ(responses->GetScores().size(), 1);
-  EXPECT_EQ(responses->GetScores()[0], 0.0f);
-  EXPECT_TRUE(responses->GetTokenLengths().has_value());
-  EXPECT_EQ(responses->GetTokenLengths()->size(), 1);
-  EXPECT_EQ((*responses->GetTokenLengths())[0], 7);
+  EXPECT_EQ(responses.GetScores().size(), 1);
+  EXPECT_EQ(responses.GetScores()[0], 0.0f);
+  EXPECT_TRUE(responses.GetTokenLengths().has_value());
+  EXPECT_EQ(responses.GetTokenLengths()->size(), 1);
+  EXPECT_EQ((*responses.GetTokenLengths())[0], 7);
 }
 
 TEST_F(SessionAdvancedTest, RunTextScoringAsyncEmptyTargetTextFailure) {

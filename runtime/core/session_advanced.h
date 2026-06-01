@@ -153,9 +153,11 @@ class SessionAdvanced : public SessionInterface {
   // step number.
   absl::Status SaveCheckpoint(absl::string_view label) override;
 
-  // Rewinds the session to the given checkpoint and then returns the current
-  // step.
+  // Rewinds the session to the given checkpoint.
   absl::Status RewindToCheckpoint(absl::string_view label) override;
+
+  // Rewinds the session to a specific step number.
+  absl::Status RewindToStep(int step) override;
 
   // Get the current step of the session.
   absl::StatusOr<int> GetCurrentStep() const override;
