@@ -183,6 +183,15 @@ class ConversationTests: XCTestCase {
     XCTAssertGreaterThan(benchmarkInfo.lastDecodeTokenCount, 0)
   }
 
+  func testConversationGetTokenCountSucceeds() async throws {
+    let conversation = try await self.engine.createConversation(with: ConversationConfig())
+    XCTAssertTrue(conversation.isAlive)
+    XCTAssertEqual(try conversation.getTokenCount(), 0)
+
+    let _ = try await conversation.sendMessage(Message("How are you"))
+    XCTAssertEqual(try conversation.getTokenCount(), 10)
+  }
+
   func testSendMessageWithExtraContextReturnsMessage() async throws {
     let conversation = try await self.engine.createConversation(with: ConversationConfig())
     XCTAssertTrue(conversation.isAlive)

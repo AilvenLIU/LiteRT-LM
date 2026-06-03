@@ -285,6 +285,14 @@ public class Conversation {
     return String(cString: cString)
   }
 
+  /// Gets the number of tokens in the conversation KV Cache (prefill + decode).
+  ///
+  /// - Throws: A `LiteRTLMError` if the conversation is not alive.
+  public func getTokenCount() throws -> Int {
+    let handle = try checkIsAlive()
+    return Int(litert_lm_conversation_get_token_count(handle))
+  }
+
   /// Retrieves the benchmark information from the conversation.
   ///
   /// - Returns: The benchmark information
