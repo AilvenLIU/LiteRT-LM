@@ -141,6 +141,7 @@ export class LitertLmSettingsEditor extends LitElement {
         share_constant_tensors: true,
       },
     },
+    benchmarkEnabled: false,
   };
 
   @state()

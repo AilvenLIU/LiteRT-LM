@@ -128,6 +128,7 @@ describe('LiteRtLm tests', () => {
               maxNumTokens: 128,
               backendConfig,
             },
+            benchmarkEnabled: true,
           });
         } catch (e) {
           console.error(e);
@@ -257,6 +258,37 @@ describe('LiteRtLm tests', () => {
 
         it('creates Conversation', () => {
           expect(conversation).toBeDefined();
+        });
+
+        it('gets token count initially and after sending message', async () => {
+          let tokenCount = await conversation.getTokenCount();
+          expect(tokenCount).toBe(0);
+
+          const message = {
+            role: 'user',
+            content: 'Hello',
+          };
+          await conversation.sendMessage(message);
+
+          tokenCount = await conversation.getTokenCount();
+          expect(tokenCount).toBeGreaterThan(0);
+        });
+
+        it('gets benchmark info after sending message', async () => {
+          const message = {
+            role: 'user',
+            content: 'Hello benchmark test',
+          };
+          await conversation.sendMessage(message);
+
+          const benchmark = await conversation.getBenchmarkInfo();
+          expect(benchmark).toBeDefined();
+
+          expect(benchmark.lastPrefillTokenCount).toBeGreaterThan(0);
+          expect(benchmark.lastDecodeTokenCount).toBeGreaterThan(0);
+          expect(benchmark.lastPrefillTokensPerSecond).toBeGreaterThan(0);
+          expect(benchmark.lastDecodeTokensPerSecond).toBeDefined();
+          expect(benchmark.timeToFirstTokenInSecond).toBeDefined();
         });
 
         it('sends message and gets response', async () => {

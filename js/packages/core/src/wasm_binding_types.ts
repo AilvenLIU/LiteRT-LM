@@ -132,6 +132,7 @@ export declare interface EngineSettings extends Deletable {
   setParallelFileSectionLoading(parallelFileSectionLoading: boolean): void;
   getSingleThreadedExecution(): boolean;
   setSingleThreadedExecution(singleThreadedExecution: boolean): void;
+  enableBenchmark(): void;
 }
 
 /**
@@ -435,7 +436,7 @@ export declare interface ConversationConfig extends Deletable {
  */
 declare interface ConversationConstructor {
   new(...args: never[]): Conversation;  // Do not call.
-  create(engine: Engine, config: ConversationConfig): Conversation;
+  create(engine: Engine, config: ConversationConfig): Promise<Conversation>;
 }
 
 declare const ConversationBrand: unique symbol;
@@ -452,7 +453,18 @@ export declare interface Conversation extends Deletable {
           (chunk: string|null, isDone: boolean, error: string|null) => void):
       Promise<void>;
   getHistory(): string;
+  getTokenCount(): number;
+  getBenchmarkInfo(): BenchmarkInfo;
   cancelProcess(): void;
+}
+
+/** Benchmark metadata for tracking decoding efficiency. */
+export declare interface BenchmarkInfo {
+  lastPrefillTokensPerSecond: number;
+  lastPrefillTokenCount: number;
+  lastDecodeTokensPerSecond: number;
+  lastDecodeTokenCount: number;
+  timeToFirstTokenInSecond: number;
 }
 
 
