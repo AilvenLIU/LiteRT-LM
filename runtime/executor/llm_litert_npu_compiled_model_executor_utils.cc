@@ -27,6 +27,7 @@
 #include "absl/base/prefetch.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"  // from @litert
 #include "litert/cc/litert_layout.h"  // from @litert
 
@@ -531,14 +532,15 @@ absl::Status HWKVCacheUpdate(
             for (; h < hidden_dim; ++h) {
               c_ptr16[h * cache_seq + start_pos] = s_ptr16[h];
             }
-          } else
+          } else {
 #endif
-          {
             for (int64_t h = 0; h < hidden_dim; ++h) {
               std::memcpy(c_ptr + (h * cache_seq + start_pos) * element_size,
                           s_ptr + h * element_size, element_size);
             }
+#if defined(__ANDROID__) && defined(__ARM_NEON) && defined(__aarch64__)
           }
+#endif
         } else if (slice_is_transposed) {
           // Cache is [..., hidden, seq], Slice is [..., hidden, seq]
           for (int64_t h = 0; h < hidden_dim; ++h) {
@@ -1125,6 +1127,119 @@ absl::Status DequantizeLogits(const ::litert::TensorBuffer& src,
         "Unsupported source type for dequantization: ", (int)src_elem_type));
   }
 
+  return absl::OkStatus();
+}
+
+absl::Status WritePleEmbeddingsToPtr(void* dest_ptr,
+                                     absl::Span<const float> ple_embeddings,
+                                     litert::ElementType output_type,
+                                     float final_scale,
+                                     int32_t final_zero_point) {
+  if (output_type == litert::ElementType::Int16) {
+    int16_t* int16_ptr = static_cast<int16_t*>(dest_ptr);
+    for (size_t i = 0; i < ple_embeddings.size(); ++i) {
+      int16_ptr[i] =
+          Quantize<int16_t>(ple_embeddings[i], final_scale, final_zero_point);
+    }
+  } else if (output_type == litert::ElementType::Float32 ||
+             output_type == litert::ElementType::None) {
+    float* float_ptr = static_cast<float*>(dest_ptr);
+    std::memcpy(float_ptr, ple_embeddings.data(),
+                ple_embeddings.size() * sizeof(float));
+  } else {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Unsupported PLE output type: ", output_type));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status WritePleEmbeddings(::litert::TensorBuffer& buffer,
+                                absl::Span<const float> ple_embeddings,
+                                litert::ElementType output_type,
+                                float final_scale, int32_t final_zero_point) {
+  LITERT_ASSIGN_OR_RETURN(size_t buffer_size, buffer.PackedSize());
+  size_t element_size = 0;
+  if (output_type == litert::ElementType::Int16) {
+    element_size = sizeof(int16_t);
+  } else if (output_type == litert::ElementType::Float32 ||
+             output_type == litert::ElementType::None) {
+    element_size = sizeof(float);
+  } else {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Unsupported PLE output type: ", output_type));
+  }
+  RET_CHECK_GE(buffer_size, ple_embeddings.size() * element_size);
+
+  LITERT_ASSIGN_OR_RETURN(
+      auto lock, ::litert::TensorBufferScopedLock::Create(
+                     buffer, ::litert::TensorBuffer::LockMode::kWrite));
+  return WritePleEmbeddingsToPtr(lock.second, ple_embeddings, output_type,
+                                 final_scale, final_zero_point);
+}
+
+absl::Status WriteAndPadPleEmbeddings(::litert::TensorBuffer& buffer,
+                                      absl::Span<const float> ple_embeddings,
+                                      size_t ple_dim, size_t seq_pos_size,
+                                      const std::vector<float>& default_ple_emb,
+                                      litert::ElementType output_type,
+                                      float final_scale,
+                                      int32_t final_zero_point) {
+  RET_CHECK_EQ(ple_embeddings.size(), seq_pos_size * ple_dim);
+  LITERT_ASSIGN_OR_RETURN(size_t buffer_size, buffer.PackedSize());
+  LITERT_ASSIGN_OR_RETURN(
+      auto lock_and_addr,
+      ::litert::TensorBufferScopedLock::Create(
+          buffer, ::litert::TensorBuffer::LockMode::kWrite));
+
+  size_t num_tokens_to_fill =
+      buffer_size /
+      (ple_dim * (output_type == litert::ElementType::Int16 ? sizeof(int16_t)
+                                                            : sizeof(float)));
+  RET_CHECK_LE(seq_pos_size, num_tokens_to_fill);
+
+  LITERT_RETURN_IF_ERROR(WritePleEmbeddingsToPtr(
+      lock_and_addr.second, ple_embeddings, output_type, final_scale,
+      final_zero_point));
+
+  if (output_type == litert::ElementType::Int16) {
+    int16_t* int16_ptr = static_cast<int16_t*>(lock_and_addr.second);
+
+    // Quantize default PLE embedding. If not provided or size doesn't match
+    // ple_dim, pad with quantized zeros.
+    std::vector<int16_t> quantized_default_ple_emb(
+        ple_dim, Quantize<int16_t>(0.0f, final_scale, final_zero_point));
+    if (default_ple_emb.size() == ple_dim) {
+      for (size_t i = 0; i < ple_dim; ++i) {
+        quantized_default_ple_emb[i] = Quantize<int16_t>(
+            default_ple_emb[i], final_scale, final_zero_point);
+      }
+    }
+
+    // Pad the rest
+    int16_t* padding_ptr = int16_ptr + seq_pos_size * ple_dim;
+    for (size_t i = seq_pos_size; i < num_tokens_to_fill; ++i) {
+      std::memcpy(padding_ptr, quantized_default_ple_emb.data(),
+                  ple_dim * sizeof(int16_t));
+      padding_ptr += ple_dim;
+    }
+  } else if (output_type == litert::ElementType::Float32 ||
+             output_type == litert::ElementType::None) {
+    // Float32 path
+    float* float_ptr = static_cast<float*>(lock_and_addr.second);
+
+    float* padding_ptr = float_ptr + seq_pos_size * ple_dim;
+    if (default_ple_emb.size() == ple_dim) {
+      for (size_t i = seq_pos_size; i < num_tokens_to_fill; ++i) {
+        std::memcpy(padding_ptr, default_ple_emb.data(),
+                    ple_dim * sizeof(float));
+        padding_ptr += ple_dim;
+      }
+    } else {
+      std::memset(
+          padding_ptr, 0,
+          (num_tokens_to_fill - seq_pos_size) * ple_dim * sizeof(float));
+    }
+  }
   return absl::OkStatus();
 }
 
