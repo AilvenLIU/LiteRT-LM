@@ -250,6 +250,7 @@ model_assets: model_path: )",
 fake_weights_mode: FAKE_WEIGHTS_NONE
 
 advanced_settings: Not set
+diffusion_config: Not set
 )");
   EXPECT_EQ(oss.str(), expected_output);
 }
@@ -343,6 +344,8 @@ gpu_context_low_priority: Not set
 enable_speculative_decoding: 0
 disable_delegate_clustering: 0
 hint_kernel_batch_size: 10
+
+diffusion_config: Not set
 
 )");
   EXPECT_EQ(oss.str(), expected_output);
