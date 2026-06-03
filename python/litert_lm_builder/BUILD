@@ -40,7 +40,11 @@ pytype_strict_library(
     deps = [
         ":litertlm_header_schema_py",
         "@absl_py//absl:app",
-    ],
+    ] + select({
+        "@platforms//os:macos": [],
+        "//conditions:default": [
+        ],
+    }),
 )
 
 py_test(
