@@ -147,7 +147,7 @@ export class ModelLoaderService {
     try {
       if (!this.isWasmLoaded) {
         this.updateStatus('Loading LiteRT WASM runtime...');
-        const wasmPath = undefined;
+        const wasmPath = import.meta.env.DEV ? '/wasm' : undefined;
         await getOrLoadGlobalLiteRtLm(wasmPath);
         this.isWasmLoaded = true;
       }

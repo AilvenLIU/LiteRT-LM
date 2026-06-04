@@ -16,16 +16,19 @@
 
 import {z} from 'zod';
 
-const SettingsSchema = z.object({
-  selectedModelPath: z.string().optional(),
-  contextLength: z.number().int().positive().optional(),
-  maxOutputTokens: z.number().int().positive().optional(),
-  samplerType: z.string().optional(),
-  temperature: z.number().min(0).optional(),
-  topP: z.number().min(0).max(1).optional(),
-  topK: z.number().int().nonnegative().optional(),
-  enableThinking: z.boolean().optional(),
+export const SettingsSchema = z.object({
+  selectedModelPath: z.string(),
+  contextLength: z.number().int().positive(),
+  maxOutputTokens: z.number().int().positive(),
+  samplerType: z.string(),
+  temperature: z.number().min(0),
+  topP: z.number().min(0).max(1),
+  topK: z.number().int().nonnegative(),
+  enableThinking: z.boolean(),
 });
+
+export const PartialSettingsSchema = SettingsSchema.partial();
+export type Settings = z.infer<typeof SettingsSchema>;
 
 /** List of supported default models available for selection. */
 export const MODELS = [
@@ -45,8 +48,9 @@ export const MODELS = [
   }
 ];
 
+
 /** Store for managing inference configuration and persistence. */
-export class SettingsStore {
+export class SettingsStore implements Settings {
   // Active model configuration parameters
   selectedModelPath = MODELS[0]!.path;
   contextLength = 4096;
@@ -68,7 +72,7 @@ export class SettingsStore {
       const data = window.localStorage.getItem(this.SETTINGS_KEY);
       if (data) {
         const parsed = JSON.parse(data);
-        const result = SettingsSchema.safeParse(parsed);
+        const result = PartialSettingsSchema.safeParse(parsed);
         if (result.success) {
           const validated = result.data;
           this.selectedModelPath =

@@ -26,7 +26,7 @@ describe('LiteRtLm tests', () => {
   let liteRtLm: LiteRtLm;
   async function resetLiteRtLm() {
     unloadLiteRtLm();
-    liteRtLm = await loadLiteRtLm('/wasm');
+    liteRtLm = await loadLiteRtLm(trustedResourceUrl`/wasm`);
     await liteRtLm.setupDefaultWebGpuDevice();
   }
 
