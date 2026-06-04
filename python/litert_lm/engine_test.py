@@ -85,7 +85,7 @@ class EngineTest(LiteRtLmTestBase):
           mock_set_dir,
       ):
         with mock.patch.dict("sys.modules", {"openvino": mock_ov}):
-          with mock.patch("importlib.resources.files") as mock_files:
+          with mock.patch("importlib.resources.files") as unused_mock_files:
             try:
               npu = litert_lm.Backend.NPU()
               npu.litert_dispatch_lib_dir = "my_custom_dir"
@@ -498,6 +498,30 @@ class EngineTest(LiteRtLmTestBase):
       # NOTE: We don't assert len(responses) < 6 here because on fast machines
       # (like Mac arm64) the generation might complete before the cancellation
       # signal is processed by the background thread.
+
+  def test_conversation_send_message_with_max_output_tokens(self):
+    with (
+        self._create_engine() as engine,
+        engine.create_conversation() as conversation,
+    ):
+      message = conversation.send_message("Hello world!", max_output_tokens=1)
+      self.assertIn("role", message)
+      self.assertEqual(message["role"], "assistant")
+      # Response should be shorter because of max_output_tokens=1
+      text = "".join([c.get("text", "") for c in message.get("content", [])])
+      self.assertLess(len(text), 10)
+
+  def test_conversation_send_message_async_with_max_output_tokens(self):
+    with (
+        self._create_engine() as engine,
+        engine.create_conversation() as conversation,
+    ):
+      stream = conversation.send_message_async(
+          "Hello world!", max_output_tokens=1
+      )
+      text_pieces = self._extract_text(stream)
+      self.assertLen(text_pieces, 1)
+      self.assertLess(len("".join(text_pieces)), 10)
 
   @parameterized.parameters(True, False)
   def test_session_api_apply_prompt_template(self, apply_prompt_template):

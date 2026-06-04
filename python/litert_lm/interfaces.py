@@ -57,7 +57,7 @@ class NPU(Backend):
   """NPU hardware backend for LiteRT-LM.
 
   Attributes:
-    native_library_dir: The directory containing the NPU libraries.
+    litert_dispatch_lib_dir: The directory containing LiteRT dispatch libs.
   """
 
   def __init__(self):
@@ -340,6 +340,8 @@ class AbstractConversation(abc.ABC):
   def send_message(
       self,
       message: str | Contents | Message | collections.abc.Mapping[str, Any],
+      *,
+      max_output_tokens: int | None = None,
   ) -> collections.abc.Mapping[str, Any]:
     """Sends a message and returns the response.
 
@@ -350,6 +352,7 @@ class AbstractConversation(abc.ABC):
           a user message), `Message` (full message object, useful when automatic
           tool calling is disabled and a tool response is required), or
           `collections.abc.Mapping` (super flexible raw dictionary format).
+        max_output_tokens: The maximum number of output tokens.
 
     Returns:
         A dictionary containing the model's response. The structure is:
@@ -360,6 +363,8 @@ class AbstractConversation(abc.ABC):
   def send_message_async(
       self,
       message: str | Contents | Message | collections.abc.Mapping[str, Any],
+      *,
+      max_output_tokens: int | None = None,
   ) -> collections.abc.Iterator[collections.abc.Mapping[str, Any]]:
     """Sends a message and streams the response.
 
@@ -370,6 +375,7 @@ class AbstractConversation(abc.ABC):
           a user message), `Message` (full message object, useful when automatic
           tool calling is disabled and a tool response is required), or
           `collections.abc.Mapping` (super flexible raw dictionary format).
+        max_output_tokens: The maximum number of output tokens.
 
     Returns:
         An iterator yielding dictionaries containing chunks of the model's

@@ -267,6 +267,15 @@ def _setup_lib_signatures(lib):
       ctypes.c_bool,
   ]
 
+  # Conversation Optional Args
+  lib.litert_lm_conversation_optional_args_create.restype = ctypes.c_void_p
+  lib.litert_lm_conversation_optional_args_create.argtypes = []
+  lib.litert_lm_conversation_optional_args_delete.argtypes = [ctypes.c_void_p]
+  lib.litert_lm_conversation_optional_args_set_max_output_tokens.argtypes = [
+      ctypes.c_void_p,
+      ctypes.c_int,
+  ]
+
   # Conversation
   lib.litert_lm_conversation_create.restype = ctypes.c_void_p
   lib.litert_lm_conversation_create.argtypes = [
