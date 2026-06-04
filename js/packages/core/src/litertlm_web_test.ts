@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {Backend, Conversation, ConversationConfig, Engine, GpuArtisanConfig, LiteRtLm, loadLiteRtLm, SamplerType, Session, SessionConfig, unloadLiteRtLm, type Wasm} from '@litert-lm/core';
+import {Backend, Conversation, ConversationConfig, Engine, getOrLoadGlobalLiteRtLm, GpuArtisanConfig, LiteRtLm, loadLiteRtLm, SamplerType, Session, SessionConfig, unloadLiteRtLm, type Wasm} from '@litert-lm/core';
 // Placeholder for internal dependency on trusted resource url
 
 jasmine.DEFAULT_TIMEOUT_INTERVAL = 120_000;  // 120 seconds
@@ -39,6 +39,30 @@ describe('LiteRtLm tests', () => {
   it('loads the WASM module', () => {
     expect(liteRtLm).toBeDefined();
   });
+
+  it('loads or gets the global instance with getOrLoadGlobalLiteRtLm',
+     async () => {
+       unloadLiteRtLm();
+       const path1 = trustedResourceUrl`/wasm`;
+       const path2 = trustedResourceUrl`/other/wasm`;
+
+       // First call loads it
+       const p1 = getOrLoadGlobalLiteRtLm(path1);
+       const p2 = getOrLoadGlobalLiteRtLm(path1);
+       expect(p1).toBe(p2);  // Should return the exact same promise
+
+       // Calling with undefined uses the existing path instead of default when
+       // already loading/loaded
+       const p3 = getOrLoadGlobalLiteRtLm();
+       expect(p3).toBe(p1);
+
+       // Calling with a different path throws an error
+       expect(() => getOrLoadGlobalLiteRtLm(path2))
+           .toThrowError(
+               /LiteRT-LM is already loading \/ loaded with a different path/);
+
+       await p1;
+     });
 
   it('automatically loads the WASM module when loading a model', async () => {
     unloadLiteRtLm();
