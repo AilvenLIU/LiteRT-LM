@@ -75,6 +75,7 @@ internal object LiteRtLmJni {
    * @param decodeTokens The number of tokens to decode.
    * @param cacheDir The directory for cache files.
    * @param mainNpuNativeLibraryDir The directory for the main backend NPU libraries.
+   * @param enableSpeculativeDecoding Whether to enable speculative decoding.
    * @return A pointer to the native engine instance.
    */
   external fun nativeCreateBenchmark(
@@ -84,6 +85,7 @@ internal object LiteRtLmJni {
     decodeTokens: Int,
     cacheDir: String,
     mainNpuNativeLibraryDir: String,
+    enableSpeculativeDecoding: Boolean?,
   ): Long
 
   /**

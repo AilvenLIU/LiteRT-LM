@@ -69,6 +69,7 @@ fun benchmark(
       decodeTokens,
       cacheDir ?: "",
       (backend as? Backend.NPU)?.nativeLibraryDir ?: "",
+      ExperimentalFlags.enableSpeculativeDecoding,
     )
 
   try {
@@ -80,7 +81,7 @@ fun benchmark(
         "[]", // toolsDescriptionJsonString
         null, // channelsJsonString
         "{}", // extraContextJsonString
-        false, // enableConversationConstrainedDecoding
+        ExperimentalFlags.enableConversationConstrainedDecoding,
         ExperimentalFlags.filterChannelContentFromKvCache,
         ExperimentalFlags.overwritePromptTemplate,
         null, // loraPath
