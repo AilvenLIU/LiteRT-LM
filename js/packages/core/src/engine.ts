@@ -198,6 +198,9 @@ async function modelToStream(model: EngineSettings['model']):
   if (model instanceof ReadableStream) {
     return model;
   }
+  if (model instanceof Blob) {
+    return model.stream();
+  }
 
   const modelUrl = model;
   const response = await fetch(modelUrl, {

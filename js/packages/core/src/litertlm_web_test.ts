@@ -479,6 +479,30 @@ describe('LiteRtLm tests', () => {
     if (engine) await engine.delete();
   });
 
+  it('creates and runs a session from a Blob', async () => {
+    const response = await fetch(MODEL_PATH, {
+      credentials: 'same-origin',
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch model file from ${MODEL_PATH}`);
+    }
+    const engine = await Engine.create({
+      model: await response.blob(),
+      backend: Backend.CPU,
+      mainExecutorSettings: {
+        maxNumTokens: 128,
+      },
+    });
+    const sessionConfig: SessionConfig = {};
+    const session = await engine.createSession(sessionConfig);
+    await session.runPrefill(['test input']);
+    const responses = await session.runDecode();
+    expect(responses).toBeDefined();
+    responses.delete();
+    await session.delete();
+    if (engine) await engine.delete();
+  });
+
   describe('Wasm tests', () => {
     describe('ModelAssets', () => {
       it('creates ModelAssets', () => {

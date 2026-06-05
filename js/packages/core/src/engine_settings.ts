@@ -45,7 +45,7 @@ export interface LlmExecutorSettings {
  * LiteRT-LM EngineSettings
  */
 export interface EngineSettings {
-  model: string|ReadableStream<Uint8Array>;
+  model: string|Blob|ReadableStream<Uint8Array>;
   backend?: Backend;
   mainExecutorSettings?: LlmExecutorSettings;
   benchmarkEnabled?: boolean;
