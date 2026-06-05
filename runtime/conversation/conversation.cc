@@ -103,7 +103,8 @@ absl::StatusOr<ConversationConfig> ConversationConfig::CreateInternal(
     std::optional<ConstraintProviderConfig> constraint_provider_config,
     std::optional<std::vector<Channel>> overwrite_channels,
     bool filter_channel_content_from_kv_cache,
-    bool return_error_on_parse_failure, bool return_error_on_max_tokens_reached) {
+    bool return_error_on_parse_failure, bool return_error_on_max_tokens_reached,
+    bool enable_thinking) {
   if (preface.has_value() && !std::holds_alternative<JsonPreface>(*preface)) {
     return absl::InvalidArgumentError("Only JsonPreface is supported for now.");
   }
@@ -170,13 +171,24 @@ absl::StatusOr<ConversationConfig> ConversationConfig::CreateInternal(
       processor_config, enable_constrained_decoding, prefill_preface_on_init,
       std::move(constraint_provider_config), std::move(channels),
       filter_channel_content_from_kv_cache, return_error_on_parse_failure,
-      return_error_on_max_tokens_reached);
+      return_error_on_max_tokens_reached, enable_thinking);
 }
 
 absl::StatusOr<std::string>
 Conversation::GetSingleTurnTextFromSingleTurnTemplate(
     const Message& message, const OptionalArgs& optional_args) {
   absl::MutexLock lock(history_mutex_);  // NOLINT
+  std::optional<nlohmann::ordered_json> extra_context =
+      optional_args.extra_context;
+  if (!extra_context.has_value()) {
+    extra_context = nlohmann::ordered_json::object();
+  }
+  if (optional_args.enable_thinking.has_value()) {
+    (*extra_context)["enable_thinking"] = *optional_args.enable_thinking;
+  } else if (!extra_context->contains("enable_thinking") &&
+             config_.enable_thinking()) {
+    (*extra_context)["enable_thinking"] = true;
+  }
   ASSIGN_OR_RETURN(
       auto result,
       model_data_processor_->RenderSingleTurnTemplate(
@@ -184,8 +196,7 @@ Conversation::GetSingleTurnTextFromSingleTurnTemplate(
           config_.prefill_preface_on_init() ? JsonPreface() : preface_, message,
           prompt_template_,
           /*current_is_appending_message=*/is_appending_message_,
-          /*append_message=*/optional_args.has_pending_message,
-          optional_args.extra_context));
+          /*append_message=*/optional_args.has_pending_message, extra_context));
   is_appending_message_ = result.is_appending_message;
   return result.text;
 }
@@ -196,12 +207,21 @@ absl::StatusOr<std::string> Conversation::GetSingleTurnTextFromFullHistory(
   RETURN_IF_ERROR(FillPrefaceForPromptTemplateInput(
       preface_, model_data_processor_.get(), old_tmpl_input));
 
+  if (config_.enable_thinking()) {
+    old_tmpl_input.extra_context["enable_thinking"] = true;
+  }
+
   // Merge extra context for the message into the extra context provided in the
   // preface. Existing keys will be overwritten.
   if (optional_args.extra_context.has_value()) {
     for (const auto& [key, value] : optional_args.extra_context->items()) {
       old_tmpl_input.extra_context[key] = value;
     }
+  }
+
+  if (optional_args.enable_thinking.has_value()) {
+    old_tmpl_input.extra_context["enable_thinking"] =
+        *optional_args.enable_thinking;
   }
 
   absl::MutexLock lock(history_mutex_);  // NOLINT
@@ -330,19 +350,26 @@ absl::StatusOr<std::unique_ptr<Conversation>> Conversation::Create(
     std::vector<Message> tmp_history;
     bool fallback =
         !conversation->prompt_template_.GetCapabilities().supports_single_turn;
+    std::optional<nlohmann::ordered_json> extra_context = std::nullopt;
+    if (config.enable_thinking()) {
+      extra_context =
+          nlohmann::ordered_json::object({{"enable_thinking", true}});
+    }
     const auto render_result =
         conversation->model_data_processor_->RenderSingleTurnTemplate(
             tmp_history, config.GetPreface(), Message(),
             config.GetPromptTemplate(),
             /*current_is_appending_message=*/false,
-            /*append_message=*/false,
-            /*extra_context=*/std::nullopt);
+            /*append_message=*/false, extra_context);
     if (fallback || absl::IsUnimplemented(render_result.status())) {
       // Fallback to the old way of prefilling the preface.
       PromptTemplateInput tmpl_input;
       RETURN_IF_ERROR(FillPrefaceForPromptTemplateInput(
           config.GetPreface(), conversation->model_data_processor_.get(),
           tmpl_input));
+      if (config.enable_thinking()) {
+        tmpl_input.extra_context["enable_thinking"] = true;
+      }
       tmpl_input.add_generation_prompt = false;
       ASSIGN_OR_RETURN(single_turn_text,
                        conversation->prompt_template_.Apply(tmpl_input));
@@ -762,6 +789,10 @@ absl::StatusOr<std::string> Conversation::GetPrefillTextForMessages(
   // Fill the `old` template context with the preface.
   RETURN_IF_ERROR(FillPrefaceForPromptTemplateInput(
       preface_, model_data_processor_.get(), old_context));
+
+  if (config_.enable_thinking()) {
+    old_context.extra_context["enable_thinking"] = true;
+  }
 
   // Merge extra context for the message into the extra context provided in the
   // preface. Existing keys will be overwritten.
