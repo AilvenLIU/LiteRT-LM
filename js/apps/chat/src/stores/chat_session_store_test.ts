@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+import {Engine} from '@litert-lm/core';
+import {EngineFake} from '@litert-lm/core/testing';
+
 import {ChatSessionStore} from './chat_session_store.js';
 import {ModelLoaderService} from './model_loader_service.js';
 import {SettingsStore} from './settings_store.js';
@@ -23,17 +26,30 @@ describe('ChatSessionStore', () => {
   let modelLoader: ModelLoaderService;
   let chatSessionStore: ChatSessionStore;
 
+  let fakeEngine: EngineFake;
   let updateCallbackCalled = false;
   let statusUpdated = false;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Reset state & mocks
     updateCallbackCalled = false;
     statusUpdated = false;
     window.localStorage.clear();
 
     settingsStore = new SettingsStore(() => {});
-    modelLoader = new ModelLoaderService(() => {}, settingsStore, () => {});
+
+    fakeEngine = new EngineFake({model: 'fake'});
+    const fakeEngineCreate = async (settings: any, hint?: string) => {
+      return fakeEngine as unknown as Engine;
+    };
+    const fakeLoadWasm = async () => {};
+
+    modelLoader = new ModelLoaderService(
+        () => {}, settingsStore, () => {}, fakeEngineCreate,
+        fakeLoadWasm as any);
+
+    modelLoader.engine = fakeEngine as unknown as Engine;
+
     chatSessionStore = new ChatSessionStore(
         () => {
           updateCallbackCalled = true;
@@ -181,4 +197,73 @@ describe('ChatSessionStore', () => {
            .toEqual('Please edit me');  // the target user message is extracted
                                         // correctly
      });
+
+  it('creates conversation session cleanly', async () => {
+    await chatSessionStore.createConversationSession();
+
+    expect(chatSessionStore.activeConversation).toBeDefined();
+    expect(statusUpdated).toBeTrue();
+  });
+
+  it('sendMessage processes streams appropriately', async () => {
+    await chatSessionStore.createConversationSession();
+
+    await chatSessionStore.sendMessage('Hello model');
+
+    expect(chatSessionStore.messages.length).toBe(2);
+    expect(chatSessionStore.messages[0].text).toBe('Hello model');
+    expect(chatSessionStore.messages[1].text).toBe('hello from fake');
+    expect(chatSessionStore.isGenerating).toBeFalse();
+  });
+
+  it('sendMessage processes simulated function calls correctly', async () => {
+    await chatSessionStore.createConversationSession();
+
+    // Use our strongly typed internal fake engine
+    const converseFake = fakeEngine.cachedConversation!;
+    converseFake.queueResponse({
+      role: 'model',
+      content: 'Let me look that up',
+      tool_calls: [{
+        type: 'function',
+        function: {name: 'getWeather', arguments: {city: 'Mountain View'}}
+      }]
+    });
+
+    await chatSessionStore.sendMessage('What is the weather?');
+
+    expect(chatSessionStore.messages.length).toBe(2);
+    expect(chatSessionStore.messages[1].text).toBe('Let me look that up');
+
+    // Function calls aren't visually piped to .text today, but we can verify
+    // the API's backend logic:
+    const rawHistory = converseFake.getHistory();
+    expect(rawHistory.length)
+        .toBe(2);  // The generated user request + our fake response
+    expect(rawHistory[1].tool_calls).toBeDefined();
+    expect(rawHistory[1].tool_calls![0].function.name).toBe('getWeather');
+  });
+
+  it('sendMessage cancels generation gracefully', async () => {
+    await chatSessionStore.createConversationSession();
+
+    // We want to cancel midway. We can call cancelGeneration synchronously
+    // but the promise handling in JS might complete before cancellation if the
+    // mock streaming is entirely synchronous. However, we can just trigger it,
+    // though our ConversationFake is completely synchronous. Let's at least
+    // ensure cancelGeneration sets the flag.
+    chatSessionStore.cancelGeneration();
+    expect(chatSessionStore.isCancelled).toBeTrue();
+  });
+
+  it('sendMessage ignores empty text or if already generating', async () => {
+    await chatSessionStore.createConversationSession();
+
+    await chatSessionStore.sendMessage('  ');  // empty text
+    expect(chatSessionStore.messages.length).toBe(0);
+
+    chatSessionStore.isGenerating = true;
+    await chatSessionStore.sendMessage('valid message');
+    expect(chatSessionStore.messages.length).toBe(0);
+  });
 });

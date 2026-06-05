@@ -40,7 +40,10 @@ export class ModelLoaderService {
   constructor(
       private readonly updateCallback: () => void,
       private readonly settings: SettingsStore,
-      private readonly updateStatus: (msg: string) => void) {}
+      private readonly updateStatus: (msg: string) => void,
+      private readonly createEngine: typeof Engine.create = Engine.create,
+      private readonly loadWasm:
+          typeof getOrLoadGlobalLiteRtLm = getOrLoadGlobalLiteRtLm) {}
 
   async updateCacheSize() {
     try {
@@ -148,7 +151,7 @@ export class ModelLoaderService {
       if (!this.isWasmLoaded) {
         this.updateStatus('Loading LiteRT WASM runtime...');
         const wasmPath = import.meta.env.DEV ? '/wasm' : undefined;
-        await getOrLoadGlobalLiteRtLm(wasmPath);
+        await this.loadWasm(wasmPath);
         this.isWasmLoaded = true;
       }
 
@@ -249,7 +252,7 @@ export class ModelLoaderService {
 
       this.updateStatus(`Compiling Model (${modelFilename})...`);
 
-      this.engine = await Engine.create({
+      this.engine = await this.createEngine({
         model: modelInput,
         backend: Backend.GPU_ARTISAN,
         mainExecutorSettings: {
