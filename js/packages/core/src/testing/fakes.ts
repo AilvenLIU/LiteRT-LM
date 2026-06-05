@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import type {ChatInterface} from '../orchestration/chat_interface.js';
 import type {Conversation} from '../conversation.js';
 import type {ConversationConfig, Message, MessageLike} from '../conversation_config.js';
 import type {Engine} from '../engine.js';
@@ -23,9 +24,10 @@ import type {SessionConfig} from '../session_config.js';
 import type {RecursiveRequired} from '../types.js';
 import type {BenchmarkInfo} from '../wasm_binding_types.js';
 
-export class ConversationFake {
-  public history: Message[] = [];
-  public nextResponses: Message[] = [];
+/** Fake implementation of Conversation for testing. */
+export class ConversationFake implements ChatInterface {
+  history: Message[] = [];
+  nextResponses: Message[] = [];
 
   constructor(public initialHistory: Message[] = []) {
     this.history = [...initialHistory];
@@ -102,8 +104,9 @@ export class ConversationFake {
   }
 }
 
+/** Fake implementation of Session for testing. */
 export class SessionFake {
-  public inputsPrefilled: string[] = [];
+  inputsPrefilled: string[] = [];
 
   async runPrefill(inputs: string[]): Promise<void> {
     this.inputsPrefilled.push(...inputs);
@@ -119,10 +122,11 @@ export class SessionFake {
   async delete(): Promise<void> {}
 }
 
+/** Fake implementation of Engine for testing. */
 export class EngineFake {
-  public readonly settings: RecursiveRequired<EngineSettings>;
-  public cachedSession?: SessionFake;
-  public cachedConversation?: ConversationFake;
+  readonly settings: RecursiveRequired<EngineSettings>;
+  cachedSession = new SessionFake();
+  cachedConversation = new ConversationFake();
 
   constructor(settings: EngineSettings) {
     this.settings = settings as RecursiveRequired<EngineSettings>;
@@ -134,12 +138,10 @@ export class EngineFake {
   }
 
   async createSession(sessionConfig: SessionConfig = {}): Promise<Session> {
-    this.cachedSession = new SessionFake();
     return this.cachedSession as unknown as Session;
   }
 
   async createConversation(config?: ConversationConfig): Promise<Conversation> {
-    this.cachedConversation = new ConversationFake();
     return this.cachedConversation as unknown as Conversation;
   }
 

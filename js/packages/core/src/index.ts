@@ -17,6 +17,10 @@
 export * from './litertlm_web.js';
 export * from './global_litertlm.js';
 export * from './load_litertlm.js';
+export * from './orchestration/chat_interface.js';
+export * from './orchestration/auto_tool_chat.js';
+export * from './orchestration/webmcp_tool.js';
+
 export {Backend} from './wasm_binding_types.js';
 export * from './engine_settings.js';
 export * from './engine.js';

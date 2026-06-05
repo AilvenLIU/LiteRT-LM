@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {Engine} from '@litert-lm/core';
+import {Engine, getOrLoadGlobalLiteRtLm} from '@litert-lm/core';
 import {EngineFake} from '@litert-lm/core/testing';
 
 import {ChatSessionStore} from './chat_session_store.js';
@@ -39,14 +39,14 @@ describe('ChatSessionStore', () => {
     settingsStore = new SettingsStore(() => {});
 
     fakeEngine = new EngineFake({model: 'fake'});
-    const fakeEngineCreate = async (settings: any, hint?: string) => {
+    const fakeEngineCreate: typeof Engine.create = async (settings, hint?) => {
       return fakeEngine as unknown as Engine;
     };
     const fakeLoadWasm = async () => {};
 
     modelLoader = new ModelLoaderService(
         () => {}, settingsStore, () => {}, fakeEngineCreate,
-        fakeLoadWasm as any);
+        fakeLoadWasm as unknown as typeof getOrLoadGlobalLiteRtLm);
 
     modelLoader.engine = fakeEngine as unknown as Engine;
 

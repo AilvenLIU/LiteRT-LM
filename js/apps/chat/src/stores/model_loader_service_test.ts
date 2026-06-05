@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {Engine} from '@litert-lm/core';
+import {Engine, getOrLoadGlobalLiteRtLm, LiteRtLm} from '@litert-lm/core';
 import {EngineFake} from '@litert-lm/core/testing';
 
 import {ModelLoaderService} from './model_loader_service.js';
@@ -25,11 +25,11 @@ describe('ModelLoaderService', () => {
   let modelLoader: ModelLoaderService;
 
   let fakeEngineCreate: typeof Engine.create;
-  let fakeLoadWasm: any;
+  let fakeLoadWasm: typeof getOrLoadGlobalLiteRtLm;
 
   beforeEach(() => {
-    if (!(window as any).caches) {
-      (window as any).caches = {
+    if (!(window as unknown as Record<string, unknown>)["caches"]) {
+      (window as unknown as Record<string, unknown>)["caches"] = {
         open: async () => {},
         delete: async () => {},
       };
@@ -39,7 +39,7 @@ describe('ModelLoaderService', () => {
     fakeEngineCreate = async (settings, hint) => {
       return await EngineFake.create(settings, hint);
     };
-    fakeLoadWasm = async () => {};
+    fakeLoadWasm = async () => ({} as LiteRtLm);
     modelLoader = new ModelLoaderService(
         () => {}, settingsStore, (msg: string) => {}, fakeEngineCreate,
         fakeLoadWasm);
@@ -77,7 +77,7 @@ describe('ModelLoaderService', () => {
         {url: 'https://example.com/model1.litertlm'},
         {url: 'https://example.com/model2.litertlm'}
       ]),
-      match: jasmine.createSpy().and.callFake(async (req: any) => {
+      match: jasmine.createSpy().and.callFake(async (req: {url: string}) => {
         if (req.url.includes('model1')) {
           return {headers: new Headers({'content-length': '1024'})};
         } else {
@@ -88,7 +88,7 @@ describe('ModelLoaderService', () => {
         }
       })
     };
-    spyOn(window.caches, 'open').and.resolveTo(mockCache as any);
+    spyOn(window.caches, 'open').and.resolveTo(mockCache as unknown as Cache);
 
     await modelLoader.updateCacheSize();
 
@@ -101,7 +101,7 @@ describe('ModelLoaderService', () => {
   it('deletes model from cache when confirmed', async () => {
     spyOn(window, 'confirm').and.returnValue(true);
     const mockCache = {delete: jasmine.createSpy().and.resolveTo(true)};
-    spyOn(window.caches, 'open').and.resolveTo(mockCache as any);
+    spyOn(window.caches, 'open').and.resolveTo(mockCache as unknown as Cache);
     spyOn(modelLoader, 'updateCacheSize').and.resolveTo();
 
     await modelLoader.deleteModelFromCache('model1.litertlm');
@@ -169,7 +169,7 @@ describe('ModelLoaderService', () => {
         body: mockStream,
       })
     };
-    spyOn(window.caches, 'open').and.resolveTo(mockCache as any);
+    spyOn(window.caches, 'open').and.resolveTo(mockCache as unknown as Cache);
     spyOn(window, 'fetch');
 
     const onModelLoaded = jasmine.createSpy('onModelLoaded').and.resolveTo();
@@ -192,7 +192,7 @@ describe('ModelLoaderService', () => {
       match: jasmine.createSpy().and.resolveTo(undefined),
       put: jasmine.createSpy().and.resolveTo()
     };
-    spyOn(window.caches, 'open').and.resolveTo(mockCache as any);
+    spyOn(window.caches, 'open').and.resolveTo(mockCache as unknown as Cache);
 
     const mockStream = new ReadableStream({
       start(controller) {
@@ -205,7 +205,7 @@ describe('ModelLoaderService', () => {
       ok: true,
       headers: new Headers({'content-length': '3'}),
       body: mockStream,
-    } as any);
+    } as unknown as Response);
 
     spyOn(modelLoader, 'updateCacheSize').and.resolveTo();
 
@@ -227,10 +227,10 @@ describe('ModelLoaderService', () => {
     settingsStore.selectedModelPath = 'https://example.com/model.litertlm';
 
     const mockCache = {match: jasmine.createSpy().and.resolveTo(undefined)};
-    spyOn(window.caches, 'open').and.resolveTo(mockCache as any);
+    spyOn(window.caches, 'open').and.resolveTo(mockCache as unknown as Cache);
 
     spyOn(window, 'fetch')
-        .and.resolveTo({ok: false, statusText: 'Not Found'} as any);
+        .and.resolveTo({ok: false, statusText: 'Not Found'} as unknown as Response);
 
     const onModelLoaded = jasmine.createSpy('onModelLoaded').and.resolveTo();
 
@@ -246,7 +246,7 @@ describe('ModelLoaderService', () => {
     settingsStore.selectedModelPath = 'https://example.com/model.litertlm';
 
     const mockCache = {match: jasmine.createSpy().and.resolveTo(undefined)};
-    spyOn(window.caches, 'open').and.resolveTo(mockCache as any);
+    spyOn(window.caches, 'open').and.resolveTo(mockCache as unknown as Cache);
 
     spyOn(window, 'fetch').and.rejectWith({name: 'AbortError'});
 
