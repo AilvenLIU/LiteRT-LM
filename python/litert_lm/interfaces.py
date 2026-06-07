@@ -20,6 +20,7 @@ import abc
 import collections.abc
 import dataclasses
 from importlib import resources
+import logging
 import os
 import sys
 from typing import Any
@@ -60,6 +61,7 @@ class GPU(Backend):
   """GPU hardware backend for LiteRT-LM."""
 
 
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class NPU(Backend):
   """NPU hardware backend for LiteRT-LM.
 
@@ -67,30 +69,56 @@ class NPU(Backend):
     litert_dispatch_lib_dir: The directory containing LiteRT dispatch libs.
   """
 
-  def __init__(self):
-    """Initializes the NPU backend."""
-    self.litert_dispatch_lib_dir = ""
-    if sys.platform == "win32":
-      try:
-        import openvino as ov  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
+  litert_dispatch_lib_dir: str | None = None
 
-        if "NPU" in ov.Core().available_devices:
-          self.litert_dispatch_lib_dir = str(
-              resources.files(__package__) / "vendors/intel_openvino/dispatch/"
-          )
+  def __post_init__(self):
+    """Initializes the NPU backend.
 
-          # openvino package place the NPU libs in "libs".
-          # Includes to PATH so Windows can load it.
-          libs_dir = os.path.join(os.path.dirname(ov.__file__), "libs")
-          os.environ["PATH"] = os.environ["PATH"] + ";" + libs_dir
-      except ImportError:
-        pass
+    Raises:
+      RuntimeError: If the NPU backend is not supported on the current platform.
+    """
+    if self.litert_dispatch_lib_dir == "":  # pylint: disable=g-explicit-bool-comparison
+      logging.warning(
+          "NPU backend is initialized with an empty litert_dispatch_lib_dir."
+          " This means the model will be simulated on the CPU, where the model"
+          " is expected to NOT be AOT compiled."
+      )
+      object.__setattr__(self, "litert_dispatch_lib_dir", "")
+      return
+    elif self.litert_dispatch_lib_dir is None:
+      object.__setattr__(self, "litert_dispatch_lib_dir", "")
+
+      if sys.platform == "win32":
+        try:
+          import openvino as ov  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
+
+          if "NPU" in ov.Core().available_devices:
+            litert_dispatch_lib_dir = str(
+                resources.files(__package__)
+                / "vendors/intel_openvino/dispatch/"
+            )
+            object.__setattr__(
+                self, "litert_dispatch_lib_dir", litert_dispatch_lib_dir
+            )
+
+            # openvino package place the NPU libs in "libs".
+            # Includes to PATH so Windows can load it.
+            libs_dir = os.path.join(os.path.dirname(ov.__file__), "libs")
+            os.environ["PATH"] = os.environ["PATH"] + ";" + libs_dir
+        except ImportError:
+          pass
 
     if not self.litert_dispatch_lib_dir:
       raise RuntimeError(
-          "NPU is supported only for Intel OpenVINO on Windows. It is expected"
-          " to install the 'openvino' package and have an NPU available."
+          "NPU is supported only for Intel OpenVINO on Windows. It is"
+          " expected to install the 'openvino' package and have an NPU"
+          " available."
       )
+
+  def __eq__(self, other: Any) -> bool:
+    if type(self) is not type(other):
+      return NotImplemented
+    return self.litert_dispatch_lib_dir == other.litert_dispatch_lib_dir
 
 
 Backend.CPU = CPU

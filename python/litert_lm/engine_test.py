@@ -137,8 +137,9 @@ class EngineTest(LiteRtLmTestBase):
         with mock.patch.dict("sys.modules", {"openvino": mock_ov}):
           with mock.patch("importlib.resources.files") as unused_mock_files:
             try:
-              npu = litert_lm.Backend.NPU()
-              npu.litert_dispatch_lib_dir = "my_custom_dir"
+              npu = litert_lm.Backend.NPU(
+                  litert_dispatch_lib_dir="my_custom_dir"
+              )
               litert_lm.Engine(
                   self.model_path,
                   npu,
