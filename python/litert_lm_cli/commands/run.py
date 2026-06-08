@@ -171,6 +171,7 @@ def _create_keybindings() -> key_binding.KeyBindings:
 
 def run_interactive(
     model_obj: model.Model,
+    *,
     is_android: bool = False,
     backend: str = "cpu",
     preset: str | None = None,
@@ -187,7 +188,9 @@ def run_interactive(
     temperature: float | None = None,
     seed: int | None = None,
     cache: str = "disk",
-):
+    cpu_thread_count: int | None = None,
+    audio_cpu_thread_count: int | None = None,
+) -> None:
   """Runs the model interactively or with a single prompt."""
   if not model_obj.exists():
     click.echo(
@@ -202,12 +205,17 @@ def run_interactive(
   state = SessionState()
 
   try:
-    backend_val = model.parse_backend(backend, model_obj=model_obj)
+    backend_val = model.parse_backend(
+        backend, model_obj=model_obj, cpu_thread_count=cpu_thread_count
+    )
     vision_backend_val = (
         model.parse_backend(vision_backend) if vision_backend else None
     )
+    threads = audio_cpu_thread_count
     audio_backend_val = (
-        model.parse_backend(audio_backend) if audio_backend else None
+        model.parse_backend(audio_backend, cpu_thread_count=threads)
+        if audio_backend
+        else None
     )
 
     sampler_config = None
@@ -471,7 +479,9 @@ def run(
     temperature: float | None = None,
     seed: int | None = None,
     cache: str = "disk",
-):
+    cpu_thread_count: int | None = None,
+    audio_cpu_thread_count: int | None = None,
+) -> None:
   r"""Runs a LiteRT-LM model interactively or with a single prompt.
 
   Args:
@@ -501,6 +511,8 @@ def run(
     temperature: The temperature to use for sampling.
     seed: The seed to use for randomization.
     cache: The cache mode to use (no, memory, or disk).
+    cpu_thread_count: The number of threads to use for CPU backend.
+    audio_cpu_thread_count: The number of threads to use for audio CPU backend.
   """
   if attachment and no_template:
     click.echo(
@@ -618,6 +630,8 @@ def run(
       temperature=temperature,
       seed=seed,
       cache=cache,
+      cpu_thread_count=cpu_thread_count,
+      audio_cpu_thread_count=audio_cpu_thread_count,
   )
 
 

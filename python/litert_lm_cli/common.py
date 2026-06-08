@@ -128,6 +128,24 @@ def common_inference_options(f):
       default="cpu",
       help="The backend to use.",
   )(f)
+  f = click.option(
+      "--cpu-thread-count",
+      type=int,
+      default=None,
+      help=(
+          "The number of threads to use for the CPU backend. Only takes effect"
+          " when the main backend is 'cpu'."
+      ),
+  )(f)
+  f = click.option(
+      "--audio-cpu-thread-count",
+      type=int,
+      default=None,
+      help=(
+          "The number of threads to use for the audio CPU backend. Only takes"
+          " effect when the audio backend is 'cpu'."
+      ),
+  )(f)
   return f
 
 

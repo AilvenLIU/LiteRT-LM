@@ -68,6 +68,54 @@ class EngineTest(LiteRtLmTestBase):
     ):
       litert_lm.Engine("/non/existent/path")
 
+  def test_backend_cpu_equality(self):
+    cpu_default = litert_lm.Backend.CPU()
+    cpu_default_explicit = litert_lm.Backend.CPU(None)
+    cpu_4 = litert_lm.Backend.CPU(thread_count=4)
+    cpu_4_another = litert_lm.Backend.CPU(4)
+    cpu_2 = litert_lm.Backend.CPU(2)
+    gpu = litert_lm.Backend.GPU()
+
+    self.assertEqual(cpu_default, cpu_default_explicit)
+    self.assertEqual(cpu_4, cpu_4_another)
+    self.assertNotEqual(cpu_default, cpu_4)
+    self.assertNotEqual(cpu_4, cpu_2)
+    self.assertNotEqual(cpu_4, gpu)
+
+  def test_engine_init_with_cpu_thread_counts(self):
+    lib = litert_lm._ffi._get_lib()
+    orig_set_num_threads = lib.litert_lm_engine_settings_set_num_threads
+    orig_set_audio_num_threads = (
+        lib.litert_lm_engine_settings_set_audio_num_threads
+    )
+
+    mock_set_num_threads = mock.MagicMock(side_effect=orig_set_num_threads)
+    mock_set_audio_num_threads = mock.MagicMock(
+        side_effect=orig_set_audio_num_threads
+    )
+
+    with (
+        mock.patch.object(
+            lib,
+            "litert_lm_engine_settings_set_num_threads",
+            mock_set_num_threads,
+        ),
+        mock.patch.object(
+            lib,
+            "litert_lm_engine_settings_set_audio_num_threads",
+            mock_set_audio_num_threads,
+        ),
+    ):
+      litert_lm.Engine(
+          self.model_path,
+          backend=litert_lm.Backend.CPU(thread_count=4),
+          audio_backend=litert_lm.Backend.CPU(thread_count=2),
+          cache_dir=":nocache",
+      )
+
+      mock_set_num_threads.assert_called_once_with(mock.ANY, 4)
+      mock_set_audio_num_threads.assert_called_once_with(mock.ANY, 2)
+
   @mock.patch("sys.platform", "win32")
   def test_engine_init_with_npu_backend(self):
     lib = litert_lm._ffi._get_lib()
@@ -291,6 +339,27 @@ class EngineTest(LiteRtLmTestBase):
     self.assertGreater(result.last_prefill_tokens_per_second, 0)
     self.assertGreater(result.last_decode_token_count, 0)
     self.assertGreater(result.last_decode_tokens_per_second, 0)
+
+  def test_benchmark_class_with_thread_count(self):
+    lib = litert_lm._ffi._get_lib()
+    orig_set_num_threads = lib.litert_lm_engine_settings_set_num_threads
+    mock_set_num_threads = mock.MagicMock(side_effect=orig_set_num_threads)
+
+    with mock.patch.object(
+        lib,
+        "litert_lm_engine_settings_set_num_threads",
+        mock_set_num_threads,
+    ):
+      benchmark = litert_lm.Benchmark(
+          self.model_path,
+          litert_lm.Backend.CPU(thread_count=4),
+          prefill_tokens=10,
+          decode_tokens=10,
+          cache_dir=":nocache",
+      )
+      benchmark.run()
+
+      mock_set_num_threads.assert_called_once_with(mock.ANY, 4)
 
   def test_engine_abc_inheritance(self):
     with self._create_engine() as engine:
