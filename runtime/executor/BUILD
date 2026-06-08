@@ -737,6 +737,7 @@ cc_library(
 cc_test(
     name = "llm_executor_settings_utils_test",
     srcs = ["llm_executor_settings_utils_test.cc"],
+    data = ["//runtime/testdata"],
     deps = [
         ":executor_settings_base",
         ":llm_executor_settings",

@@ -96,12 +96,16 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
           executor_settings.GetModelAssets().GetScopedFile().value()->IsValid();
 
       auto program_cache_file = executor_settings.GetProgramCacheFile(
-          ExecutorSettingsBase::kMlDriftCacheSuffix, /*check_and_clean=*/true);
+          cache_suffix.value_or("") +
+              std::string(ExecutorSettingsBase::kMlDriftCacheSuffix),
+          /*check_and_clean=*/true);
       bool has_valid_program_cache_fd =
           program_cache_file.ok() &&
           !std::holds_alternative<std::string>(*program_cache_file);
       auto weight_cache_file = executor_settings.GetWeightCacheFile(
-          ExecutorSettingsBase::kMlDriftCacheSuffix, /*check_and_clean=*/true);
+          cache_suffix.value_or("") +
+              std::string(ExecutorSettingsBase::kMlDriftCacheSuffix),
+          /*check_and_clean=*/true);
       bool has_valid_weight_cache_fd =
           weight_cache_file.ok() &&
           !std::holds_alternative<std::string>(*weight_cache_file);
@@ -124,6 +128,10 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
             GetFileCacheIdentifier(
                 *executor_settings.GetModelAssets().GetScopedFile().value()));
         cache_key = absl::StrCat("fd_", metadata_id);
+      }
+      if (cache_suffix.has_value() && !cache_suffix->empty() &&
+          !cache_key.empty()) {
+        absl::StrAppend(&cache_key, *cache_suffix);
       }
 
       AdvancedSettings advanced_settings;
