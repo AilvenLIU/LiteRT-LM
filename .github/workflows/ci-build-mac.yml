@@ -120,6 +120,9 @@ jobs:
       - name: Run bazel build on MacOS.
         run: |
           bazel build --disk_cache=~/.cache/bazel-macos \
+            --config=macos_arm64 \
+            --define=litert_link_capi_so=false \
+            --define=resolve_symbols_in_exec=false \
             //... \
             //runtime/engine:litert_lm_main
 
@@ -142,6 +145,7 @@ jobs:
       - name: Run bazel build on MacOS with dynamic linking.
         run: |
           bazel build --disk_cache=~/.cache/bazel-macos-dylib \
+            --config=macos_arm64 \
             --define=litert_link_capi_so=true \
             --define=resolve_symbols_in_exec=false \
             //runtime/engine:litert_lm_main
