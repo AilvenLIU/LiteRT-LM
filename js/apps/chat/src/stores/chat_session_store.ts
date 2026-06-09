@@ -289,7 +289,7 @@ export class ChatSessionStore {
         if (value && value.content) {
           const newChunkText = typeof value.content === 'string' ?
               value.content :
-              (value.content[0]?.text || '');
+              (value.content[0]?.['text'] || '');
 
           fullResponseText += newChunkText;
           this.messages[activeMsgIndex] = {

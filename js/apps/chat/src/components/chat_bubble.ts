@@ -14,12 +14,59 @@
  * limitations under the License.
  */
 
+import './code_block';
+
 import {css, html, LitElement} from 'lit';
 import {customElement, property} from 'lit/decorators.js';
+import {marked, type Tokens} from 'marked';
 
-import {LlmChatStateController} from '../state_controller.js';
-import type {StoredMessage} from '../state_controller.js';
+import {LlmChatStateController, type StoredMessage} from '../state_controller.js';
 import {sharedStyles} from '../styles/shared_styles.js';
+
+import {getLanguage, highlight, highlightAuto, hljsStyles} from './hljs_util.js';
+import {renderHtml} from './util.js';
+
+marked.use({
+  renderer: {
+    code(token: Tokens.Code) {
+      const originalCode = token.text;
+      // Extract first word of the lang string (e.g., "python info" -> "python")
+      let language = (token.lang || '').match(/\S*/)?.[0]?.toLowerCase() || '';
+      let highlightedCode: string;
+
+      try {
+        if (language && getLanguage(language)) {
+          highlightedCode = highlight(originalCode, language);
+        } else {
+          const result = highlightAuto(originalCode);
+          highlightedCode = result.value;
+          if (!language && result.language) {
+            language = result.language;
+          }
+        }
+      } catch (e) {
+        highlightedCode = originalCode.replace(/&/g, '&amp;')
+                              .replace(/</g, '&lt;')
+                              .replace(/>/g, '&gt;');
+      }
+
+      if (!language) {
+        language = 'code';
+      }
+
+      language = language.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+      const bytes = new TextEncoder().encode(originalCode);
+      const base64Code =
+          btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''));
+      return `<litert-code-block base-64-code="${base64Code}" language="${
+          language}">
+<pre class="code-content-pre"><code class="hljs language-${language}">${
+          highlightedCode}</code></pre>
+</litert-code-block>`;
+    }
+  }
+});
 
 /* tslint:disable:no-new-decorators */
 
@@ -36,8 +83,7 @@ export class LitertChatBubble extends LitElement {
   state!: LlmChatStateController;
 
   static override styles = [
-    sharedStyles,
-    css`
+    sharedStyles, hljsStyles, css`
       :host {
         display: flex;
         flex-direction: column;
@@ -77,102 +123,162 @@ export class LitertChatBubble extends LitElement {
       }
 
       .message-sender {
-        font-size: 0.75rem;
+        font-size: 0.7rem;
         font-weight: 700;
-        margin-bottom: 4px;
         text-transform: uppercase;
         letter-spacing: 0.05em;
+        margin-bottom: 4px;
       }
 
-      .message-sender.user {
-        color: var(--teal);
-        text-align: right;
-      }
+      .message-sender.user { color: var(--blue); }
+      .message-sender.assistant { color: var(--teal); }
 
-      .message-sender.assistant {
-        color: var(--blue);
-      }
-
-      .message-content {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-
-      .message-user-text {
-        white-space: pre-wrap;
-      }
-
-      .message-text {
-        white-space: pre-wrap;
-      }
-
-      /* Thought process block */
+      /* CoT Thought Process Blocks */
       .thought-details {
         background-color: rgba(255, 255, 255, 0.03);
-        border-left: 3px solid var(--text-muted);
-        padding: 8px 12px;
-        margin-bottom: 8px;
+        border-left: 3px solid var(--teal);
         border-radius: 4px;
+        padding: 10px 14px;
+        margin-bottom: 12px;
+        box-sizing: border-box;
       }
 
       .thought-summary {
-        font-size: 0.8125rem;
-        color: var(--text-muted);
+        font-size: 0.7rem;
+        font-weight: bold;
+        color: var(--teal);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
         cursor: pointer;
-        font-weight: 600;
         outline: none;
+        user-select: none;
       }
 
       .thought-content {
-        margin-top: 6px;
-        font-size: 0.875rem;
-        color: #94a3b8;
-        white-space: pre-wrap;
+        font-size: 0.78rem;
+        line-height: 1.5;
+        color: var(--text-muted);
+        font-style: italic;
+        margin-top: 8px;
+        padding: 0;
+      }
+
+      .thought-content p {
+        margin: 4px 0;
         font-style: italic;
       }
 
-      /* Actions bar */
+      .message-user-text {
+        white-space: pre-wrap; 
+      }
+      
+      .message-content {
+        white-space: normal; 
+      }
+
+      .message-content code {
+        font-family: ui-monospace, monospace;
+        background-color: rgba(0, 0, 0, 0.3);
+        padding: 2px 4px;
+        border-radius: 4px;
+        font-size: 0.875em;
+      }
+
+      .message-content pre {
+        font-family: ui-monospace, monospace;
+        background-color: rgba(0, 0, 0, 0.4);
+        padding: 12px;
+        border-radius: 8px;
+        overflow-x: auto;
+        font-size: 0.875rem;
+        margin: 8px 0;
+      }
+
+      /* Styled Code Blocks & Previews */
+
+
+      .code-content-pre {
+        margin: 0;
+        padding: 16px;
+        overflow-x: auto;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.85rem;
+        line-height: 1.4;
+        color: #cbd5e1;
+        background-color: transparent !important;
+        border-radius: 0 !important;
+      }
+
       .message-actions {
         display: flex;
         gap: 8px;
         margin-top: 8px;
-        opacity: 0;
-        transition: opacity 0.2s;
+        border-top: 1px dashed rgba(255, 255, 255, 0.1);
+        padding-top: 6px;
         justify-content: flex-end;
-        align-items: center;
-      }
-
-      .message-bubble:hover .message-actions {
-        opacity: 1;
+        align-items: center; 
       }
 
       .btn-action {
         background: none;
         border: none;
         color: var(--text-muted);
-        font-size: 0.75rem;
         cursor: pointer;
-        padding: 2px 6px;
+        font-size: 0.7rem;
+        font-family: inherit;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center; 
+        width: 58px; 
+        height: 20px;
+        box-sizing: border-box;
+        padding: 0;
         border-radius: 4px;
-        transition: all 0.15s;
-        font-weight: 600;
+        transition: color 0.15s, background-color 0.15s;
       }
 
       .btn-action:hover {
-        color: var(--text);
-        background-color: rgba(255, 255, 255, 0.05);
+        color: var(--teal);
+        background-color: var(--bg-input);
       }
 
       .message-stats {
-        font-size: 0.75rem;
+        font-size: 0.68rem;
         color: var(--text-muted);
-        margin-right: auto;
-        display: flex;
+        font-family: ui-monospace, monospace;
+        display: inline-flex;
+        align-items: center;
         gap: 12px;
+        margin-right: auto;
+        opacity: 0.65;
+        user-select: none;
       }
-    `,
+
+      .message-stats b {
+        color: var(--teal);
+        white-space: nowrap; 
+      }
+    `
   ];
+
+  private renderMarkdown(text: string): string {
+    // Note: This is called in the render function for each token we receive
+    // from the model.
+    // It's not efficient to re-render the entire markdown from scratch for
+    // each token, but it's fast enough for now.
+    // A better solution would incrementally render new chunks of the markdown.
+    if (!text) return '';
+    try {
+      return marked.parse(text, {async: false});
+    } catch (e) {
+      console.error('[LiteRT-LM] Failed to parse markdown:', e);
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>');
+    }
+  }
 
   private handleCopyMessage(e: Event) {
     const targetBtn = e.target as HTMLButtonElement;
@@ -219,7 +325,9 @@ export class LitertChatBubble extends LitElement {
         msg.thoughtText ? html`
             <details class="thought-details" open>
               <summary class="thought-summary">Thought Process</summary>
-              <div class="thought-content">${msg.thoughtText}</div>
+              <div class="thought-content">${
+                              renderHtml(this.renderMarkdown(
+                                  msg.thoughtText || ''))}</div>
             </details>
           ` :
                           ''}
@@ -227,7 +335,8 @@ export class LitertChatBubble extends LitElement {
           <!-- Main message bubble content -->
           ${
         isUser ? html`<div class="message-user-text">${msg.text}</div>` :
-                 html`<div class="message-text">${msg.text}</div>`}
+                 html`<div>${
+                     renderHtml(this.renderMarkdown(msg.text || ''))}</div>`}
         </div>
 
         <!-- Message actions bar (Edit / Copy & Retry) -->
@@ -236,20 +345,20 @@ export class LitertChatBubble extends LitElement {
         isUser ? html`
             <!-- User stats telemetry (Token count only!) -->
             ${
-                 msg.tokensCount ? html`
+                     msg.tokensCount ? html`
               <div class="message-stats">
                 <span>Tokens: <b>${msg.tokensCount}</b></span>
               </div>
             ` :
-                                   ''}
+                                       ''}
             <!-- User Edit trigger -->
             <button class="btn-action" style="width: 58px;" @click=${
-                 this.handleRewindEdit}>✎ Edit</button>
+                     this.handleRewindEdit}>✎ Edit</button>
           ` :
                  html`
             <!-- Assistant stats telemetry (prefilled auto-left!) -->
             ${
-                 msg.prefillSpeed || msg.decodeSpeed ? html`
+                     msg.prefillSpeed || msg.decodeSpeed ? html`
               <div class="message-stats">
                 <span>Prefill: <b>${msg.prefillSpeed || '-'}</b></span>
                 <span>Decode: <b>${msg.decodeSpeed || '-'}</b></span>
@@ -260,10 +369,10 @@ export class LitertChatBubble extends LitElement {
             
             <!-- Copy & Retry triggers -->
             <button class="btn-action" style="width: 58px;" @click=${
-                 this.handleCopyMessage}>Copy</button>
+                     this.handleCopyMessage}>Copy</button>
             <button class="btn-action" style="width: 58px;" @click=${
-                 () => this.state.chatSession.redoResponse(
-                     this.index)}>⟲ Retry</button>
+                     () => this.state.chatSession.redoResponse(
+                         this.index)}>⟲ Retry</button>
           `}
         </div>
       </div>

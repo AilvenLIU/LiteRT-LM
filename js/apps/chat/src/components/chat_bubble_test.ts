@@ -80,7 +80,7 @@ describe('litert-chat-bubble', () => {
     expect(content!.textContent!.trim()).toBe('Hello, this is a user message.');
   });
 
-  it('renders an assistant message as plain text', async () => {
+  it('renders an assistant message with markdown', async () => {
     element.message = {
       role: 'assistant',
       text: 'Hello *world*, this is **bold** and a [link](http://example.com).',
@@ -97,8 +97,19 @@ describe('litert-chat-bubble', () => {
     const sender = element.shadowRoot!.querySelector('.message-sender');
     expect(sender!.textContent!.trim()).toBe('Assistant');
 
-    const content = element.shadowRoot!.querySelector('.message-text');
-    expect(content!.textContent!.trim()).toBe('Hello *world*, this is **bold** and a [link](http://example.com).');
+    const content = element.shadowRoot!.querySelector('.message-content');
+    expect(content).toBeTruthy();
+
+    // Check markdown rendering
+    const em = content!.querySelector('em');
+    expect(em!.textContent).toBe('world');
+
+    const strong = content!.querySelector('strong');
+    expect(strong!.textContent).toBe('bold');
+
+    const link = content!.querySelector('a') as HTMLAnchorElement;
+    expect(link!.href).toBe('http://example.com/');
+    expect(link!.textContent).toBe('link');
   });
 
   it('renders thought process CoT blocks', async () => {
@@ -121,7 +132,34 @@ describe('litert-chat-bubble', () => {
     expect(thoughtContent!.textContent!.trim()).toBe('Thinking about the answer...');
   });
 
+  it('renders code blocks with headers and copy buttons', async () => {
+    element.message = {
+      role: 'assistant',
+      text: 'Here is some code:\n```typescript\nconst x = 5;\n```',
+      senderName: 'Assistant',
+    };
+    element.index = 3;
+    await element.updateComplete;
 
+    const block = element.shadowRoot!.querySelector('litert-code-block');
+    expect(block).toBeTruthy();
+
+    const container = block!.shadowRoot!.querySelector('.code-container');
+    expect(container).toBeTruthy();
+
+    const header = container!.querySelector('.code-header');
+    expect(header).toBeTruthy();
+
+    const lang = header!.querySelector('.code-lang');
+    expect(lang!.textContent!.trim()).toBe('typescript');
+
+    const copyBtn = header!.querySelector('.btn-copy-code');
+    expect(copyBtn).toBeTruthy();
+    expect(copyBtn!.textContent!.trim()).toBe('Copy');
+
+    const code = block!.querySelector('code');
+    expect(code!.textContent!.trim()).toBe('const x = 5;');
+  });
 
   it('triggers rewindAndEdit when user clicks Edit', async () => {
     element.message = {
@@ -171,7 +209,54 @@ describe('litert-chat-bubble', () => {
     expect(mockState.chatSession.redoResponse).toHaveBeenCalledWith(5);
   });
 
+  it('copies code to clipboard when copy button is clicked in code header', async () => {
+    element.message = {
+      role: 'assistant',
+      text: 'Here is some code:\n```typescript\nconst x = 5;\n```',
+      senderName: 'Assistant',
+    };
+    element.index = 6;
+    await element.updateComplete;
 
+    const block = element.shadowRoot!.querySelector('litert-code-block');
+    const copyBtn =
+        block!.shadowRoot!.querySelector('.btn-copy-code') as HTMLButtonElement;
+    expect(copyBtn).toBeTruthy();
 
+    copyBtn.click();
+    
+    // Wait for async copy handler
+    await new Promise(resolve => setTimeout(resolve, 50));
 
+    expect(mockClipboardWriteText).toHaveBeenCalledWith('const x = 5;');
+    expect(copyBtn.textContent!.trim()).toBe('Copied!');
+  });
+
+  it('dispatches preview-html event when preview button is clicked in HTML code header', async () => {
+    element.message = {
+      role: 'assistant',
+      text: 'Here is HTML:\n```html\n<h1>Hello</h1>\n```',
+      senderName: 'Assistant',
+    };
+    element.index = 7;
+    await element.updateComplete;
+
+    const block = element.shadowRoot!.querySelector('litert-code-block');
+    const previewBtn = block!.shadowRoot!.querySelector('.btn-preview-code') as
+        HTMLButtonElement;
+    expect(previewBtn).toBeTruthy();
+
+    let eventDetail: { base64Code: string } | null = null;
+    element.addEventListener('preview-html', (e: Event) => {
+      eventDetail = (e as CustomEvent<{base64Code: string}>).detail;
+    });
+
+    previewBtn.click();
+
+    expect(eventDetail as {base64Code: string} | null).toEqual({
+      base64Code: jasmine.any(String),
+    });
+    
+    expect(decodeURIComponent(escape(atob(eventDetail!.base64Code))).trim()).toBe('<h1>Hello</h1>');
+  });
 });
