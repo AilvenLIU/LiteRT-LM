@@ -31,3 +31,4 @@ export * from './conversation_config.js';
 
 
 export * as Wasm from './wasm_binding_types.js';
+export * from './types.js';

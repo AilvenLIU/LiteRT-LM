@@ -221,27 +221,33 @@ describe('ChatSessionStore', () => {
 
     // Use our strongly typed internal fake engine
     const converseFake = fakeEngine.cachedConversation!;
+    chatSessionStore.codeSandbox.run = jasmine.createSpy().and.returnValue(
+        Promise.resolve({resultAsString: '42', consoleMessages: []}));
+
     converseFake.queueResponse({
       role: 'model',
-      content: 'Let me look that up',
+      content: 'Let me calculate that.',
       tool_calls: [{
         type: 'function',
-        function: {name: 'getWeather', arguments: {city: 'Mountain View'}}
+        function: {name: 'run_javascript', arguments: {code: '21+21'}}
       }]
     });
 
-    await chatSessionStore.sendMessage('What is the weather?');
+    converseFake.queueResponse({role: 'model', content: ' The answer is 42.'});
+
+    await chatSessionStore.sendMessage('What is 21+21?');
 
     expect(chatSessionStore.messages.length).toBe(2);
-    expect(chatSessionStore.messages[1].text).toBe('Let me look that up');
+    expect(chatSessionStore.messages[1].text)
+        .toBe('Let me calculate that. The answer is 42.');
 
-    // Function calls aren't visually piped to .text today, but we can verify
-    // the API's backend logic:
+    // We can verify the API's backend logic:
     const rawHistory = converseFake.getHistory();
     expect(rawHistory.length)
-        .toBe(2);  // The generated user request + our fake response
+        .toBe(4);  // request -> tool call -> tool response -> text response
     expect(rawHistory[1].tool_calls).toBeDefined();
-    expect(rawHistory[1].tool_calls![0].function.name).toBe('getWeather');
+    expect(rawHistory[1].tool_calls![0].function.name).toBe('run_javascript');
+    expect(chatSessionStore.codeSandbox.run).toHaveBeenCalledWith('21+21');
   });
 
   it('sendMessage cancels generation gracefully', async () => {

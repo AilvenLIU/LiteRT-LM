@@ -28,4 +28,5 @@ export interface ChatInterface {
   getHistory(): Message[]|Promise<Message[]>;
   getTokenCount(): Promise<number>;
   getBenchmarkInfo(): Promise<BenchmarkInfo>;
+  delete(): Promise<void>;
 }

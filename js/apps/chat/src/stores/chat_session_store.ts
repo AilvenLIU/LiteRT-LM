@@ -14,8 +14,10 @@
  * limitations under the License.
  */
 
-import {Conversation, SamplerType} from '@litert-lm/core';
+import {AutoToolChat, ChatInterface, JsonValue, SamplerType, ToolProgressEvent, ToolWithImplementation} from '@litert-lm/core';
 import {z} from 'zod';
+
+import {CodeSandbox} from '../components/code_sandbox.js';
 
 import {ModelLoaderService} from './model_loader_service.js';
 import {SettingsStore} from './settings_store.js';
@@ -55,7 +57,8 @@ export class ChatSessionStore {
   activeSavedConvId: string|null = null;
   conversationsList: ConversationMeta[] = [];
   messages: StoredMessage[] = [];
-  activeConversation: Conversation|null = null;
+  activeConversation: ChatInterface|null = null;
+  codeSandbox = new CodeSandbox();
 
   private readonly CONVS_LIST_KEY = 'litertlm-conversations-list';
 
@@ -204,24 +207,64 @@ export class ChatSessionStore {
       this.activeConversation = null;
     }
 
-    this.activeConversation = await this.modelLoader.engine.createConversation({
-      sessionConfig: {
-        maxOutputTokens: this.settings.maxOutputTokens,
-        samplerParams: {
-          type: this.getSamplerTypeEnum(this.settings.samplerType),
-          temperature: this.settings.temperature,
-          p: this.settings.topP,
-          k: this.settings.topK,
+    const jsTool: ToolWithImplementation = {
+      type: 'function',
+      function: {
+        name: 'run_javascript',
+        description:
+            'Executes Javascript code in a sandbox and returns the result and console output. VERY useful for doing math, text manipulation, and other algorithmic operations.',
+        parameters: {
+          type: 'object',
+          properties: {
+            code: {
+              type: 'string',
+              description:
+                  'The Javascript code to execute. Can use console.log to output data, or return a value.'
+            }
+          },
+          required: ['code']
         }
       },
-      preface: {
-        messages: this.messages.length > 0 ?
-            this.messages.map(msg => ({role: msg.role, content: msg.text})) :
-            undefined,
-        extra_context: {
-          'enable_thinking': this.settings.enableThinking,
+      execute: async (args: Record<string, JsonValue>) => {
+        const code = args['code'] as string;
+        if (typeof code !== 'string') {
+          return {error: 'Expected string parameter "code"'};
         }
+        return await this.codeSandbox.run(code);
+      }
+    };
+
+    this.activeConversation = new AutoToolChat({
+      engine: this.modelLoader.engine,
+      config: {
+        sessionConfig: {
+          maxOutputTokens: this.settings.maxOutputTokens,
+          samplerParams: {
+            type: this.getSamplerTypeEnum(this.settings.samplerType),
+            temperature: this.settings.temperature,
+            p: this.settings.topP,
+            k: this.settings.topK,
+          }
+        },
+        preface: {
+          messages: this.messages.length > 0 ?
+              this.messages.map(msg => ({role: msg.role, content: msg.text})) :
+              undefined,
+          extra_context: {
+            'enable_thinking': this.settings.enableThinking,
+          }
+        },
       },
+      tools: [jsTool],
+      onToolProgress: (e: ToolProgressEvent) => {
+        if (e.status === 'started') {
+          this.updateStatus(`Running ${e.name}...`);
+        } else if (e.status === 'completed') {
+          this.updateStatus(`Finished ${e.name}.`);
+        } else if (e.status === 'error') {
+          this.updateStatus(`Error running ${e.name}.`);
+        }
+      }
     });
 
     this.updateStatus('Model loaded and ready.');
@@ -351,7 +394,9 @@ export class ChatSessionStore {
     } finally {
       if (this.isCancelled) {
         try {
-          await this.activeConversation!.delete();
+          if (this.activeConversation) {
+            await this.activeConversation.delete();
+          }
           this.activeConversation = null;
           await this.createConversationSession();
         } catch (e) {

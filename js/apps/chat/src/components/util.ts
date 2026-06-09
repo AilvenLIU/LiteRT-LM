@@ -20,6 +20,12 @@ export function setIframeHtml(iframe: HTMLIFrameElement, html: string) {
   iframe.srcdoc = html;
 }
 
+/** Sets the HTML content of a sandboxed iframe using standard srcdoc and sandbox attribute. */
+export function setSandboxIframeHtml(iframe: HTMLIFrameElement, html: string) {
+  iframe.setAttribute('sandbox', 'allow-scripts');
+  iframe.srcdoc = html;
+}
+
 /** Registers the app service worker using standard navigator.serviceWorker. */
 export function registerAppServiceWorker(container: ServiceWorkerContainer): Promise<ServiceWorkerRegistration> {
   return container.register('./sw.js', {scope: './'});
