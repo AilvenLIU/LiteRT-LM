@@ -117,30 +117,6 @@ jobs:
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-      - name: Run bazel build on MacOS.
-        run: |
-          bazel build --disk_cache=~/.cache/bazel-macos \
-            --config=macos_arm64 \
-            --define=litert_link_capi_so=false \
-            --define=resolve_symbols_in_exec=false \
-            //... \
-            //runtime/engine:litert_lm_main
-
-      - name: Update litert_lm_main prebuilt for MacOS if new version tag is pushed.
-        if: github.ref_type == 'tag'
-        run: |
-          cp bazel-bin/runtime/engine/litert_lm_main litert_lm_main.macos_arm64
-          gh release upload ${GITHUB_REF_NAME} litert_lm_main.macos_arm64 --clobber
-
-      - name: Run bazel test on MacOS.
-        run: |
-          bazel test --disk_cache=~/.cache/bazel-macos --test_output=errors //...
-
-      - name: Install pytest
-        run: python3 -m pip install --break-system-packages pytest==8.3.4
-
-      - name: Run pytest
-        run: pytest tools/test/ --model-path=${{ env.MODEL_PATH }} --build-system=bazel
 
       - name: Run bazel build on MacOS with dynamic linking.
         run: |
@@ -150,25 +126,49 @@ jobs:
             --define=resolve_symbols_in_exec=false \
             //runtime/engine:litert_lm_main
 
-      - name: Run bazel build for iOS Simulator.
+      - name: Run bazel test on MacOS.
         run: |
-          # The `ios_sim_arm64` config causes bazel to build some mac-only
-          # targets that are not compatible with the iOS simulator, which
-          # leads to build failures. These flags filter out those
-          # incompatible builds.
-          bazel build --disk_cache=~/.cache/bazel-ios --config=ios_sim_arm64 \
-            --build_tag_filters=-requires-mac-inputs:hard,-no_mac \
-            //... \
-            //runtime/engine:litert_lm_main \
-            -- \
-            -//python/... \
-            -//kotlin/...
+          bazel test --disk_cache=~/.cache/bazel-macos-dylib \
+            --config=macos_arm64 \
+            --define=litert_link_capi_so=true \
+            --define=resolve_symbols_in_exec=false \
+            --test_output=errors \
+            //runtime/... \
+            //schema/... \
+            //c/...
 
-      - name: Update litert_lm_main prebuilt for iOS Simulator if new version tag is pushed.
+      - name: Update litert_lm_main prebuilt for MacOS if new version tag is pushed.
         if: github.ref_type == 'tag'
         run: |
-          cp bazel-bin/runtime/engine/litert_lm_main litert_lm_main.ios_sim_arm64
-          gh release upload ${GITHUB_REF_NAME} litert_lm_main.ios_sim_arm64 --clobber
+          cp bazel-bin/runtime/engine/litert_lm_main litert_lm_main.macos_arm64
+          gh release upload ${GITHUB_REF_NAME} litert_lm_main.macos_arm64 --clobber
+
+
+      - name: Install pytest
+        run: python3 -m pip install --break-system-packages pytest==8.3.4
+
+      - name: Run pytest
+        run: pytest tools/test/ --model-path=${{ env.MODEL_PATH }} --build-system=bazel
+
+      # TODO(totero): Re-enable this step once the bug is fixed.
+      # - name: Run bazel build for iOS Simulator.
+      #   run: |
+
+      #     bazel build --disk_cache=~/.cache/bazel-ios \
+      #       --build_tag_filters=-requires-mac-inputs:hard,-no_mac \
+      #       --config=ios_arm64 \
+      #       --apple_platform_type=ios \
+      #       --cpu=ios_arm64 \
+      #       --ios_multi_cpus=arm64 \
+      #       --define=litert_link_capi_so=true \
+      #       --define=resolve_symbols_in_exec=false \
+      #       //runtime/engine:litert_lm_main
+
+      # - name: Update litert_lm_main prebuilt for iOS Simulator if new version tag is pushed.
+      #   if: github.ref_type == 'tag'
+      #   run: |
+      #     cp bazel-bin/runtime/engine/litert_lm_main litert_lm_main.ios_sim_arm64
+      #     gh release upload ${GITHUB_REF_NAME} litert_lm_main.ios_sim_arm64 --clobber
 
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
