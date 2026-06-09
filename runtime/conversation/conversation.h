@@ -669,6 +669,10 @@ class Conversation {
   absl::StatusOr<std::vector<InputData>> RewindAndGetInputDataVector(
       const OptionalArgs& optional_args = OptionalArgs());
 
+  // Applies the prompt template to the given input. This function will strip
+  // heavy blobs from the input before applying the template.
+  absl::StatusOr<std::string> ApplyTemplate(PromptTemplateInput& input);
+
   // Keep a reference to the creator engine to enable access to the shared
   // resources that might be required for features like cloning.
   Engine& engine_;

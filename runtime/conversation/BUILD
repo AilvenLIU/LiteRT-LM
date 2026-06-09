@@ -192,3 +192,14 @@ cc_test(
         "//runtime/util:test_utils",
     ],
 )
+
+cc_test(
+    name = "prompt_utils_test",
+    srcs = ["prompt_utils_test.cc"],
+    deps = [
+        ":prompt_utils",
+        "@com_google_googletest//:gtest_main",
+        "@nlohmann_json//:json",
+        "//runtime/components:prompt_template",
+    ],
+)

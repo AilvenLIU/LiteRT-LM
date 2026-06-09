@@ -241,13 +241,13 @@ absl::StatusOr<std::string> Conversation::GetSingleTurnTextFromFullHistory(
       new_tmpl_input.messages.push_back(message_tmpl_input);
     }
     new_tmpl_input.add_generation_prompt = true;
-    return prompt_template_.Apply(new_tmpl_input);
+    return ApplyTemplate(new_tmpl_input);
   }
 
   std::string old_string;
   if (!IsEmptyPreface(preface_) || !history_.empty()) {
     old_tmpl_input.add_generation_prompt = false;
-    ASSIGN_OR_RETURN(old_string, prompt_template_.Apply(old_tmpl_input));
+    ASSIGN_OR_RETURN(old_string, ApplyTemplate(old_tmpl_input));
   }
 
   PromptTemplateInput new_tmpl_input = std::move(old_tmpl_input);
@@ -258,7 +258,7 @@ absl::StatusOr<std::string> Conversation::GetSingleTurnTextFromFullHistory(
   }
   new_tmpl_input.add_generation_prompt = true;
   ASSIGN_OR_RETURN(const std::string& new_string,
-                   prompt_template_.Apply(new_tmpl_input));
+                   ApplyTemplate(new_tmpl_input));
   if (new_string.substr(0, old_string.size()) != old_string) {
     return absl::InternalError(absl::StrCat(
         "The new rendered template string does not start with the previous "
@@ -372,7 +372,7 @@ absl::StatusOr<std::unique_ptr<Conversation>> Conversation::Create(
       }
       tmpl_input.add_generation_prompt = false;
       ASSIGN_OR_RETURN(single_turn_text,
-                       conversation->prompt_template_.Apply(tmpl_input));
+                       conversation->ApplyTemplate(tmpl_input));
     } else if (render_result.ok()) {
       single_turn_text = render_result->text;
     } else {
@@ -819,7 +819,7 @@ absl::StatusOr<std::string> Conversation::GetPrefillTextForMessages(
   // text, so the preface text will be *subtracted* from the returned text.
   std::string old_string;
   if (!old_messages.empty() || !include_preface) {
-    ASSIGN_OR_RETURN(old_string, prompt_template_.Apply(old_context));
+    ASSIGN_OR_RETURN(old_string, ApplyTemplate(old_context));
   }
 
   // Copy the `old` template context to the `new` template context.
@@ -835,7 +835,7 @@ absl::StatusOr<std::string> Conversation::GetPrefillTextForMessages(
   }
 
   // Render the `new` string.
-  ASSIGN_OR_RETURN(std::string new_string, prompt_template_.Apply(new_context));
+  ASSIGN_OR_RETURN(std::string new_string, ApplyTemplate(new_context));
 
   if (old_string.length() > new_string.length()) {
     return absl::InternalError(
@@ -899,6 +899,12 @@ Conversation::RewindAndGetInputDataVector(const OptionalArgs& optional_args) {
   checkpoint_message_index_ = std::nullopt;
 
   return input_data_vector;
+}
+
+absl::StatusOr<std::string> Conversation::ApplyTemplate(
+    PromptTemplateInput& input) {
+  StripBlobsFromTemplateInput(input);
+  return prompt_template_.Apply(input);
 }
 
 }  // namespace litert::lm
