@@ -180,6 +180,9 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedImpl::Create(
                 engine_settings.GetBenchmarkParams().value())
           : std::nullopt;
 
+  const bool enable_file_backed_model_loading =
+      engine_settings.GetMainExecutorSettings().GetBackend() == Backend::NPU;
+
   if (benchmark_info.has_value()) {
     RETURN_IF_ERROR(
         benchmark_info->TimeInitPhaseStart(BenchmarkInfo::InitPhase::kTotal));
@@ -189,7 +192,8 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedImpl::Create(
   const auto& model_assets =
       engine_settings.GetMutableMainExecutorSettings().GetModelAssets();
   ASSIGN_OR_RETURN(auto model_resources,
-                   BuildLiteRtCompiledModelResources(model_assets));
+                   BuildLiteRtCompiledModelResources(
+                       model_assets, enable_file_backed_model_loading));
   if (benchmark_info.has_value()) {
     RETURN_IF_ERROR(benchmark_info->TimeInitPhaseEnd(
         BenchmarkInfo::InitPhase::kModelAssets));
@@ -217,7 +221,7 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedImpl::Create(
     ASSIGN_OR_RETURN(std::unique_ptr<Tokenizer> tokenizer,
                      model_resources->GetTokenizer());
     tokenizer_duration = absl::Now() - start_time;
-    return tokenizer;
+    return std::move(tokenizer);
   };
 
   const auto& main_executor_settings =
