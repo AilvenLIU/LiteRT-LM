@@ -370,7 +370,9 @@ class DecodeOneStep {
       std::vector<std::vector<int>> output_tokens;
       if (constrained_decoder_) {
         auto decode_params = ExecutorDecodeParams();
-        decode_params.SetConstraintDecoder(constrained_decoder_.get());
+        decode_params.SetLogitsProcessorList({
+            constrained_decoder_.get(),
+        });
         ASSIGN_OR_RETURN(output_tokens, executor_.Decode(decode_params));
       } else {
         ASSIGN_OR_RETURN(output_tokens, executor_.Decode());

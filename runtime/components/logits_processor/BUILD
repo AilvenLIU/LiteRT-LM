@@ -41,3 +41,20 @@ cc_library(
         ],
     }),
 )
+
+cc_library(
+    name = "mock_logits_processor",
+    testonly = True,
+    hdrs = ["mock_logits_processor.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":logits_processor",
+        "@com_google_googletest//:gtest_for_library",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:span",
+        "@litert//litert/cc:litert_layout",
+        "@litert//litert/cc:litert_tensor_buffer",
+        "//runtime/components/logits_processor/constrained_decoding:constrained_decoder",
+        "@litert//tflite/types:half",
+    ],
+)

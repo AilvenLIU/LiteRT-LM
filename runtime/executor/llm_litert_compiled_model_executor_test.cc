@@ -248,7 +248,9 @@ TEST(LlmLiteRtCompiledModelExecutorStaticTest, ConstrainedDecodeTest) {
   auto constraint = FakeConstraint({2, 3}, /*vocabulary_size=*/262144);
   ConstrainedDecoder constraint_decoder =
       ConstrainedDecoder(&constraint, /*batch_size=*/1);
-  params.SetConstraintDecoder(&constraint_decoder);
+  params.SetLogitsProcessorList({
+      &constraint_decoder,
+  });
 
   {
     ASSERT_OK_AND_ASSIGN(auto output_tokens, executor->Decode(params));

@@ -20,7 +20,6 @@
 #include <memory>
 #include <optional>
 #include <ostream>
-#include <string>
 #include <utility>
 #include <vector>
 
@@ -692,8 +691,8 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
   // for next prefill or decode steps.
   litert::lm::ProcessedTokens processed_tokens_;
 
-  // Tracks whether a decode step was run so we know how to update constrained
-  // decoding state.
+  // Tracks whether a decode step was run so we know how to update the logits
+  // processor state.
   bool ran_decode_ = false;
 };
 

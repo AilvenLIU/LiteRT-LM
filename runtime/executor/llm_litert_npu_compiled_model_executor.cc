@@ -60,6 +60,7 @@
 #endif
 
 #include "runtime/components/embedding_lookup/embedding_lookup_manager.h"
+#include "runtime/components/logits_processor/logits_processor.h"
 #include "runtime/components/model_resources.h"
 #include "runtime/executor/litert_compiled_model_executor_utils.h"
 #include "runtime/executor/llm_executor_io_types.h"
@@ -1542,15 +1543,20 @@ LlmLiteRtNpuCompiledModelExecutor::DecodeLogits(
                                    per_tensor_logits_scale_,
                                    per_tensor_logits_zero_point_, false));
 
-  if (decode_params.HasConstraintDecoder()) {
+  if (!decode_params.GetLogitsProcessorList().empty()) {
     std::vector<int> current_token_ids = {token->id()};
     if (last_run_is_decode) {
-      RETURN_IF_ERROR(decode_params.GetConstraintDecoder()->UpdateState(
-          absl::MakeSpan(current_token_ids)));
+      for (LogitsProcessor* logits_processor :
+           decode_params.GetLogitsProcessorList()) {
+        RETURN_IF_ERROR(
+            logits_processor->UpdateState(absl::MakeSpan(current_token_ids)));
+      }
     }
 
-    RETURN_IF_ERROR(
-        decode_params.GetConstraintDecoder()->ProcessLogits(output_logits));
+    for (LogitsProcessor* logits_processor :
+         decode_params.GetLogitsProcessorList()) {
+      RETURN_IF_ERROR(logits_processor->ProcessLogits(output_logits));
+    }
   }
 
   current_step_++;
@@ -1567,7 +1573,7 @@ LlmLiteRtNpuCompiledModelExecutor::Decode() {
 absl::StatusOr<std::vector<std::vector<int>>>
 LlmLiteRtNpuCompiledModelExecutor::Decode(
     const ExecutorDecodeParams& decode_params) {
-  if (decode_params.HasConstraintDecoder()) {
+  if (!decode_params.GetLogitsProcessorList().empty()) {
     auto start = absl::Now();
 
     LITERT_ASSIGN_OR_RETURN(auto masked_logits,

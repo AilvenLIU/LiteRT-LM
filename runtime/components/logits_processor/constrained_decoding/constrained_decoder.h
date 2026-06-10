@@ -100,6 +100,11 @@ class ConstrainedDecoder : public LogitsProcessor {
   // Returns a pointer to the constraint.
   Constraint* GetConstraint() const { return constraint_; }
 
+  ConstrainedDecoder* GetConstraintDecoder() override { return this; }
+  const ConstrainedDecoder* GetConstraintDecoder() const override {
+    return this;
+  }
+
  private:
   // The constraint to be applied.
   Constraint* constraint_;
