@@ -144,6 +144,35 @@ py_test(
 )
 
 pytype_strict_library(
+    name = "cli_helpers",
+    srcs = ["cli_helpers.py"],
+    deps = [
+        ":huggingface_download",
+        ":model",
+        requirement("click"),
+        requirement("prompt_toolkit"),
+        requirement("questionary"),
+    ],
+    imports = [".."],
+)
+
+py_test(
+    name = "cli_helpers_test",
+    srcs = ["cli_helpers_test.py"],
+    tags = ["nowindows"],
+    deps = [
+        ":cli_helpers",
+        ":huggingface_download",
+        ":model",
+        "@absl_py//absl/testing:absltest",
+        requirement("click"),
+        requirement("prompt_toolkit"),
+        requirement("questionary"),
+    ],
+    imports = [".."],
+)
+
+pytype_strict_library(
     name = "version",
     srcs = [":version_py"],
 )

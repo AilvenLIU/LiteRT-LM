@@ -19,6 +19,7 @@ import traceback
 import click
 
 import litert_lm
+from litert_lm_cli import cli_helpers
 from litert_lm_cli import common
 from litert_lm_cli import help_formatter
 from litert_lm_cli import huggingface_download
@@ -139,7 +140,7 @@ def run_benchmark(
     # Benchmark directly from a HuggingFace repository
     litert-lm benchmark --from-huggingface-repo org/repo model.litertlm""",
 )
-@click.argument("model_reference")
+@click.argument("model_reference", required=False)
 @click.option(
     "-p",
     "--prefill-tokens",
@@ -165,7 +166,7 @@ def run_benchmark(
 )
 @common.common_inference_options
 def benchmark(
-    model_reference: str,
+    model_reference: str | None = None,
     prefill_tokens: int = 256,
     decode_tokens: int = 256,
     backend: str | None = None,
@@ -199,6 +200,11 @@ def benchmark(
   """
   if verbose:
     litert_lm.set_min_log_severity(litert_lm.LogSeverity.VERBOSE)
+
+  model_reference = model_reference or cli_helpers.resolve_model_file(
+      from_huggingface_repo,
+      huggingface_token,
+  )
 
   if from_huggingface_repo:
     model_path = huggingface_download.download_from_huggingface(

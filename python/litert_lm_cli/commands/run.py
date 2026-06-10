@@ -24,6 +24,7 @@ import prompt_toolkit
 from prompt_toolkit import key_binding
 
 import litert_lm
+from litert_lm_cli import cli_helpers
 from litert_lm_cli import common
 from litert_lm_cli import help_formatter
 from litert_lm_cli import huggingface_download
@@ -358,7 +359,7 @@ def run_interactive(
     # Run directly from a HuggingFace repository
     litert-lm run --from-huggingface-repo org/repo model.litertlm""",
 )
-@click.argument("model_reference")
+@click.argument("model_reference", required=False)
 @click.option(
     "--prompt", default=None, help="A single prompt to run once and exit."
 )
@@ -461,7 +462,7 @@ def run_interactive(
 )
 @common.common_inference_options
 def run(
-    model_reference: str,
+    model_reference: str | None = None,
     prompt: str | None = None,
     preset: str | None = None,
     backend: str | None = None,
@@ -579,6 +580,11 @@ def run(
 
   if verbose:
     litert_lm.set_min_log_severity(litert_lm.LogSeverity.VERBOSE)
+
+  model_reference = model_reference or cli_helpers.resolve_model_file(
+      from_huggingface_repo,
+      huggingface_token,
+  )
 
   if from_huggingface_repo:
     model_path = huggingface_download.download_from_huggingface(
