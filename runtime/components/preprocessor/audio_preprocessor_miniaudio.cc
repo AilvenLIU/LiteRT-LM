@@ -45,39 +45,37 @@
 namespace litert::lm {
 
 namespace {
-// Pads or truncates the input vector to the given fft_length.
+
+// Pads or truncates the frame vector in-place to the given fft_length.
 // Args:
-//   - input: The input vector to be padded or truncated.
 //   - fft_length: The fft length to be padded or truncated to.
 //   - padding_type: The padding mode to be used for padding.
-//   - output: The output vector to be padded or truncated to.
+//   - frame: The frame vector to be padded or truncated in-place.
 // Returns:
 //   A status object indicating whether the padding or truncation was
 //   successful.
 absl::Status PadOrTruncateForFft(
-    const std::vector<float>& input, int fft_length,
+    int fft_length,
     AudioPreprocessorConfig::FftPaddingType padding_type,
-    std::vector<float>& output) {
-  int input_dim = input.size();
+    std::vector<float>& frame) {
+  int input_dim = frame.size();
   if (input_dim == fft_length) {
-    output = input;
     return absl::OkStatus();
   }
-
-  output.assign(fft_length, 0.0f);
   if (input_dim < fft_length) {
     int pad_amount = fft_length - input_dim;
-    int pad_left = 0;
     if (padding_type == AudioPreprocessorConfig::FftPaddingType::kCenter) {
-      pad_left = pad_amount / 2;
+      int pad_left = pad_amount / 2;
+      int pad_right = pad_amount - pad_left;
+      frame.insert(frame.begin(), pad_left, 0.0f);
+      frame.insert(frame.end(), pad_right, 0.0f);
     } else if (padding_type ==
                AudioPreprocessorConfig::FftPaddingType::kRight) {
-      pad_left = 0;
+      frame.resize(fft_length, 0.0f);
     } else {
       return absl::InvalidArgumentError(
           absl::StrCat("Unsupported padding: ", padding_type));
     }
-    absl::c_copy(input, output.begin() + pad_left);
   } else {
     int trim_left = 0;
     if (padding_type == AudioPreprocessorConfig::FftPaddingType::kCenter) {
@@ -89,11 +87,12 @@ absl::Status PadOrTruncateForFft(
       return absl::InvalidArgumentError(
           absl::StrCat("Unsupported padding: ", padding_type));
     }
-    std::copy(input.begin() + trim_left, input.begin() + trim_left + fft_length,
-              output.begin());
+    frame.erase(frame.begin(), frame.begin() + trim_left);
+    frame.resize(fft_length);
   }
   return absl::OkStatus();
 }
+
 }  // namespace
 
 absl::Status AudioPreprocessorMiniAudio::DecodeAudio(
@@ -143,8 +142,13 @@ absl::Status AudioPreprocessorMiniAudio::DecodeAudio(
 std::vector<float> GetHanningWindow(int window_length,
                                     bool use_periodic_hanning,
                                     bool non_zero_hanning) {
-  int even = 1 - window_length % 2;
-  int n = window_length + static_cast<int>(use_periodic_hanning) * even - 1;
+  if (window_length <= 0) {
+    return {};
+  }
+  const int n =
+      (use_periodic_hanning && (window_length % 2 == 0))
+          ? window_length
+          : window_length - 1;
   float arg = M_PI * 2.0 / n;
   std::vector<float> hanning_window(window_length, 0);
   const float shift = non_zero_hanning ? 0.5 : 0.0;
@@ -244,14 +248,12 @@ absl::Status AudioPreprocessorMiniAudio::PcmFramesToSpectrogram(
     for (int j = 0; j < current_frame.size(); ++j) {
       current_frame[j] *= hanning_window[j];
     }
-    std::vector<float> output_frame;
     auto status =
-        PadOrTruncateForFft(current_frame, config_.GetFftLength(),
-                            config_.GetFftPaddingType(), output_frame);
+        PadOrTruncateForFft(config_.GetFftLength(),
+                            config_.GetFftPaddingType(), current_frame);
     if (!status.ok()) {
       return status;
     }
-    current_frame = std::move(output_frame);
   }
 
   kiss_fftr_cfg fft_alloc = kiss_fftr_alloc(config_.GetFftLength(),
@@ -278,9 +280,7 @@ absl::Status AudioPreprocessorMiniAudio::ToLogMelSpectrogram(
     const std::vector<float>& spectrograms,
     std::vector<float>& log_mel_spectrograms) {
   std::vector<double> spectrograms_double(spectrograms.size());
-  for (int i = 0; i < spectrograms.size(); ++i) {
-    spectrograms_double[i] = spectrograms[i];
-  }
+  spectrograms_double.assign(spectrograms.begin(), spectrograms.end());
   int fft_bins = config_.GetFftBins();
   const int frames = spectrograms.size() / fft_bins;
   log_mel_spectrograms.reserve(frames * config_.GetNumMelBins());

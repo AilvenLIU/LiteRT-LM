@@ -46,6 +46,8 @@
 namespace litert::lm {
 namespace {
 
+using ::testing::ElementsAre;
+
 constexpr absl::string_view kFrontendModelPath =
     "litert_lm/runtime/components/testdata/frontend.tflite";
 constexpr absl::string_view kSlV1FrontendModelPath =
@@ -594,10 +596,7 @@ TEST(AudioPreprocessorMiniAudioTest, SkipMelSpectrogramExtractionStreaming) {
   ASSERT_TRUE(tensor_type_or2.HasValue());
   {
     auto dims = tensor_type_or2->Layout().Dimensions();
-    ASSERT_EQ(dims.size(), 3);
-    EXPECT_EQ(dims[0], 1);
-    EXPECT_EQ(dims[1], 1);
-    EXPECT_EQ(dims[2], 640);
+    EXPECT_THAT(dims, ElementsAre(1, 1, 640));
   }
 
   // Verify the single frame starts with chunk1, then chunk2.
@@ -640,10 +639,7 @@ TEST(AudioPreprocessorMiniAudioTest,
   ASSERT_TRUE(tensor_type_or1.HasValue());
   {
     auto dims = tensor_type_or1->Layout().Dimensions();
-    ASSERT_EQ(dims.size(), 3);
-    EXPECT_EQ(dims[0], 1);
-    EXPECT_EQ(dims[1], 1);
-    EXPECT_EQ(dims[2], 640);
+    EXPECT_THAT(dims, ElementsAre(1, 1, 640));
   }
 
   ASSERT_OK_AND_ASSIGN(auto data1,
@@ -668,10 +664,7 @@ TEST(AudioPreprocessorMiniAudioTest,
   ASSERT_TRUE(tensor_type_or2.HasValue());
   {
     auto dims = tensor_type_or2->Layout().Dimensions();
-    ASSERT_EQ(dims.size(), 3);
-    EXPECT_EQ(dims[0], 1);
-    EXPECT_EQ(dims[1], 1);
-    EXPECT_EQ(dims[2], 640);
+    EXPECT_THAT(dims, ElementsAre(1, 1, 640));
   }
 
   ASSERT_OK_AND_ASSIGN(auto data2,
@@ -682,6 +675,62 @@ TEST(AudioPreprocessorMiniAudioTest,
   }
   for (int i = 400; i < 640; ++i) {
     EXPECT_NEAR(data2[i], 0.0f, 1e-6);
+  }
+}
+
+TEST(AudioPreprocessorMiniAudioTest,
+     SkipMelSpectrogramExtractionWithSemicausalPadding) {
+  // Use config with semicausal padding and skip mel spectrogram extraction.
+  AudioPreprocessorConfig config = AudioPreprocessorConfig::Create(
+      /* sample_rate_hz= */ 16000,
+      /* num_channels= */ 1,
+      /* frame_length= */ 640,
+      /* hop_length= */ 160,
+      /* fft_length = */ 1024,
+      /* input_scale = */ 1.0,
+      /* pre_emphasis_factor = */ 0.0,
+      /* num_mel_bins= */ 128,
+      /* mel_low_hz= */ 0.0,
+      /* mel_high_hz= */ 8000.0,
+      /* mel_floor= */ 1e-3,
+      /* normalize_mel= */ false,
+      /* add_floor_to_mel_before_log= */ true,
+      /* semicausal_padding= */ true,
+      /* non_zero_hanning= */ false,
+      /* periodic_hanning= */ true,
+      /* fft_padding_type= */ AudioPreprocessorConfig::FftPaddingType::kCenter,
+      /* skip_mel_spectrogram_extraction= */ true,
+      /* buffer_last_frame= */ false);
+
+  // Create MiniAudio preprocessor.
+  ASSERT_OK_AND_ASSIGN(auto preprocessor,
+                       AudioPreprocessorMiniAudio::Create(config));
+  // Generate toy PCM data: 480 sequential floats.
+  std::vector<float> pcm_data(480);
+  for (int i = 0; i < pcm_data.size(); ++i) {
+    pcm_data[i] = static_cast<float>(i + 1);
+  }
+  ASSERT_OK_AND_ASSIGN(auto preprocessed_audio,
+                       preprocessor->Preprocess(InputAudio(pcm_data)));
+  ASSERT_OK_AND_ASSIGN(auto preprocessed_tensor,
+                       preprocessed_audio.GetPreprocessedAudioTensor());
+
+  // Verify Chunk 1 yields exactly 1 frame (160 zeros prepended + 480 data =
+  // 640).
+  auto tensor_type_or = preprocessed_tensor->TensorType();
+  ASSERT_TRUE(tensor_type_or.HasValue());
+  {
+    auto dims = tensor_type_or->Layout().Dimensions();
+    EXPECT_THAT(dims, ElementsAre(1, 1, 640));
+  }
+  ASSERT_OK_AND_ASSIGN(auto data,
+                       GetDataAsVector<float>(*preprocessed_tensor));
+  EXPECT_EQ(data.size(), 640);
+  for (int i = 0; i < 160; ++i) {
+    EXPECT_NEAR(data[i], 0.0f, 1e-6);
+  }
+  for (int i = 160; i < 640; ++i) {
+    EXPECT_NEAR(data[i], pcm_data[i - 160], 1e-6);
   }
 }
 
