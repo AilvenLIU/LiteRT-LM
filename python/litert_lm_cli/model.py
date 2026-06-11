@@ -136,7 +136,7 @@ def _backend_constraint(model_path: str) -> litert_lm.Backend:
 
 
 def parse_backend(
-    backend: str,
+    backend: str | None = None,
     *,
     model_obj: Model | None = None,
     cpu_thread_count: int | None = None,
@@ -166,7 +166,7 @@ def parse_backend(
     )
     return litert_lm.Backend.GPU()
 
-  backend_lower = backend.lower()
+  backend_lower = (backend or "cpu").lower()
   if backend_lower == "gpu":
     return litert_lm.Backend.GPU()
   elif backend_lower == "npu":

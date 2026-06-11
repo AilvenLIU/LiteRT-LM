@@ -173,7 +173,7 @@ def run_interactive(
     model_obj: model.Model,
     *,
     is_android: bool = False,
-    backend: str = "cpu",
+    backend: str | None = None,
     preset: str | None = None,
     prompt: str | None = None,
     enable_speculative_decoding: bool | None = None,
@@ -187,7 +187,7 @@ def run_interactive(
     top_p: float | None = None,
     temperature: float | None = None,
     seed: int | None = None,
-    cache: str = "disk",
+    cache: str | None = None,
     cpu_thread_count: int | None = None,
 ) -> None:
   """Runs the model interactively or with a single prompt."""
@@ -398,15 +398,21 @@ def run_interactive(
 )
 @click.option(
     "--vision-backend",
-    type=click.Choice(["cpu", "gpu", ""], case_sensitive=False),
+    type=click.Choice(["cpu", "gpu"], case_sensitive=False),
     default=None,
-    help="The backend to use for vision encoding.",
+    help=(
+        "The backend to use for vision encoding. If not set, use the model's"
+        " configured value."
+    ),
 )
 @click.option(
     "--audio-backend",
-    type=click.Choice(["cpu", "gpu", ""], case_sensitive=False),
+    type=click.Choice(["cpu", "gpu"], case_sensitive=False),
     default=None,
-    help="The backend to use for audio encoding.",
+    help=(
+        "The backend to use for audio encoding. If not set, use the model's"
+        " configured value."
+    ),
 )
 @click.option(
     "--attachment",
@@ -458,7 +464,7 @@ def run(
     model_reference: str,
     prompt: str | None = None,
     preset: str | None = None,
-    backend: str = "cpu",
+    backend: str | None = None,
     android: bool = False,
     enable_speculative_decoding: bool | None = None,
     verbose: bool = False,
@@ -474,7 +480,7 @@ def run(
     top_p: float | None = None,
     temperature: float | None = None,
     seed: int | None = None,
-    cache: str = "disk",
+    cache: str | None = None,
     cpu_thread_count: int | None = None,
 ) -> None:
   r"""Runs a LiteRT-LM model interactively or with a single prompt.
