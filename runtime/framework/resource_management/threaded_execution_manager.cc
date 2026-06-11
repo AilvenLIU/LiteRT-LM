@@ -182,6 +182,9 @@ absl::Status ThreadedExecutionManager::ReleaseSession(SessionId session_id) {
                      resource_manager_->AcquireAudioExecutor());
     audio_executor->Reset().IgnoreError();
   }
+  absl::erase_if(task_lookup_, [session_id](const auto& kv) {
+    return kv.second.session_id == session_id;
+  });
   session_lookup_.erase(session_id);
   return absl::OkStatus();
 }
@@ -248,47 +251,51 @@ absl::Status ThreadedExecutionManager::CreateTask(
   for (auto it = dependent_tasks.begin(); it != dependent_tasks.end();) {
     TaskId dep_task_id = *it;
 
+    bool erase_dependency = false;
     auto task_it = task_lookup_.find(dep_task_id);
     if (task_it == task_lookup_.end()) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Dependency task ", dep_task_id, " not found in task list."));
-    }
-    TaskInfo& dep_task_info = task_it->second;
-
-    bool erase_dependency = false;
-    if (IsTaskEndState(dep_task_info.task_state)) {
-      switch (dep_task_info.task_state) {
-        case TaskState::kFailed:
-          ABSL_FALLTHROUGH_INTENDED;
-        case TaskState::kDependentTaskFailed:
-          task_state = TaskState::kDependentTaskFailed;
-          break;
-        case TaskState::kCancelled:
-          ABSL_FALLTHROUGH_INTENDED;
-        case TaskState::kDependentTaskCancelled:
-          if (task_state != TaskState::kDependentTaskFailed) {
-            task_state = TaskState::kDependentTaskCancelled;
-          }
-          break;
-        case TaskState::kDone:
-          break;
-        case TaskState::kMaxNumTokensReached:
-          if (task_state == TaskState::kCreated) {
-            task_state = TaskState::kMaxNumTokensReached;
-          }
-          break;
-        default:
-          return absl::InvalidArgumentError(
-              absl::StrCat("Dependency task ", dep_task_id, " is in end state ",
-                           dep_task_info.task_state,
-                           " but not in Done or Cancelled or Failed state."));
+      if (dep_task_id >= next_task_id_.load()) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "Dependency task ", dep_task_id, " is invalid."));
       }
       erase_dependency = true;
-    } else if (dep_task_info.task_state == TaskState::kLastCallbackQueued) {
-      erase_dependency = true;
     } else {
-      // Dependency task is not finished, so this new task must follow it.
-      dep_task_info.following_tasks.insert(task_id);
+      TaskInfo& dep_task_info = task_it->second;
+
+      if (IsTaskEndState(dep_task_info.task_state)) {
+        switch (dep_task_info.task_state) {
+          case TaskState::kFailed:
+            ABSL_FALLTHROUGH_INTENDED;
+          case TaskState::kDependentTaskFailed:
+            task_state = TaskState::kDependentTaskFailed;
+            break;
+          case TaskState::kCancelled:
+            ABSL_FALLTHROUGH_INTENDED;
+          case TaskState::kDependentTaskCancelled:
+            if (task_state != TaskState::kDependentTaskFailed) {
+              task_state = TaskState::kDependentTaskCancelled;
+            }
+            break;
+          case TaskState::kDone:
+            break;
+          case TaskState::kMaxNumTokensReached:
+            if (task_state == TaskState::kCreated) {
+              task_state = TaskState::kMaxNumTokensReached;
+            }
+            break;
+          default:
+            return absl::InvalidArgumentError(
+                absl::StrCat("Dependency task ", dep_task_id,
+                             " is in end state ", dep_task_info.task_state,
+                             " but not in Done or Cancelled or Failed state."));
+        }
+        erase_dependency = true;
+      } else if (dep_task_info.task_state == TaskState::kLastCallbackQueued) {
+        erase_dependency = true;
+      } else {
+        // Dependency task is not finished, so this new task must follow it.
+        dep_task_info.following_tasks.insert(task_id);
+      }
     }
 
     // `erase()` will invalidate `it`, so advance `it` first.
@@ -1036,8 +1043,8 @@ absl::Status ThreadedExecutionManager::AddCloneSessionTask(
     return;
   };
 
-  return CreateTask(session_id, task_id, std::move(task), std::move(dep_tasks),
-                    cancelled, std::move(callback));
+  return CreateTask(cloned_session_id, task_id, std::move(task),
+                    std::move(dep_tasks), cancelled, std::move(callback));
 }
 
 absl::Status ThreadedExecutionManager::AddTextScoringTask(

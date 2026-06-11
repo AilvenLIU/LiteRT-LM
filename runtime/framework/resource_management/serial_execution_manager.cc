@@ -23,6 +23,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
@@ -225,6 +226,12 @@ absl::Status SerialExecutionManager::ReleaseSession(SessionId session_id) {
                      resource_manager_->AcquireAudioExecutor());
     audio_executor->Reset().IgnoreError();
   }
+  std::erase_if(ready_queue_, [this, session_id](TaskId tid) {
+    return task_lookup_.at(tid).session_id == session_id;
+  });
+  absl::erase_if(task_lookup_, [session_id](const auto& kv) {
+    return kv.second.session_id == session_id;
+  });
   session_lookup_.erase(session_id);
   return absl::OkStatus();
 }
@@ -289,8 +296,8 @@ absl::Status SerialExecutionManager::CreateTask(
 
     auto task_it = task_lookup_.find(dep_task_id);
     if (task_it == task_lookup_.end()) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Dependency task ", dep_task_id, " not found in task list."));
+      return absl::InvalidArgumentError(
+          absl::StrCat("Dependency task ", dep_task_id, " is invalid."));
     }
     TaskInfo& dep_task_info = task_it->second;
 
@@ -898,8 +905,8 @@ absl::Status SerialExecutionManager::AddCloneSessionTask(
     FinishTaskAndLogErrors(task_id, result, std::move(callback));
   };
 
-  return CreateTask(session_id, task_id, std::move(task), std::move(dep_tasks),
-                    cancelled, std::move(callback));
+  return CreateTask(cloned_session_id, task_id, std::move(task),
+                    std::move(dep_tasks), cancelled, std::move(callback));
 }
 
 absl::Status SerialExecutionManager::AddTextScoringTask(

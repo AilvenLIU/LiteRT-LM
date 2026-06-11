@@ -419,7 +419,7 @@ absl::StatusOr<std::unique_ptr<SessionInterface>> SessionAdvanced::Clone() {
           status = responses.status();
         }));
   }
-  RETURN_IF_ERROR(WaitUntilDone());
+  RETURN_IF_ERROR(session->WaitUntilDone());
   RETURN_IF_ERROR(status);
   return session;
 }

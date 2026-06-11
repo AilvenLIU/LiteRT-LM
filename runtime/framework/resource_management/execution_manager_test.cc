@@ -561,7 +561,7 @@ TEST_P(ExecutionManagerTest, CreateTaskWithInvalidDependencyId) {
   EXPECT_FALSE(task_status.ok());
   EXPECT_EQ(task_status.code(), absl::StatusCode::kInvalidArgument);
   EXPECT_THAT(task_status.message(),
-              testing::HasSubstr("Dependency task 99999 not found"));
+              testing::HasSubstr("Dependency task 99999 is invalid."));
 }
 
 TEST_P(ExecutionManagerTest, WaitUntilTaskDoneTimeout) {
@@ -1035,6 +1035,30 @@ TEST_P(ExecutionManagerTest, DestructorWaitsForActiveTasks) {
 
   absl::MutexLock lock(*mutex);
   EXPECT_THAT(*task_states, testing::Contains(TaskState::kDone));
+}
+
+TEST_P(ExecutionManagerTest, ReleaseSessionCleansUpTasksAndQueue) {
+  CreateExecutionManager(CreateDefaultFakeLlmExecutor());
+  ASSERT_OK_AND_ASSIGN(auto session_config, CreateDefaultSessionConfig());
+  ASSERT_OK_AND_ASSIGN(const SessionId session_id,
+                       execution_manager_->RegisterNewSession(session_config));
+
+  std::vector<InputData> inputs;
+  ASSERT_OK_AND_ASSIGN(auto input_text,
+                       tokenizer_->TokenIdsToTensorBuffer({1, 2, 3}));
+  inputs.push_back(InputText(std::move(input_text)));
+  ASSERT_OK_AND_ASSIGN(const TaskId task_id,
+                       execution_manager_->GetNewTaskId());
+  ASSERT_OK(execution_manager_->AddPrefillTask(
+      session_id, task_id, std::move(inputs), {},
+      std::make_shared<std::atomic<bool>>(false), nullptr));
+
+  // Release session. This should clean up the task from task_lookup_ and
+  // also ready_queue_ (for SerialExecutionManager).
+  ASSERT_OK(execution_manager_->ReleaseSession(session_id));
+
+  // WaitUntilAllDone should complete without error.
+  EXPECT_OK(execution_manager_->WaitUntilAllDone(absl::Seconds(1)));
 }
 
 INSTANTIATE_TEST_SUITE_P(
