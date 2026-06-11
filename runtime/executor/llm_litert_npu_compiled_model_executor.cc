@@ -2003,8 +2003,9 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::PrefillInternal(
 
     RETURN_IF_ERROR(HWPerLayerEmbeddingLookup(
         ids.data(), ids.size(), ple_table_ptrs_.data(),
-        ple_quant_params_.data(), num_tables_, 256, output_ptr, output_type_,
-        final_scale_, final_zero_point_));
+        ple_quant_params_.data(), num_tables_, ple_embedding_dim_, output_ptr,
+        output_type_, ple_table_element_type_, final_scale_,
+        final_zero_point_));
 
     latency_stats_.prefill_embedder_per_layer_inference_latency_us +=
         absl::ToInt64Microseconds(absl::Now() - start);
@@ -2183,7 +2184,8 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::DecodeInternal(
       int id = token->id();
       RETURN_IF_ERROR(HWPerLayerEmbeddingLookup(
           &id, 1, ple_table_ptrs_.data(), ple_quant_params_.data(), num_tables_,
-          256, output_ptr, output_type_, final_scale_, final_zero_point_));
+          ple_embedding_dim_, output_ptr, output_type_, ple_table_element_type_,
+          final_scale_, final_zero_point_));
 
       latency_stats_.decode_embedder_per_layer_inference_latency_us +=
           absl::ToInt64Microseconds(absl::Now() - start);
@@ -2573,8 +2575,9 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::RunVerifierBatch(
 
     RETURN_IF_ERROR(HWPerLayerEmbeddingLookup(
         verify_ids.data(), verify_ids.size(), ple_table_ptrs_.data(),
-        ple_quant_params_.data(), num_tables_, 256, output_ptr, output_type_,
-        final_scale_, final_zero_point_));
+        ple_quant_params_.data(), num_tables_, ple_embedding_dim_, output_ptr,
+        output_type_, ple_table_element_type_, final_scale_,
+        final_zero_point_));
 
     latency_stats_.decode_embedder_per_layer_inference_latency_us +=
         absl::ToInt64Microseconds(absl::Now() - start);
@@ -3104,21 +3107,56 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
   std::vector<float> ple_per_tensor_scales;
 
   int table_count = 0;
+  int ple_embedding_dim_val = 0;
   litert::ElementType output_type = litert::ElementType::None;
+  litert::ElementType ple_table_element_type = litert::ElementType::None;
   float final_scale = 1.0f;
   int32_t final_zero_point = 0;
 
   if (use_hw_ple_for_npu) {
+    // We are bypassing the model based inference for the Per-Layer Embedding
+    // (PLE) subgraph. Instead, we perform the embedding lookup manually in C++
+    // on the CPU.
+    //
+    // To do this, we must parse the PLE subgraph to dynamically extract all
+    // necessary parameters (table pointers, dimensions, quantization scales,
+    // and mathematical scaling factors) so our C++ lookup code can mimic
+    // the bypassed NPU operations perfectly.
     auto extended_model = ExtendedModel::CreateFromNonOwnedHandle(
         embedder_per_layer_model->Get());
     LITERT_ASSIGN_OR_RETURN(auto subgraph, extended_model.MainSubgraph());
     auto ops = subgraph.Ops();
     for (const auto& op : ops) {
+      // =======================================================================
+      // 1. Parse the EmbeddingLookup Op
+      // =======================================================================
+      // We need to extract the raw table pointers, the embedding dimension,
+      // the quantization type (Int4 vs Int8), and the dequantization scales.
       if (op.Code() == kLiteRtOpCodeTflEmbeddingLookup) {
         LITERT_ASSIGN_OR_RETURN(auto table_tensor, op.Input(1));
+        LITERT_ASSIGN_OR_RETURN(auto table_type_info,
+                                table_tensor.RankedTensorType());
+        auto table_dims = table_type_info.Layout().Dimensions();
+        int col_size = table_dims[1];  // The embedding dimension (e.g., 8960)
+
+        // Initialize table properties from the first table we encounter.
+        if (table_count == 0) {
+          ple_table_element_type = table_tensor.ElementType();
+          ple_embedding_dim_val = col_size;
+        } else {
+          // Validate that all embedding tables in the model are consistent.
+          RET_CHECK_EQ((int)ple_table_element_type,
+                       (int)table_tensor.ElementType())
+              << "All embedding tables must have the same element type";
+          RET_CHECK_EQ(ple_embedding_dim_val, col_size)
+              << "All embedding tables must have the same embedding dimension.";
+        }
+
+        // Extract the raw pointer to the table's weight data in memory.
         auto weights = table_tensor.Weights();
         ple_table_ptrs.push_back(weights.Bytes().data());
 
+        // Extract quantization parameters (scales) for dequantization.
         HWQuantizationParams qp;
         qp.scales = nullptr;
         qp.is_per_channel = false;
@@ -3126,10 +3164,13 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
         if (table_tensor.HasQuantization()) {
           auto q_type = table_tensor.QTypeId();
           if (q_type == kLiteRtQuantizationPerTensor) {
+            // Single scale for the entire table.
             auto q_params = table_tensor.PerTensorQuantization();
             ple_per_tensor_scales.push_back(q_params.scale);
             qp.scales = &ple_per_tensor_scales.back();
           } else if (q_type == kLiteRtQuantizationPerChannel) {
+            // Per-channel (per-row/per-token) quantization. Our model uses
+            // this, meaning each token has its own dequantization scale.
             auto q_params = table_tensor.PerChannelQuantization();
             qp.scales = q_params.scales;
             qp.is_per_channel = true;
@@ -3138,6 +3179,34 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
         ple_quant_params.push_back(qp);
         table_count++;
       }
+
+      // =======================================================================
+      // 2. Parse the Mul (Multiplication) Op
+      // =======================================================================
+      // Gemma models scale their embeddings by sqrt(d_model) before the
+      // transformer. For this model (d_model = 256), the scaling factor is 16.0
+      // (sqrt(256)).
+      //
+      // Since we bypassed the model based inference for the Mul op, we must
+      // extract this constant 16.0 multiplier and apply it manually in our C++
+      // lookup. Without this, our embeddings would be too small, causing the
+      // model to diverge.
+      if (op.Code() == kLiteRtOpCodeTflMul) {
+        auto inputs = op.Inputs();
+        for (const auto& input : inputs) {
+          // Look for the constant input tensor containing the multiplier.
+          if (input.HasWeights()) {
+            auto type_info = input.RankedTensorType();
+            if (type_info.HasValue() && type_info.Value().ElementType() ==
+                                            litert::ElementType::Float32) {
+              auto weights = input.Weights();
+              const float* vals =
+                  reinterpret_cast<const float*>(weights.Bytes().data());
+              final_scale = vals[0];  // Store the multiplier (e.g., 16.0)
+            }
+          }
+        }
+      }
     }
 
     auto outputs = subgraph.Outputs();
@@ -3145,6 +3214,13 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
     auto output_tensor = outputs[0];
     output_type = output_tensor.ElementType();
 
+    // =======================================================================
+    // 3. Handle Output Quantization (Only for Int16 models)
+    // =======================================================================
+    // If the model expects quantized Int16 outputs (for NPUs that don't support
+    // float), we must extract the output tensor's quantization parameters and
+    // use them to quantize our dequantized floats back to Int16 before writing
+    // to NPU.
     if (output_type == litert::ElementType::Int16) {
       RET_CHECK(output_tensor.HasQuantization());
       auto q_params = output_tensor.PerTensorQuantization();
@@ -3202,8 +3278,9 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
       std::move(embedding_lookup_manager),
       std::move(embedder_per_layer_context), quantization_params,
       std::move(ple_table_ptrs), std::move(ple_quant_params),
-      std::move(ple_per_tensor_scales), table_count, output_type, final_scale,
-      final_zero_point, std::move(kv_quant_params), speculative_decoding_type,
+      std::move(ple_per_tensor_scales), table_count, ple_embedding_dim_val,
+      output_type, ple_table_element_type, final_scale, final_zero_point,
+      std::move(kv_quant_params), speculative_decoding_type,
       std::move(drafter_context), std::move(drafter_aux_context)));
   return executor;
 }
@@ -3264,7 +3341,7 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelWithoutPerLayerEmbedding(
   // fail). Luckily these buffers are not used, so we can simply create new
   // ones to satisfy the compiled model run API.  We can remove this
   // workaround once we have a model that removes these buffers.
-  if (llm_inference_context.prefill_input_buffers.contains(cache_k31)){
+  if (llm_inference_context.prefill_input_buffers.contains(cache_k31)) {
     // For models with 32 layers. Do nothing.
   } else if (llm_inference_context.prefill_input_buffers.contains(cache_k25)) {
     LITERT_ASSIGN_OR_RETURN(auto buffer_k, llm_compiled_model.CreateInputBuffer(
@@ -3410,9 +3487,9 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelWithoutPerLayerEmbedding(
       std::move(cache_update_inference_context), std::move(prefill_runner_set),
       std::move(maybe_embedding_lookup_manager),
       /*embedder_per_layer_context=*/std::nullopt, quantization_params, {}, {},
-      {}, 0, litert::ElementType::None, 1.0f, 0, std::move(kv_quant_params),
-      speculative_decoding_type, std::move(drafter_context),
-      std::move(drafter_aux_context)));
+      {}, 0, 0, litert::ElementType::None, litert::ElementType::None, 1.0f, 0,
+      std::move(kv_quant_params), speculative_decoding_type,
+      std::move(drafter_context), std::move(drafter_aux_context)));
   return executor;
 }
 

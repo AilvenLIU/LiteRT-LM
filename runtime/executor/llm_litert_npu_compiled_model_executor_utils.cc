@@ -1025,17 +1025,36 @@ void UnpackInt4Row(const uint8_t* packed_data, float scale, int col_size,
   }
 }
 #endif
+
+void DequantizeInt8Row(const int8_t* packed_data, float scale, int col_size,
+                       float* output) {
+  for (int i = 0; i < col_size; ++i) {
+    output[i] = static_cast<float>(packed_data[i]) * scale;
+  }
+}
 }  // namespace
 
 absl::Status HWPerLayerEmbeddingLookup(
     const int* token_ids, int num_tokens, const uint8_t* const* table_ptrs,
-    const HWQuantizationParams* quant_params, int num_tables, int col_size,
-    void* output_buffer, litert::ElementType output_type, float final_scale,
+    const HWQuantizationParams* quant_params, int num_tables,
+    int ple_embedding_dim, void* output_buffer, litert::ElementType output_type,
+    litert::ElementType ple_table_element_type, float final_scale,
     int32_t final_zero_point) {
   constexpr int kVocabSize = 262144;
   std::vector<float> row_float;
   if (output_type == litert::ElementType::Int16) {
-    row_float.resize(col_size);
+    row_float.resize(ple_embedding_dim);
+  }
+
+  int row_size_bytes = 0;
+  if (ple_table_element_type == litert::ElementType::Int4) {
+    row_size_bytes = ple_embedding_dim / 2;
+  } else if (ple_table_element_type == litert::ElementType::Int8) {
+    row_size_bytes = ple_embedding_dim;
+  } else {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Unsupported table element type: ",
+                     static_cast<int>(ple_table_element_type)));
   }
 
   for (int t = 0; t < num_tokens; ++t) {
@@ -1044,7 +1063,7 @@ absl::Status HWPerLayerEmbeddingLookup(
       id = 0;  // Default to 0 as in model
     }
 
-    size_t row_offset = id * (col_size / 2);
+    size_t row_offset = id * row_size_bytes;
 
     for (int table_idx = 0; table_idx < num_tables; ++table_idx) {
       const uint8_t* table = table_ptrs[table_idx];
@@ -1059,22 +1078,39 @@ absl::Status HWPerLayerEmbeddingLookup(
       if (qp.scales) {
         scale = qp.is_per_channel ? qp.scales[id] : qp.scales[0];
       }
+      if (output_type == litert::ElementType::Float32) {
+        scale *= final_scale;
+      }
 
       if (output_type == litert::ElementType::Int16) {
-        UnpackInt4Row(row_data, scale, col_size, row_float.data());
+        if (ple_table_element_type == litert::ElementType::Int4) {
+          UnpackInt4Row(row_data, scale, ple_embedding_dim, row_float.data());
+        } else if (ple_table_element_type == litert::ElementType::Int8) {
+          DequantizeInt8Row(reinterpret_cast<const int8_t*>(row_data), scale,
+                            ple_embedding_dim, row_float.data());
+        }
         int16_t* int16_output = static_cast<int16_t*>(output_buffer) +
-                                t * num_tables * col_size +
-                                table_idx * col_size;
-        for (int i = 0; i < col_size; ++i) {
+                                t * num_tables * ple_embedding_dim +
+                                table_idx * ple_embedding_dim;
+        for (int i = 0; i < ple_embedding_dim; ++i) {
           float fval = row_float[i];
           int32_t qval = std::round(fval / final_scale) + final_zero_point;
           qval = std::max(-32768, std::min(32767, qval));
           int16_output[i] = static_cast<int16_t>(qval);
         }
-      } else {
+      } else if (output_type == litert::ElementType::Float32) {
         float* float_output = static_cast<float*>(output_buffer) +
-                              t * num_tables * col_size + table_idx * col_size;
-        UnpackInt4Row(row_data, scale, col_size, float_output);
+                              t * num_tables * ple_embedding_dim +
+                              table_idx * ple_embedding_dim;
+        if (ple_table_element_type == litert::ElementType::Int4) {
+          UnpackInt4Row(row_data, scale, ple_embedding_dim, float_output);
+        } else if (ple_table_element_type == litert::ElementType::Int8) {
+          DequantizeInt8Row(reinterpret_cast<const int8_t*>(row_data), scale,
+                            ple_embedding_dim, float_output);
+        }
+      } else {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "Unsupported output type: ", static_cast<int>(output_type)));
       }
     }
   }
@@ -1117,12 +1153,12 @@ absl::Status DequantizeLogits(const ::litert::TensorBuffer& src,
                             static_cast<float>(zero_point));
     }
   } else if (src_elem_type == ::litert::ElementType::Float32) {
-      // This is for dealing with unquantized float 32 logits.
-      const float* src_ptr = static_cast<const float*>(src_raw_ptr);
-      for (size_t i = 0; i < num_elements; ++i) {
-        dst_ptr[i] = src_ptr[i];
-      }
-    } else {
+    // This is for dealing with unquantized float 32 logits.
+    const float* src_ptr = static_cast<const float*>(src_raw_ptr);
+    for (size_t i = 0; i < num_elements; ++i) {
+      dst_ptr[i] = src_ptr[i];
+    }
+  } else {
     return absl::InvalidArgumentError(absl::StrCat(
         "Unsupported source type for dequantization: ", (int)src_elem_type));
   }
@@ -1197,9 +1233,9 @@ absl::Status WriteAndPadPleEmbeddings(::litert::TensorBuffer& buffer,
                                                             : sizeof(float)));
   RET_CHECK_LE(seq_pos_size, num_tokens_to_fill);
 
-  LITERT_RETURN_IF_ERROR(WritePleEmbeddingsToPtr(
-      lock_and_addr.second, ple_embeddings, output_type, final_scale,
-      final_zero_point));
+  LITERT_RETURN_IF_ERROR(
+      WritePleEmbeddingsToPtr(lock_and_addr.second, ple_embeddings, output_type,
+                              final_scale, final_zero_point));
 
   if (output_type == litert::ElementType::Int16) {
     int16_t* int16_ptr = static_cast<int16_t*>(lock_and_addr.second);
