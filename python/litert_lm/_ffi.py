@@ -114,7 +114,7 @@ def _get_lib() -> ctypes.CDLL:
 
   # 2. Fallback to direct path in runfiles for local development/Bazel
   if _LIB is None:
-    path = os.path.join(os.path.dirname(__file__), lib_name)
+    path = os.path.join(os.path.dirname(__file__), "../../c", lib_name)
     if os.path.exists(path):
       _LIB = ctypes.CDLL(path)
 

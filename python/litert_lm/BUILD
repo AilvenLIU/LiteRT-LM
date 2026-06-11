@@ -16,72 +16,10 @@ load(
     "@org_tensorflow//tensorflow:pytype.default.bzl",
     "pytype_strict_library",
 )
-# [Google-internal load of `cc_binary`]
 
 load("@rules_python//python:defs.bzl", "py_test")
-load("//python/litert_lm:cc_runfiles.bzl", "cc_runfiles")
 
 package(default_visibility = ["//visibility:public"])
-
-# Shared library of the LiteRT-LM C API.
-cc_binary(
-    name = "litert-lm",
-    srcs = [
-        "//c:engine.cc",
-        "//c:engine.h",
-    ],
-    copts = ["-fvisibility=hidden"],
-    features = ["-legacy_whole_archive"],
-    linkopts = select({
-        "@platforms//os:macos": [],
-        "@platforms//os:windows": [],
-        "//conditions:default": [
-            # Report unresolved symbol references as errors during linking.
-            "-Wl,--no-undefined",
-            # Strip all symbols to reduce library size (debug info is removed).
-            "-Wl,--strip-all",
-            # Remove unused sections/functions to further reduce library size.
-            "-Wl,--gc-sections",
-            # Ensure symbols are resolved internally first.
-            "-Wl,-Bsymbolic",
-            # Update the rpath
-            "-Wl,-rpath,$$ORIGIN",
-        ],
-    }),
-    linkshared = 1,
-    deps = [
-        "@com_google_absl//absl/base:core_headers",
-        "@com_google_absl//absl/base:log_severity",
-        "@com_google_absl//absl/functional:any_invocable",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/log:initialize",
-        "@com_google_absl//absl/log:log_sink_registry",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/time",
-        "@nlohmann_json//:json",
-        "//runtime/components:tokenizer",
-        "//runtime/conversation",
-        "//runtime/conversation:io_types",
-        "//runtime/conversation/model_data_processor:config_registry",
-        "//runtime/conversation/model_data_processor:gemma4_data_processor_config",
-        "//runtime/core:engine_impl",
-        "//runtime/engine:engine_factory",
-        "//runtime/engine:engine_interface",
-        "//runtime/engine:engine_settings",
-        "//runtime/engine:io_types",
-        "//runtime/executor:executor_settings_base",
-        "//runtime/executor:llm_executor_settings",
-        "//runtime/proto:engine_cc_proto",
-        "//runtime/proto:llm_metadata_cc_proto",
-        "//runtime/proto:sampler_params_cc_proto",
-        "//runtime/proto:token_cc_proto",
-        "//runtime/util:logging",
-        "//runtime/util:scoped_file",
-    ],
-)
 
 pytype_strict_library(
     name = "interfaces",
@@ -224,6 +162,7 @@ py_test(
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("//:version.bzl", "VERSION")
+load("//python/litert_lm:cc_runfiles.bzl", "cc_runfiles")
 
 _PREBUILT_LIBS = [
     "libGemmaModelConstraintProvider",
@@ -282,44 +221,6 @@ genrule(
     tags = ["manual"],
 )
 
-genrule(
-    name = "copy_prebuilt_litert_lm_so",
-    srcs = select({
-        ":wheel_platform_linux_x86_64": ["//prebuilt/linux_x86_64:liblitert-lm.so"],
-        ":wheel_platform_linux_arm64": ["//prebuilt/linux_arm64:liblitert-lm.so"],
-        ":wheel_platform_android_arm64": ["//prebuilt/android_arm64:liblitert-lm.so"],
-        "//conditions:default": [],
-    }),
-    outs = ["liblitert-lm.so"],
-    cmd = """
-        SRCS_ARRAY=($(SRCS))
-        OUTS_ARRAY=($(OUTS))
-        if [ $${#SRCS_ARRAY[@]} -gt 0 ]; then
-            cp $${SRCS_ARRAY[0]} $${OUTS_ARRAY[0]}
-            chmod +w $${OUTS_ARRAY[0]}
-            $(location //build_config:patchelf_exe) --set-rpath '$$ORIGIN' $${OUTS_ARRAY[0]}
-        else
-            touch $${OUTS_ARRAY[0]}
-        fi
-    """,
-    tags = ["manual"],
-    tools = ["//build_config:patchelf_exe"],
-)
-
-copy_file(
-    name = "copy_prebuilt_litert_lm_dylib",
-    src = "//prebuilt/macos_arm64:liblitert-lm.dylib",
-    out = "liblitert-lm.dylib",
-    tags = ["manual"],
-)
-
-copy_file(
-    name = "copy_prebuilt_litert_lm_dll",
-    src = "//prebuilt/windows_x86_64:litert-lm.dll",
-    out = "litert-lm.dll",
-    tags = ["manual"],
-)
-
 copy_file(
     name = "copy_dxcompiler_dll",
     src = "@directx_shader_compiler//:dxcompiler",
@@ -339,20 +240,81 @@ copy_file(
 )
 
 filegroup(
+    name = "prebuilt_litert_lm_so_sources",
+    srcs = select({
+        ":wheel_platform_linux_x86_64": ["//prebuilt/linux_x86_64:liblitert-lm.so"],
+        ":wheel_platform_linux_arm64": ["//prebuilt/linux_arm64:liblitert-lm.so"],
+        ":wheel_platform_android_arm64": ["//prebuilt/android_arm64:liblitert-lm.so"],
+        "//conditions:default": [],
+    }),
+)
+
+filegroup(
+    name = "prebuilt_litert_lm_dylib_sources",
+    srcs = select({
+        ":wheel_platform_macos_arm64": ["//prebuilt/macos_arm64:liblitert-lm.dylib"],
+        "//conditions:default": [],
+    }),
+)
+
+genrule(
+    name = "copy_litert_lm_so",
+    srcs = select({
+        ":use_prebuilt_c_api": [":prebuilt_litert_lm_so_sources"],
+        "//conditions:default": ["//c:litert-lm"],
+    }),
+    outs = ["liblitert-lm.so"],
+    cmd = """
+        SRCS_ARRAY=($(SRCS))
+        OUTS_ARRAY=($(OUTS))
+        if [ $${#SRCS_ARRAY[@]} -gt 0 ]; then
+            cp $${SRCS_ARRAY[0]} $${OUTS_ARRAY[0]}
+        else
+            touch $${OUTS_ARRAY[0]}
+        fi
+    """,
+)
+
+genrule(
+    name = "copy_litert_lm_dylib",
+    srcs = select({
+        ":use_prebuilt_c_api": [":prebuilt_litert_lm_dylib_sources"],
+        "//conditions:default": ["//c:litert-lm"],
+    }),
+    outs = ["liblitert-lm.dylib"],
+    cmd = """
+        SRCS_ARRAY=($(SRCS))
+        OUTS_ARRAY=($(OUTS))
+        if [ $${#SRCS_ARRAY[@]} -gt 0 ]; then
+            cp $${SRCS_ARRAY[0]} $${OUTS_ARRAY[0]}
+        else
+            touch $${OUTS_ARRAY[0]}
+        fi
+    """,
+)
+
+copy_file(
+    name = "copy_prebuilt_litert_lm_dll",
+    src = "//prebuilt/windows_x86_64:litert-lm.dll",
+    out = "litert-lm.dll",
+    tags = ["manual"],
+)
+
+filegroup(
     name = "prebuilt_litert_lm_lib",
     srcs = select({
         # Use "wheel_platform_*" as condition to allow cross-compilation since
         # no native binaries is built.
-        ":wheel_platform_macos_arm64": [":copy_prebuilt_litert_lm_dylib"],
+        ":wheel_platform_macos_arm64": [":copy_litert_lm_dylib"],
         ":wheel_platform_windows_x86_64": [
             ":copy_prebuilt_litert_lm_dll",
             ":copy_dxcompiler_dll",
             ":copy_dxil_dll",
             ":copy_openvino_dispatch_dll",
         ],
-        ":wheel_platform_linux_x86_64": [":copy_prebuilt_litert_lm_so"],
-        ":wheel_platform_linux_arm64": [":copy_prebuilt_litert_lm_so"],
-        ":wheel_platform_android_arm64": [":copy_prebuilt_litert_lm_so"],
+        ":wheel_platform_linux_x86_64": [":copy_litert_lm_so"],
+        ":wheel_platform_linux_arm64": [":copy_litert_lm_so"],
+        ":wheel_platform_android_arm64": [":copy_litert_lm_so"],
         # default is empty since the prebuilt_litert_lm_lib might not exist.
         "//conditions:default": [],
     }),
@@ -362,14 +324,15 @@ filegroup(
 # labels.
 cc_runfiles(
     name = "litert_lm_windows_runfiles",
-    cc_binary = ":litert-lm",
+    cc_binary = "//c:litert-lm",
 )
 
 filegroup(
     name = "default_libs",
     srcs = select({
         "@platforms//os:windows": [":litert_lm_windows_runfiles"],
-        "//conditions:default": ["//python/litert_lm:litert-lm"],
+        "@platforms//os:macos": [":copy_litert_lm_dylib"],
+        "//conditions:default": [":copy_litert_lm_so"],
     }) + select({
         "@platforms//os:macos": [":copy_prebuilt_libs_dylib"],
         "@platforms//os:windows": [
