@@ -17,7 +17,9 @@
 import http.server
 import socket
 import sys
+import threading
 from unittest import mock
+import urllib.request
 
 from absl.testing import absltest
 from absl.testing import parameterized
@@ -68,8 +70,9 @@ mock_litert_lm.Engine = mock_engine.Engine
 mock_litert_lm.set_min_log_severity = mock_ffi.set_min_log_severity
 
 mock_model_mod = mock.Mock(spec_set=["Model", "parse_backend"])
-mock_model_mod.Model = mock.Mock(spec_set=["from_model_id"])
+mock_model_mod.Model = mock.Mock(spec_set=["from_model_id", "get_all_models"])
 mock_model_mod.Model.from_model_id = mock.Mock()
+mock_model_mod.Model.get_all_models = mock.Mock()
 mock_model_mod.parse_backend = mock.Mock()
 sys.modules["litert_lm_cli.model"] = (
     mock_model_mod
@@ -94,6 +97,8 @@ class ServeTest(parameterized.TestCase):
     mock_litert_lm.Engine.reset_mock()  # pytype: disable=attribute-error
     mock_model_mod.Model.from_model_id.reset_mock()
     mock_model_mod.Model.from_model_id.side_effect = None
+    mock_model_mod.Model.get_all_models.reset_mock()
+    mock_model_mod.Model.get_all_models.side_effect = None
     mock_model_mod.parse_backend.reset_mock()
     mock_model_mod.parse_backend.return_value = interfaces.Backend.CPU()
 
@@ -711,6 +716,115 @@ class ServeTest(parameterized.TestCase):
         ValueError, "No matching tool call found for tool_call_id"
     ):
       openai_handler._translate_openai_message(message, None)
+
+  def test_cors_headers_disabled_by_default(self):
+    server = serve_util.LiteRTLMServer(
+        ("127.0.0.1", 0), openai_handler.OpenAIHandler
+    )
+    port = server.server_port
+    thread = threading.Thread(target=server.serve_forever)
+    thread.daemon = True
+    thread.start()
+
+    try:
+      # Test OPTIONS
+      req = urllib.request.Request(
+          f"http://127.0.0.1:{port}/v1/chat/completions",
+          method="OPTIONS",
+      )
+      with urllib.request.urlopen(req) as resp:
+        self.assertEqual(resp.status, 200)
+        self.assertIsNone(resp.headers.get("Access-Control-Allow-Origin"))
+        self.assertIsNone(resp.headers.get("Access-Control-Allow-Methods"))
+
+      # Test GET
+      mock_model_mod.Model.get_all_models.return_value = []
+      req = urllib.request.Request(
+          f"http://127.0.0.1:{port}/v1/models", method="GET"
+      )
+      with urllib.request.urlopen(req) as resp:
+        self.assertEqual(resp.status, 200)
+        self.assertIsNone(resp.headers.get("Access-Control-Allow-Origin"))
+
+    finally:
+      server.shutdown()
+      thread.join()
+
+  def test_cors_headers_wildcard(self):
+    server = serve_util.LiteRTLMServer(
+        ("127.0.0.1", 0), openai_handler.OpenAIHandler, allowed_origins=("*",)
+    )
+    port = server.server_port
+    thread = threading.Thread(target=server.serve_forever)
+    thread.daemon = True
+    thread.start()
+
+    try:
+      # Test OPTIONS
+      req = urllib.request.Request(
+          f"http://127.0.0.1:{port}/v1/chat/completions",
+          method="OPTIONS",
+      )
+      with urllib.request.urlopen(req) as resp:
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(resp.headers.get("Access-Control-Allow-Origin"), "*")
+        self.assertEqual(
+            resp.headers.get("Access-Control-Allow-Methods"),
+            "GET, POST, OPTIONS",
+        )
+
+      # Test GET
+      mock_model_mod.Model.get_all_models.return_value = []
+      req = urllib.request.Request(
+          f"http://127.0.0.1:{port}/v1/models", method="GET"
+      )
+      with urllib.request.urlopen(req) as resp:
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(resp.headers.get("Access-Control-Allow-Origin"), "*")
+
+    finally:
+      server.shutdown()
+      thread.join()
+
+  def test_cors_headers_restricted(self):
+    allowed = ("http://localhost:3000", "http://example.com")
+    server = serve_util.LiteRTLMServer(
+        ("127.0.0.1", 0), openai_handler.OpenAIHandler, allowed_origins=allowed
+    )
+    port = server.server_port
+    thread = threading.Thread(target=server.serve_forever)
+    thread.daemon = True
+    thread.start()
+
+    try:
+      # Test matched origin
+      req = urllib.request.Request(
+          f"http://127.0.0.1:{port}/v1/models",
+          method="GET",
+          headers={"Origin": "http://localhost:3000"},
+      )
+      mock_model_mod.Model.get_all_models.return_value = []
+      with urllib.request.urlopen(req) as resp:
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(
+            resp.headers.get("Access-Control-Allow-Origin"),
+            "http://localhost:3000",
+        )
+        self.assertEqual(resp.headers.get("Vary"), "Origin")
+
+      # Test unmatched origin
+      req = urllib.request.Request(
+          f"http://127.0.0.1:{port}/v1/models",
+          method="GET",
+          headers={"Origin": "http://evil.com"},
+      )
+      with urllib.request.urlopen(req) as resp:
+        self.assertEqual(resp.status, 200)
+        self.assertIsNone(resp.headers.get("Access-Control-Allow-Origin"))
+
+    finally:
+      server.shutdown()
+      thread.join()
 
 
 if __name__ == "__main__":

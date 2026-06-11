@@ -38,23 +38,55 @@ class LiteRTLMServer(http.server.HTTPServer):
       engine, or None.
     vision_backend: The hardware backend used for vision encoding, or None.
     audio_backend: The hardware backend used for audio encoding, or None.
+    allowed_origins: Allowed CORS origins.
   """
 
   def __init__(
       self,
       server_address: tuple[str, int],
       RequestHandlerClass: type[http.server.BaseHTTPRequestHandler],
+      allowed_origins: tuple[str, ...] = (),
   ):
     host, _ = server_address
     if ":" in host:
       self.address_family = socket.AF_INET6
     super().__init__(server_address, RequestHandlerClass)
+    self.allowed_origins = allowed_origins
     self.litert_lm_engine: litert_lm.Engine | None = None
     self.model_id: str | None = None
     self.backend: litert_lm.Backend | None = None
     self.max_num_tokens: int | None = None
     self.vision_backend: litert_lm.Backend | None = None
     self.audio_backend: litert_lm.Backend | None = None
+
+
+class CORSRequestHandler(http.server.BaseHTTPRequestHandler):
+  """Base HTTP request handler that adds CORS headers to all responses."""
+
+  def end_headers(self) -> None:
+    origin = self.headers.get("Origin")
+    allowed_origins = getattr(self.server, "allowed_origins", ())
+
+    has_cors = False
+    if "*" in allowed_origins:
+      self.send_header("Access-Control-Allow-Origin", "*")
+      has_cors = True
+    elif origin and origin in allowed_origins:
+      self.send_header("Access-Control-Allow-Origin", origin)
+      self.send_header("Vary", "Origin")
+      has_cors = True
+
+    if has_cors:
+      self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+      self.send_header(
+          "Access-Control-Allow-Headers",
+          "Content-Type, Authorization, X-Requested-With",
+      )
+    super().end_headers()
+
+  def do_OPTIONS(self) -> None:  # pylint: disable=invalid-name
+    self.send_response(200)
+    self.end_headers()
 
 
 def _is_gpu_only_model(model_path: str) -> bool:
