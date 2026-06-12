@@ -1,7 +1,6 @@
 # LiteRT-LM
 
-LiteRT-LM is Google's production-ready, high-performance, open-source inference
-framework for deploying Large Language Models on edge devices.
+LiteRT-LM is Google's **production-ready** orchestration layer to run LLMs with LiteRT, engineered for **high-performance**, **cross-platform** execution.
 
 🔗 [Product Website](https://ai.google.dev/edge/litert-lm)
 
