@@ -35,11 +35,8 @@
 #if !defined(LITERT_LM_FST_CONSTRAINTS_DISABLED)
 #include "runtime/components/logits_processor/constrained_decoding/gemma_model_constraint_provider.h"
 #endif
-#include "runtime/components/preprocessor/audio_preprocessor.h"
-#include "runtime/components/preprocessor/audio_preprocessor_miniaudio.h"
-#include "runtime/components/preprocessor/image_preprocessor.h"
-#include "runtime/components/sentencepiece_tokenizer.h"
-#include "runtime/components/tokenizer.h"
+#include "support/preprocessor/audio_preprocessor.h"  // from @litert
+#include "support/preprocessor/image_preprocessor.h"  // from @litert
 #include "runtime/components/tool_use/fc_tool_format_utils.h"
 #include "runtime/components/tool_use/parser_utils.h"
 #include "runtime/conversation/io_types.h"

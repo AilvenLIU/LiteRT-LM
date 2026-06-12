@@ -26,14 +26,19 @@
 #include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "nlohmann/json.hpp"  // from @nlohmann_json
 #include "litert/cc/litert_layout.h"  // from @litert
-#include "runtime/components/preprocessor/audio_preprocessor.h"
-#include "runtime/components/preprocessor/audio_preprocessor_miniaudio.h"
-#include "runtime/components/preprocessor/image_preprocessor.h"
+#include "support/preprocessor/audio_preprocessor.h"  // from @litert
+#include "support/preprocessor/audio_preprocessor_miniaudio.h"  // from @litert
+#include "support/preprocessor/image_preprocessor.h"  // from @litert
 #include "runtime/conversation/model_data_processor/test_utils.h"
 #include "runtime/engine/io_types.h"
 #include "runtime/util/test_utils.h"  // NOLINT
 
 namespace litert::lm {
+
+using AudioPreprocessorConfig = ::litert::support::AudioPreprocessorConfig;
+using AudioPreprocessorMiniAudio =
+    ::litert::support::AudioPreprocessorMiniAudio;
+
 namespace {
 
 using json = nlohmann::ordered_json;
@@ -114,7 +119,7 @@ TEST_F(MultimodalProcessorHelperTest, ProcessImage) {
 }
 
 TEST_F(MultimodalProcessorHelperTest, ProcessAudio) {
-  std::string audio_path = GetTestdataPath("audio_sample.wav");
+  std::string audio_path = GetImageTestdataPath("audio_sample.wav");
   const std::string prompt = "Listen to this: <audio>. Tell me what you heard.";
   const json messages = json::array(
       {{{"role", "user"},
@@ -155,7 +160,7 @@ TEST_F(MultimodalProcessorHelperTest, ProcessAudio) {
 
 TEST_F(MultimodalProcessorHelperTest, ProcessMultimodal) {
   std::string image_path = GetImageTestdataPath("apple.bmp");
-  std::string audio_path = GetTestdataPath("audio_sample.wav");
+  std::string audio_path = GetImageTestdataPath("audio_sample.wav");
   const std::string prompt = "Show: <img>, Listen: <audio>. Finish.";
   const json messages =
       json::array({{{"role", "user"},
@@ -349,7 +354,7 @@ TEST_F(MultimodalProcessorHelperTest, MissingPreprocessorForImage) {
 }
 
 TEST_F(MultimodalProcessorHelperTest, MissingPreprocessorForAudio) {
-  std::string audio_path = GetTestdataPath("audio_sample.wav");
+  std::string audio_path = GetImageTestdataPath("audio_sample.wav");
   const std::string prompt = "Here is <audio>";
   const json messages =
       json::array({{{"role", "user"},
@@ -427,7 +432,7 @@ TEST_F(MultimodalProcessorHelperTest, MismatchAudioCountLess) {
 }
 
 TEST_F(MultimodalProcessorHelperTest, MismatchAudioCountMore) {
-  std::string audio_path = GetTestdataPath("audio_sample.wav");
+  std::string audio_path = GetImageTestdataPath("audio_sample.wav");
   const std::string prompt = "Here is text only";
   const json messages =
       json::array({{{"role", "user"},

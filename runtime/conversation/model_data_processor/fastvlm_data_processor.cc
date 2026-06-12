@@ -27,7 +27,6 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "nlohmann/json.hpp"  // from @nlohmann_json
 #include "litert/cc/litert_layout.h"  // from @litert
-#include "runtime/components/preprocessor/image_preprocessor.h"
 #include "runtime/components/prompt_template.h"
 #include "runtime/conversation/io_types.h"
 #include "runtime/conversation/model_data_processor/data_utils.h"
@@ -53,7 +52,7 @@ absl::StatusOr<std::unique_ptr<FastVlmDataProcessor>>
 FastVlmDataProcessor::Create(FastVlmDataProcessorConfig config,
                              const PromptTemplateCapabilities& capabilities) {
   return absl::WrapUnique(new FastVlmDataProcessor(
-      config, capabilities, ImagePreprocessor::Create()));
+      config, capabilities, std::make_unique<StbImagePreprocessor>()));
 }
 
 absl::StatusOr<ordered_json> FastVlmDataProcessor::MessageToTemplateInput(

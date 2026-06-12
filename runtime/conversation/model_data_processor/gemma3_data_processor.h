@@ -29,10 +29,10 @@
 #if !defined(LITERT_LM_FST_CONSTRAINTS_DISABLED)
 #include "runtime/components/logits_processor/constrained_decoding/gemma_model_constraint_provider.h"
 #endif
-#include "runtime/components/preprocessor/audio_preprocessor.h"
-#include "runtime/components/preprocessor/image_preprocessor.h"
+#include "support/preprocessor/audio_preprocessor.h"  // from @litert
+#include "support/preprocessor/image_preprocessor.h"  // from @litert
+#include "support/tokenizer/tokenizer.h"  // from @litert
 #include "runtime/components/prompt_template.h"
-#include "runtime/components/tokenizer.h"
 #include "runtime/conversation/io_types.h"
 #include "runtime/conversation/model_data_processor/gemma3_data_processor_config.h"
 #include "runtime/conversation/model_data_processor/model_data_processor.h"

@@ -30,8 +30,8 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "support/tokenizer/tokenizer.h"  // from @litert
 #include "runtime/components/model_resources.h"
-#include "runtime/components/tokenizer.h"
 #include "runtime/executor/audio_executor_settings.h"
 #include "runtime/executor/executor_settings_base.h"
 #include "runtime/executor/llm_executor_settings.h"
@@ -223,7 +223,7 @@ absl::StatusOr<EngineSettings> EngineSettings::CreateDefault(
 // 1. The tokenizer is available.
 // 2. The tokenizer is not available, when it is nullptr.
 absl::Status EngineSettings::MaybeUpdateAndValidate(
-    Tokenizer* tokenizer,
+    support::Tokenizer* tokenizer,
     const proto::LlmMetadata* absl_nullable metadata_from_file,
     absl::string_view input_prompt_as_hint,
     const std::optional<std::string>& text_backend_constraint,

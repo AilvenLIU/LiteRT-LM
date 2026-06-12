@@ -19,11 +19,13 @@
 #include <vector>
 
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "support/tokenizer/tokenizer.h"  // from @litert
 #include "runtime/components/logits_processor/constrained_decoding/constraint_provider.h"
 #include "runtime/components/logits_processor/constrained_decoding/constraint_provider_config.h"
-#include "runtime/components/tokenizer.h"
 
 namespace litert::lm {
+
+using ::litert::support::Tokenizer;
 
 absl::StatusOr<std::unique_ptr<ConstraintProvider>> CreateConstraintProvider(
     const ConstraintProviderConfig& constraint_provider_config,

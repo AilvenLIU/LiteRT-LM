@@ -27,7 +27,6 @@
 #include "absl/time/time.h"  // from @com_google_absl
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "runtime/components/model_resources.h"
-#include "runtime/components/tokenizer.h"
 #include "runtime/core/session_advanced.h"
 #include "runtime/engine/engine.h"
 #include "runtime/engine/engine_factory.h"

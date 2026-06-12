@@ -30,7 +30,6 @@
 #include "runtime/components/logits_processor/repetition_penalty_config.h"
 #include "runtime/components/sampler.h"
 #include "runtime/components/stop_token_detector.h"
-#include "runtime/components/tokenizer.h"
 #include "runtime/core/tasks.h"
 #include "runtime/engine/io_types.h"
 #include "runtime/executor/llm_executor.h"

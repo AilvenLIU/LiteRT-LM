@@ -14,7 +14,7 @@
 
 #include "runtime/conversation/model_data_processor/test_utils.h"
 
-#include <filesystem>
+#include <filesystem>  // NOLINT
 #include <fstream>
 #include <ios>
 #include <iterator>
@@ -35,7 +35,7 @@ constexpr char kTestdataDir[] =
     "litert_lm/runtime/components/testdata/";
 
 constexpr char kImageTestdataDir[] =
-    "litert_lm/runtime/components/preprocessor/testdata/";
+    "litert/support/preprocessor/testdata/";
 
 }  // namespace
 

@@ -22,11 +22,15 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "nlohmann/json_fwd.hpp"  // from @nlohmann_json
-#include "runtime/components/preprocessor/audio_preprocessor.h"
-#include "runtime/components/preprocessor/image_preprocessor.h"
+#include "support/preprocessor/audio_preprocessor.h"  // from @litert
+#include "support/preprocessor/image_preprocessor.h"  // from @litert
 #include "runtime/engine/io_types.h"
 
 namespace litert::lm {
+
+using ImagePreprocessor = ::litert::support::ImagePreprocessor;
+using AudioPreprocessor = ::litert::support::AudioPreprocessor;
+using ImagePreprocessParameter = ::litert::support::ImagePreprocessParameter;
 
 // Configuration defining how the prompt is parsed and formatted
 struct MultimodalPromptProcessingConfig {

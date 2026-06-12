@@ -33,9 +33,9 @@
 #include "absl/time/time.h"  // from @com_google_absl
 #include "runtime/components/logits_processor/constrained_decoding/fake_constraint.h"
 #include "runtime/components/logits_processor/repetition_penalty_config.h"
-#include "runtime/components/sentencepiece_tokenizer.h"
+#include "support/tokenizer/sentencepiece_tokenizer.h"  // from @litert
+#include "support/tokenizer/tokenizer.h"  // from @litert
 #include "runtime/components/stop_token_detector.h"
-#include "runtime/components/tokenizer.h"
 #include "runtime/components/top_p_cpu_sampler.h"
 #include "runtime/engine/io_types.h"
 #include "runtime/executor/fake_llm_executor.h"
@@ -49,6 +49,9 @@ namespace litert::lm {
 namespace {
 
 using ::testing::status::StatusIs;
+using ::litert::support::SentencePieceTokenizer;
+using ::litert::support::Tokenizer;
+using ::litert::support::TokenizerType;
 
 constexpr char kTestdataDir[] =
     "litert_lm/runtime/components/testdata/";

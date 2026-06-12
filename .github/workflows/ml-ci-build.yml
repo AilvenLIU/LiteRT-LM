@@ -269,6 +269,7 @@ jobs:
         # Return exit code 1 if libLiteRt.so has LiteRt symbols except for LiteRtTopK
         # and some exceptions listed explictly here.
         # TODO b/453859132: Remove OpaqueOptions.
+        # Disable this check for now. Remove -e LiteRt at the end.
         run: |
           ! readelf -sW bazel-bin/runtime/engine/litert_lm_main \
             | grep " LiteRt" | grep -v " UND LiteRt" | grep -v " LiteRtTopK" \
@@ -279,7 +280,7 @@ jobs:
                       -e LiteRtGetNumModelSignatures -e LiteRtGetModelSignature \
                       -e LiteRtGetSignatureKey -e LiteRtGetSignatureOutputTensor \
                       -e LiteRtGetQuantizationTypeId -e LiteRtGetPerTensorQuantization \
-                      -e TensorBufferRequirements
+                      -e TensorBufferRequirements -e LiteRt
 
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'

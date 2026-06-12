@@ -23,7 +23,7 @@ load(
     "export_lrt_runtime_only_script",
 )
 
-LITERT_MIN_IOS_VERSION = "15.0"
+LITERT_MIN_IOS_VERSION = "14.0"
 
 LITERT_MIN_MACOS_VERSION = "10.15"
 
@@ -60,44 +60,6 @@ config_setting(
         "DISABLE_SENTENCEPIECE_TOKENIZER": "1",
     },
     visibility = ["//visibility:public"],
-)
-
-cc_library(
-    name = "tokenizer",
-    hdrs = ["tokenizer.h"],
-    deps = [
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-        "//runtime/util:convert_tensor_buffer",
-    ] + select({
-        "@litert//litert:litert_link_capi_so": [
-            "@litert//litert/cc:litert_api_with_dynamic_runtime",
-        ],
-        "//conditions:default": [
-            "@litert//litert/cc:litert_macros",
-            "@litert//litert/cc:litert_tensor_buffer",
-        ],
-    }),
-)
-
-cc_test(
-    name = "tokenizer_test",
-    srcs = ["tokenizer_test.cc"],
-    tags = ["requires-mac-inputs:hard"],  # Required for running on Forge on Mac.
-    deps = [
-        ":tokenizer",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
-        "@litert//litert/cc:litert_layout",
-        "@litert//litert/cc:litert_tensor_buffer",
-        "@litert//litert/test:matchers",
-        "//runtime/util:convert_tensor_buffer",
-    ],
 )
 
 cc_library(
@@ -176,80 +138,6 @@ cc_test(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
-        "//runtime/util:litert_status_util",
-        "//runtime/util:test_utils",
-    ],
-)
-
-cc_library(
-    name = "sentencepiece_tokenizer",
-    srcs = ["sentencepiece_tokenizer.cc"],
-    hdrs = ["sentencepiece_tokenizer.h"],
-    defines = ["ENABLE_SENTENCEPIECE_TOKENIZER"],
-    deps = [
-        ":tokenizer",
-        "@com_google_absl//absl/memory",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:string_view",
-        "@sentencepiece//:sentencepiece_model_cc_proto",
-        "@sentencepiece//:sentencepiece_processor",
-    ],
-)
-
-cc_test(
-    name = "sentencepiece_tokenizer_test",
-    srcs = ["sentencepiece_tokenizer_test.cc"],
-    data = ["//runtime/components/testdata"],
-    deps = [
-        ":sentencepiece_tokenizer",
-        ":tokenizer",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/cleanup",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
-        "//runtime/util:test_utils",
-    ],
-)
-
-cc_library(
-    name = "huggingface_tokenizer",
-    srcs = ["huggingface_tokenizer.cc"],
-    hdrs = ["huggingface_tokenizer.h"],
-    defines = ["ENABLE_HUGGINGFACE_TOKENIZER"],
-    deps = [
-        ":tokenizer",
-        "@com_google_absl//absl/debugging:leak_check",  # See b/402708346
-        "@com_google_absl//absl/memory",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:string_view",
-        "//runtime/util:litert_status_util",
-        "//runtime/util:memory_mapped_file",
-        "@tokenizers_cpp//:huggingface_tokenizer",
-    ] + select({
-        "@platforms//os:windows": [
-            "//rust:alloc_defs",
-            "//rust:global_allocator",
-        ],
-        "//conditions:default": [],
-    }),
-)
-
-cc_test(
-    name = "huggingface_tokenizer_test",
-    srcs = ["huggingface_tokenizer_test.cc"],
-    data = ["//runtime/components/testdata"],
-    deps = [
-        ":huggingface_tokenizer",
-        ":tokenizer",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
         "//runtime/util:litert_status_util",
         "//runtime/util:test_utils",
     ],
@@ -460,7 +348,6 @@ cc_library(
     hdrs = ["model_resources_litert_lm.h"],
     deps = [
         ":model_resources",
-        ":tokenizer",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:absl_log",
@@ -469,6 +356,7 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@litert//support/tokenizer",
         "//runtime/proto:llm_metadata_cc_proto",
         "//runtime/util:litert_lm_loader",
         "//runtime/util:litert_status_util",
@@ -476,10 +364,10 @@ cc_library(
         "//schema/core:litertlm_header_schema",
     ] + select({
         ":disable_huggingface_tokenizer": [],
-        "//conditions:default": [":huggingface_tokenizer"],
+        "//conditions:default": ["@litert//support/tokenizer:huggingface_tokenizer"],
     }) + select({
         ":disable_sentencepiece_tokenizer": [],
-        "//conditions:default": [":sentencepiece_tokenizer"],
+        "//conditions:default": ["@litert//support/tokenizer:sentencepiece_tokenizer"],
     }) + select({
         "@litert//litert:litert_link_capi_so": [
             "@litert//litert/cc:litert_api_with_dynamic_runtime",
@@ -496,11 +384,13 @@ cc_library(
     name = "model_resources",
     hdrs = ["model_resources.h"],
     deps = [
-        ":tokenizer",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@litert//support/tokenizer",
+        "@litert//support/tokenizer:huggingface_tokenizer",
+        "@litert//support/tokenizer:sentencepiece_tokenizer",
         "//runtime/proto:llm_metadata_cc_proto",
         "//runtime/util:scoped_file",
     ] + select({
@@ -521,8 +411,6 @@ cc_library(
     ],
     deps = [
         ":model_resources",
-        ":sentencepiece_tokenizer",
-        ":tokenizer",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/memory",
@@ -530,6 +418,8 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@litert//support/tokenizer",
+        "@litert//support/tokenizer:sentencepiece_tokenizer",
         "//runtime/proto:llm_metadata_cc_proto",
         "//runtime/util:litert_status_util",
         "//runtime/util:metadata_util",
@@ -667,11 +557,11 @@ cc_library(
     hdrs = ["model_resources_streaming.h"],
     deps = [
         ":model_resources",
-        ":tokenizer",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:string_view",
         "@litert//litert/cc:litert_model",
+        "@litert//support/tokenizer",
         "//runtime/proto:llm_metadata_cc_proto",
         "//runtime/util:scoped_file",
     ],
@@ -706,4 +596,19 @@ cc_test(
         "//runtime/executor:executor_settings_base",
         "//runtime/util:test_utils",
     ],
+)
+
+alias(
+    name = "tokenizer",
+    actual = "@litert//support/tokenizer",
+)
+
+alias(
+    name = "sentencepiece_tokenizer",
+    actual = "@litert//support/tokenizer:sentencepiece_tokenizer",
+)
+
+alias(
+    name = "huggingface_tokenizer",
+    actual = "@litert//support/tokenizer:huggingface_tokenizer",
 )

@@ -38,18 +38,15 @@
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "litert/cc/litert_model.h"  // from @litert
 #include "runtime/components/model_resources.h"
-#include "runtime/components/tokenizer.h"
 #include "runtime/util/litert_lm_loader.h"
 #include "runtime/util/scoped_file.h"
 #include "runtime/util/status_macros.h"  // NOLINT
 #include "schema/core/litertlm_header_schema_generated.h"
 
 #ifdef ENABLE_SENTENCEPIECE_TOKENIZER
-#include "runtime/components/sentencepiece_tokenizer.h"
 #endif  // ENABLE_SENTENCEPIECE_TOKENIZER
 
 #ifdef ENABLE_HUGGINGFACE_TOKENIZER
-#include "runtime/components/huggingface_tokenizer.h"
 #endif  // ENABLE_HUGGINGFACE_TOKENIZER
 
 namespace litert::lm {

@@ -18,11 +18,14 @@
 #include <optional>
 #include <string>
 
-#include "runtime/components/preprocessor/audio_preprocessor.h"
-#include "runtime/components/preprocessor/image_preprocessor.h"
+#include "support/preprocessor/audio_preprocessor.h"  // from @litert
+#include "support/preprocessor/image_preprocessor.h"  // from @litert
 #include "runtime/conversation/model_data_processor/multimodal_processor_helper.h"
 
 namespace litert::lm {
+
+using ImagePreprocessParameter = ::litert::support::ImagePreprocessParameter;
+using AudioPreprocessorConfig = ::litert::support::AudioPreprocessorConfig;
 
 // Configuration for multimodal processing in the generic data processor.
 struct MultimodalConfig {

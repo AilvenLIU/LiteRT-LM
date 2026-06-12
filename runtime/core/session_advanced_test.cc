@@ -38,10 +38,10 @@
 #include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "litert/test/matchers.h"  // from @litert
+#include "support/tokenizer/sentencepiece_tokenizer.h"  // from @litert
+#include "support/tokenizer/tokenizer.h"  // from @litert
 #include "runtime/components/logits_processor/constrained_decoding/fake_constraint.h"
 #include "runtime/components/model_resources.h"
-#include "runtime/components/sentencepiece_tokenizer.h"
-#include "runtime/components/tokenizer.h"
 #include "runtime/core/session_utils.h"
 #include "runtime/engine/engine_settings.h"
 #include "runtime/engine/io_types.h"
@@ -56,6 +56,11 @@
 #include "runtime/util/test_utils.h"  // IWYU pragma: keep
 
 namespace litert::lm {
+
+using SentencePieceTokenizer = ::litert::support::SentencePieceTokenizer;
+using Tokenizer = ::litert::support::Tokenizer;
+using TokenizerType = ::litert::support::TokenizerType;
+
 namespace {
 
 using ::testing::status::StatusIs;

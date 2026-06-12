@@ -23,10 +23,7 @@
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
-#include "litert/cc/litert_layout.h"  // from @litert
-#include "runtime/components/preprocessor/audio_preprocessor.h"
 #include "runtime/components/prompt_template.h"
-#include "runtime/components/tokenizer.h"
 #include "runtime/conversation/io_types.h"
 #include "runtime/conversation/model_data_processor/config_registry.h"
 #include "runtime/conversation/model_data_processor/fastvlm_data_processor.h"

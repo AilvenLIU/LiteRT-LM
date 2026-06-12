@@ -24,9 +24,9 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "nlohmann/json.hpp"  // from @nlohmann_json
 #include "litert/cc/litert_layout.h"  // from @litert
-#include "runtime/components/preprocessor/audio_preprocessor.h"
-#include "runtime/components/preprocessor/audio_preprocessor_miniaudio.h"
-#include "runtime/components/preprocessor/image_preprocessor.h"
+#include "support/preprocessor/audio_preprocessor.h"  // from @litert
+#include "support/preprocessor/audio_preprocessor_miniaudio.h"  // from @litert
+#include "support/preprocessor/image_preprocessor.h"  // from @litert
 #include "runtime/components/prompt_template.h"
 #include "runtime/conversation/io_types.h"
 #include "runtime/conversation/model_data_processor/generic_data_processor_config.h"
@@ -139,7 +139,7 @@ TEST(GenericDataProcessorTest, ToTemplateInputTypedContent) {
 
 TEST(GenericDataProcessorTest, ToInputDataVectorMultimodal) {
   std::string image_path = GetImageTestdataPath("apple.bmp");
-  std::string audio_path = GetTestdataPath("audio_sample.wav");
+  std::string audio_path = GetImageTestdataPath("audio_sample.wav");
 
   ImagePreprocessParameter image_preprocess_parameter;
   image_preprocess_parameter.SetTargetDimensions(Dimensions({1, 224, 128, 3}));

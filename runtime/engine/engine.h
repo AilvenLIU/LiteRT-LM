@@ -24,7 +24,7 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
-#include "runtime/components/tokenizer.h"
+#include "support/tokenizer/tokenizer.h"  // from @litert
 #include "runtime/engine/engine_settings.h"
 #include "runtime/engine/io_types.h"
 
@@ -337,7 +337,7 @@ class EngineT {
   virtual const EngineSettings& GetEngineSettings() const = 0;
 
   // Get the reference to the tokenizer for the engine.
-  virtual const Tokenizer& GetTokenizer() const = 0;
+  virtual const support::Tokenizer& GetTokenizer() const = 0;
 
   // Get the audio model properties for the session. This is only available
   // if the engine is created with audio modality enabled.
