@@ -44,6 +44,7 @@ pytype_strict_library(
     srcs = ["model.py"],
     deps = [
         "//python/litert_lm",
+        "//python/litert_lm_builder:litertlm_builder",
         "//python/litert_lm_builder:litertlm_peek",
         requirement("click"),
     ],
@@ -125,6 +126,7 @@ py_test(
     deps = [
         ":model",
         "//python/litert_lm",
+        "//python/litert_lm_builder:litertlm_builder",
         "@absl_py//absl/testing:absltest",
         "@absl_py//absl/testing:parameterized",
     ],
