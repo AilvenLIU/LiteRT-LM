@@ -13,6 +13,7 @@
 # limitations under the License.
 
 # [Google-internal load of `cc_library`]
+# [Google-internal load of `cc_test`]
 
 package(
     default_hdrs_check = "strict",
@@ -55,6 +56,64 @@ cc_library(
         "@litert//litert/cc:litert_layout",
         "@litert//litert/cc:litert_tensor_buffer",
         "//runtime/components/logits_processor/constrained_decoding:constrained_decoder",
+        "@litert//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "repetition_penalty_config",
+    hdrs = ["repetition_penalty_config.h"],
+    visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "repetition_penalty_config_test",
+    srcs = ["repetition_penalty_config_test.cc"],
+    deps = [
+        ":repetition_penalty_config",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "repetition_penalty_processor",
+    srcs = ["repetition_penalty_processor.cc"],
+    hdrs = ["repetition_penalty_processor.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":logits_processor",
+        ":repetition_penalty_config",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:span",
+        "//runtime/util:convert_tensor_buffer",
+        "//runtime/util:litert_status_util",
+        "@litert//tflite/types:half",
+    ] + select({
+        "@litert//litert:litert_link_capi_so": [
+            "@litert//litert/cc:litert_api_with_dynamic_runtime",
+        ],
+        "//conditions:default": [
+            "@litert//litert/cc:litert_element_type",
+            "@litert//litert/cc:litert_layout",
+            "@litert//litert/cc:litert_tensor_buffer",
+        ],
+    }),
+)
+
+cc_test(
+    name = "repetition_penalty_processor_test",
+    srcs = ["repetition_penalty_processor_test.cc"],
+    deps = [
+        ":repetition_penalty_config",
+        ":repetition_penalty_processor",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:span",
+        "@litert//litert/cc:litert_layout",
+        "//runtime/util:convert_tensor_buffer",
+        "//runtime/util:test_utils",
         "@litert//tflite/types:half",
     ],
 )
