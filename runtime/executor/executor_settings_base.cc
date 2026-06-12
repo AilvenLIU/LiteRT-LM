@@ -308,7 +308,7 @@ absl::StatusOr<
 ExecutorSettingsBase::GetWeightCacheFile(absl::string_view suffix,
                                          bool check_and_clean) const {
   // Cache is explicitly disabled.
-  if (GetCacheDir() == ":nocache") {
+  if (GetCacheDir() == ":nocache" || disable_weight_cache_) {
     return absl::InvalidArgumentError("Cache is explicitly disabled.");
   }
 
@@ -368,7 +368,7 @@ absl::StatusOr<
 ExecutorSettingsBase::GetProgramCacheFile(absl::string_view suffix,
                                           bool check_and_clean) const {
   // Cache is explicitly disabled.
-  if (GetCacheDir() == ":nocache") {
+  if (GetCacheDir() == ":nocache" || disable_program_cache_) {
     return absl::InvalidArgumentError("Cache is explicitly disabled.");
   }
 

@@ -504,16 +504,23 @@ absl::StatusOr<EngineSettings> CreateEngineSettings(
       engine_settings.GetMutableAudioExecutorSettings()->SetCacheDir(
           ":nocache");
     }
-  } else if (!settings.cache_dir.empty()) {
-    engine_settings.GetMutableMainExecutorSettings().SetCacheDir(
-        settings.cache_dir);
-    if (settings.vision_backend.has_value()) {
-      engine_settings.GetMutableVisionExecutorSettings()->SetCacheDir(
-          settings.cache_dir);
+  } else {
+    auto configure_caches = [&](auto& executor_settings) {
+      if (!settings.cache_dir.empty()) {
+        executor_settings.SetCacheDir(settings.cache_dir);
+      }
+      executor_settings.SetDisableWeightCache(settings.disable_weight_cache);
+      executor_settings.SetDisableProgramCache(
+          settings.disable_gpu_program_cache);
+    };
+    configure_caches(engine_settings.GetMutableMainExecutorSettings());
+    if (settings.vision_backend.has_value() &&
+        engine_settings.GetMutableVisionExecutorSettings().has_value()) {
+      configure_caches(*engine_settings.GetMutableVisionExecutorSettings());
     }
-    if (settings.audio_backend.has_value()) {
-      engine_settings.GetMutableAudioExecutorSettings()->SetCacheDir(
-          settings.cache_dir);
+    if (settings.audio_backend.has_value() &&
+        engine_settings.GetMutableAudioExecutorSettings().has_value()) {
+      configure_caches(*engine_settings.GetMutableAudioExecutorSettings());
     }
   }
   if (!settings.litert_dispatch_lib_dir.empty()) {

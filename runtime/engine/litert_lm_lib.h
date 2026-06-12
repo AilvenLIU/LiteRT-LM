@@ -103,6 +103,8 @@ struct LiteRtLmSettings {
   std::optional<std::string> score_target_text = std::nullopt;
   bool gpu_madvise_original_shared_tensors = true;
   bool disable_cache = false;
+  bool disable_weight_cache = false;
+  bool disable_gpu_program_cache = false;
   std::string cache_dir = "";
   int prefill_chunk_size = -1;
   std::string preferred_device_substr = "";

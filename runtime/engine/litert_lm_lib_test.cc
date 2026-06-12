@@ -291,6 +291,72 @@ TEST(LiteRtLmLibTest, CreateEngineSettings_CacheConfig) {
             ":nocache");
 }
 
+TEST(LiteRtLmLibTest, CreateEngineSettings_DisableProgramCache) {
+  const auto model_path =
+      std::filesystem::path(::testing::SrcDir()) /
+      "litert_lm/runtime/testdata/test_lm.litertlm";
+  LiteRtLmSettings settings;
+  settings.model_path = model_path.string();
+  settings.backend = "gpu";
+  settings.vision_backend = "cpu";
+  settings.audio_backend = "gpu";
+  settings.disable_gpu_program_cache = true;
+
+  auto engine_settings_or = CreateEngineSettings(settings);
+  ASSERT_OK(engine_settings_or.status());
+  const auto& engine_settings = *engine_settings_or;
+
+  EXPECT_TRUE(
+      engine_settings.GetMainExecutorSettings().IsProgramCacheDisabled());
+  EXPECT_FALSE(
+      engine_settings.GetMainExecutorSettings().IsWeightCacheDisabled());
+
+  ASSERT_TRUE(engine_settings.GetVisionExecutorSettings().has_value());
+  EXPECT_TRUE(
+      engine_settings.GetVisionExecutorSettings()->IsProgramCacheDisabled());
+  EXPECT_FALSE(
+      engine_settings.GetVisionExecutorSettings()->IsWeightCacheDisabled());
+
+  ASSERT_TRUE(engine_settings.GetAudioExecutorSettings().has_value());
+  EXPECT_TRUE(
+      engine_settings.GetAudioExecutorSettings()->IsProgramCacheDisabled());
+  EXPECT_FALSE(
+      engine_settings.GetAudioExecutorSettings()->IsWeightCacheDisabled());
+}
+
+TEST(LiteRtLmLibTest, CreateEngineSettings_DisableWeightCache) {
+  const auto model_path =
+      std::filesystem::path(::testing::SrcDir()) /
+      "litert_lm/runtime/testdata/test_lm.litertlm";
+  LiteRtLmSettings settings;
+  settings.model_path = model_path.string();
+  settings.backend = "gpu";
+  settings.vision_backend = "cpu";
+  settings.audio_backend = "gpu";
+  settings.disable_weight_cache = true;
+
+  auto engine_settings_or = CreateEngineSettings(settings);
+  ASSERT_OK(engine_settings_or.status());
+  const auto& engine_settings = *engine_settings_or;
+
+  EXPECT_TRUE(
+      engine_settings.GetMainExecutorSettings().IsWeightCacheDisabled());
+  EXPECT_FALSE(
+      engine_settings.GetMainExecutorSettings().IsProgramCacheDisabled());
+
+  ASSERT_TRUE(engine_settings.GetVisionExecutorSettings().has_value());
+  EXPECT_TRUE(
+      engine_settings.GetVisionExecutorSettings()->IsWeightCacheDisabled());
+  EXPECT_FALSE(
+      engine_settings.GetVisionExecutorSettings()->IsProgramCacheDisabled());
+
+  ASSERT_TRUE(engine_settings.GetAudioExecutorSettings().has_value());
+  EXPECT_TRUE(
+      engine_settings.GetAudioExecutorSettings()->IsWeightCacheDisabled());
+  EXPECT_FALSE(
+      engine_settings.GetAudioExecutorSettings()->IsProgramCacheDisabled());
+}
+
 TEST(LiteRtLmLibTest, CreateEngineSettings_CpuConfig) {
   const auto model_path =
       std::filesystem::path(::testing::SrcDir()) /

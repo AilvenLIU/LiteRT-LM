@@ -279,6 +279,13 @@ class ExecutorSettingsBase {
     scoped_program_cache_file_ = std::move(cache_file);
   }
 
+  void SetDisableWeightCache(bool disable) { disable_weight_cache_ = disable; }
+  void SetDisableProgramCache(bool disable) {
+    disable_program_cache_ = disable;
+  }
+  bool IsWeightCacheDisabled() const { return disable_weight_cache_; }
+  bool IsProgramCacheDisabled() const { return disable_program_cache_; }
+
  protected:
   explicit ExecutorSettingsBase(ModelAssets model_assets)
       : model_assets_(std::move(model_assets)) {}
@@ -321,6 +328,9 @@ class ExecutorSettingsBase {
   // LiteRT dispatch library directory. If not set, the runtime will look for
   // the library in the path defined as the environment variables.
   std::string litert_dispatch_lib_dir_;
+
+  bool disable_weight_cache_ = false;
+  bool disable_program_cache_ = false;
 };
 
 }  // namespace litert::lm
