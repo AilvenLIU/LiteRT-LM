@@ -38,7 +38,6 @@
 #include "runtime/components/preprocessor/audio_preprocessor.h"
 #include "runtime/components/preprocessor/audio_preprocessor_miniaudio.h"
 #include "runtime/components/preprocessor/image_preprocessor.h"
-#include "runtime/components/preprocessor/stb_image_preprocessor.h"
 #include "runtime/components/sentencepiece_tokenizer.h"
 #include "runtime/components/tokenizer.h"
 #include "runtime/components/tool_use/fc_tool_format_utils.h"
@@ -222,9 +221,9 @@ Gemma4DataProcessor::Create(Gemma4DataProcessorConfig config,
     return absl::FailedPreconditionError(
         "Constrained decoding was disabled at build time.");
   }
-  return absl::WrapUnique(new Gemma4DataProcessor(
-      config, preface, std::make_unique<StbImagePreprocessor>(),
-      std::move(audio_preprocessor)));
+  return absl::WrapUnique(
+      new Gemma4DataProcessor(config, preface, ImagePreprocessor::Create(),
+                              std::move(audio_preprocessor)));
 #else
   std::unique_ptr<LiteRtLmGemmaModelConstraintProvider,
                   decltype(&LiteRtLmGemmaModelConstraintProvider_Destroy)>
@@ -261,7 +260,7 @@ Gemma4DataProcessor::Create(Gemma4DataProcessorConfig config,
   }
   return absl::WrapUnique(new Gemma4DataProcessor(
       std::move(constraint_provider), config, preface,
-      std::make_unique<StbImagePreprocessor>(), std::move(audio_preprocessor)));
+      ImagePreprocessor::Create(), std::move(audio_preprocessor)));
 #endif
 }
 

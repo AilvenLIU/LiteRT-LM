@@ -82,6 +82,10 @@ class Gemma4DataProcessorTest : public ::testing::Test {
   std::unique_ptr<Tokenizer> tokenizer_;
 };
 
+class Gemma4DataProcessorImageTest
+    : public Gemma4DataProcessorTest,
+      public ::testing::WithParamInterface<std::string> {};
+
 TEST_F(Gemma4DataProcessorTest, ToInputDataVectorTextOnly) {
   ASSERT_OK_AND_ASSIGN(auto processor, Gemma4DataProcessor::Create());
   const std::string rendered_template_prompt =
@@ -98,14 +102,20 @@ TEST_F(Gemma4DataProcessorTest, ToInputDataVectorTextOnly) {
   EXPECT_THAT(input_data, ElementsAre(HasInputText(&expected_text)));
 }
 
-TEST_F(Gemma4DataProcessorTest, ToInputDataVectorTextAndImage) {
+TEST_P(Gemma4DataProcessorImageTest, ToInputDataVectorTextAndImage) {
+  std::string image_name = GetParam();
+#ifdef LITERT_USE_SKIA
+  if (image_name == "apple.png") {
+    GTEST_SKIP() << "Skipping PNG test for SKIA";
+  }
+#endif
   ASSERT_OK_AND_ASSIGN(auto processor, Gemma4DataProcessor::Create(
                                            /*Gemma4DataProcessorConfig=*/
                                            {.max_num_patches = 2520}));
   const std::string rendered_template_prompt =
       "<|turn>user\nHere is an image of apples <|image|><turn|>";
 
-  std::string image_path = GetImageTestdataPath("apple.png");
+  std::string image_path = GetImageTestdataPath(image_name);
   const nlohmann::ordered_json message = {
       {"role", "user"},
       {"content",
@@ -1505,4 +1515,9 @@ INSTANTIATE_TEST_SUITE_P(FcFormatCodeOrTemplate, Gemma4RenderTemplateTest,
                          }));
 
 }  // namespace
+
+INSTANTIATE_TEST_SUITE_P(Gemma4DataProcessorImageTests,
+                         Gemma4DataProcessorImageTest,
+                         ::testing::Values("apple.bmp", "apple.png"));
+
 }  // namespace litert::lm
