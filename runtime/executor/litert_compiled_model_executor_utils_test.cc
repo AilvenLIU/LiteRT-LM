@@ -584,8 +584,6 @@ TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
   ASSERT_OK(model_resources->GetTFLiteModel(ModelType::kTfLitePrefillDecode));
 }
 
-
-
 TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
      SetCpuCacheOptions_WithScopedFile) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, ::litert::Environment::Create({}));
@@ -740,6 +738,69 @@ TEST(LlmLiteRTCompiledModelExecutorUtilsTest, GetGpuModelCacheData_WithCache) {
                        GetFileCacheIdentifier(model_path.string()));
   std::string expected_cache_key =
       absl::StrCat("test_lm.task", "test_cache", "_", expected_metadata_id);
+  EXPECT_EQ(cache_data.cache_key, expected_cache_key);
+}
+
+TEST(LlmLiteRTCompiledModelExecutorUtilsTest, GetGpuModelCacheData_WithFd) {
+  auto model_path =
+      std::filesystem::path(::testing::SrcDir()) /
+      "litert_lm/runtime/testdata/test_lm.task";
+  ASSERT_OK_AND_ASSIGN(auto model_file, ScopedFile::Open(model_path.string()));
+
+  ASSERT_OK_AND_ASSIGN(std::string expected_metadata_id,
+                       GetFileCacheIdentifier(model_file));
+
+  ASSERT_OK_AND_ASSIGN(
+      auto model_assets,
+      ModelAssets::Create(std::make_shared<ScopedFile>(std::move(model_file))));
+
+  class StubExecutorSettings : public ExecutorSettingsBase {
+   public:
+    explicit StubExecutorSettings(const ModelAssets& model_assets)
+        : ExecutorSettingsBase(model_assets) {}
+  };
+  StubExecutorSettings executor_settings(model_assets);
+  executor_settings.SetCacheDir("/dummy/cache/dir");
+
+  // Create dummy scoped files to use as cache.
+  std::string temp_program_cache =
+      (std::filesystem::path(::testing::TempDir()) / "program_cache.bin")
+          .string();
+  std::string temp_weight_cache =
+      (std::filesystem::path(::testing::TempDir()) / "weight_cache.bin")
+          .string();
+  {
+    std::ofstream touch1(temp_program_cache);
+    std::ofstream touch2(temp_weight_cache);
+  }
+
+  ASSERT_OK_AND_ASSIGN(auto program_cache_file,
+                       ScopedFile::OpenWritable(temp_program_cache));
+  ASSERT_OK_AND_ASSIGN(auto weight_cache_file,
+                       ScopedFile::OpenWritable(temp_weight_cache));
+
+  auto program_cache_file_ptr =
+      std::make_shared<ScopedFile>(std::move(program_cache_file));
+  auto weight_cache_file_ptr =
+      std::make_shared<ScopedFile>(std::move(weight_cache_file));
+
+  executor_settings.SetScopedProgramCacheFile(program_cache_file_ptr);
+  executor_settings.SetScopedCacheFile(weight_cache_file_ptr);
+
+  ASSERT_OK_AND_ASSIGN(auto cache_data,
+                       GetGpuModelCacheData(executor_settings, "test_cache"));
+
+  ASSERT_OK(cache_data.program_cache_file);
+  ASSERT_OK(cache_data.weight_cache_file);
+
+  EXPECT_EQ(
+      std::get<std::shared_ptr<ScopedFile>>(*cache_data.program_cache_file),
+      program_cache_file_ptr);
+  EXPECT_EQ(
+      std::get<std::shared_ptr<ScopedFile>>(*cache_data.weight_cache_file),
+      weight_cache_file_ptr);
+
+  std::string expected_cache_key = absl::StrCat("fd_", expected_metadata_id);
   EXPECT_EQ(cache_data.cache_key, expected_cache_key);
 }
 

@@ -581,6 +581,26 @@ absl::StatusOr<GpuModelCacheData> GetGpuModelCacheData(
         cache_data.cache_key =
             absl::StrCat(model_basename, cache_name, "_", metadata_id);
       }
+    } else {
+      // If the model path is empty, we should still set a cache key. This
+      // cache key should include the file timestamp and size in order
+      // to be able to detect changes in the model files.
+      LITERT_ASSIGN_OR_RETURN(
+          auto scoped_file, executor_settings.GetModelAssets().GetScopedFile());
+      bool has_valid_program_cache_fd =
+          cache_data.program_cache_file.ok() &&
+          std::holds_alternative<std::shared_ptr<litert::lm::ScopedFile>>(
+              *cache_data.program_cache_file);
+      bool has_valid_weight_cache_fd =
+          cache_data.weight_cache_file.ok() &&
+          std::holds_alternative<std::shared_ptr<litert::lm::ScopedFile>>(
+              *cache_data.weight_cache_file);
+      if (scoped_file != nullptr &&
+          (has_valid_program_cache_fd || has_valid_weight_cache_fd)) {
+        LITERT_ASSIGN_OR_RETURN(std::string metadata_id,
+                                GetFileCacheIdentifier(*scoped_file));
+        cache_data.cache_key = absl::StrCat("fd_", metadata_id);
+      }
     }
   }
   return cache_data;
