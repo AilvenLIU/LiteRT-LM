@@ -1038,8 +1038,8 @@ absl::Status HWPerLayerEmbeddingLookup(
     const int* token_ids, int num_tokens, const uint8_t* const* table_ptrs,
     const HWQuantizationParams* quant_params, int num_tables,
     int ple_embedding_dim, void* output_buffer, litert::ElementType output_type,
-    litert::ElementType ple_table_element_type, float final_scale,
-    int32_t final_zero_point) {
+    litert::ElementType ple_table_element_type, float mul_scale,
+    float output_scale, int32_t final_zero_point) {
   constexpr int kVocabSize = 262144;
   std::vector<float> row_float;
   if (output_type == litert::ElementType::Int16) {
@@ -1078,9 +1078,7 @@ absl::Status HWPerLayerEmbeddingLookup(
       if (qp.scales) {
         scale = qp.is_per_channel ? qp.scales[id] : qp.scales[0];
       }
-      if (output_type == litert::ElementType::Float32) {
-        scale *= final_scale;
-      }
+      scale *= mul_scale;
 
       if (output_type == litert::ElementType::Int16) {
         if (ple_table_element_type == litert::ElementType::Int4) {
@@ -1094,7 +1092,7 @@ absl::Status HWPerLayerEmbeddingLookup(
                                 table_idx * ple_embedding_dim;
         for (int i = 0; i < ple_embedding_dim; ++i) {
           float fval = row_float[i];
-          int32_t qval = std::round(fval / final_scale) + final_zero_point;
+          int32_t qval = std::round(fval / output_scale) + final_zero_point;
           qval = std::max(-32768, std::min(32767, qval));
           int16_output[i] = static_cast<int16_t>(qval);
         }

@@ -2003,7 +2003,7 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::PrefillInternal(
     RETURN_IF_ERROR(HWPerLayerEmbeddingLookup(
         ids.data(), ids.size(), ple_table_ptrs_.data(),
         ple_quant_params_.data(), num_tables_, ple_embedding_dim_, output_ptr,
-        output_type_, ple_table_element_type_, final_scale_,
+        output_type_, ple_table_element_type_, mul_scale_, output_scale_,
         final_zero_point_));
 
     latency_stats_.prefill_embedder_per_layer_inference_latency_us +=
@@ -2184,7 +2184,7 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::DecodeInternal(
       RETURN_IF_ERROR(HWPerLayerEmbeddingLookup(
           &id, 1, ple_table_ptrs_.data(), ple_quant_params_.data(), num_tables_,
           ple_embedding_dim_, output_ptr, output_type_, ple_table_element_type_,
-          final_scale_, final_zero_point_));
+          mul_scale_, output_scale_, final_zero_point_));
 
       latency_stats_.decode_embedder_per_layer_inference_latency_us +=
           absl::ToInt64Microseconds(absl::Now() - start);
@@ -2575,7 +2575,7 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::RunVerifierBatch(
     RETURN_IF_ERROR(HWPerLayerEmbeddingLookup(
         verify_ids.data(), verify_ids.size(), ple_table_ptrs_.data(),
         ple_quant_params_.data(), num_tables_, ple_embedding_dim_, output_ptr,
-        output_type_, ple_table_element_type_, final_scale_,
+        output_type_, ple_table_element_type_, mul_scale_, output_scale_,
         final_zero_point_));
 
     latency_stats_.decode_embedder_per_layer_inference_latency_us +=
@@ -3109,7 +3109,8 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
   int ple_embedding_dim_val = 0;
   litert::ElementType output_type = litert::ElementType::None;
   litert::ElementType ple_table_element_type = litert::ElementType::None;
-  float final_scale = 1.0f;
+  float mul_scale = 1.0f;
+  float output_scale = 1.0f;
   int32_t final_zero_point = 0;
 
   if (use_hw_ple_for_npu) {
@@ -3201,7 +3202,7 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
               auto weights = input.Weights();
               const float* vals =
                   reinterpret_cast<const float*>(weights.Bytes().data());
-              final_scale = vals[0];  // Store the multiplier (e.g., 16.0)
+              mul_scale = vals[0];  // Store the multiplier (e.g., 16.0)
             }
           }
         }
@@ -3223,7 +3224,7 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
     if (output_type == litert::ElementType::Int16) {
       RET_CHECK(output_tensor.HasQuantization());
       auto q_params = output_tensor.PerTensorQuantization();
-      final_scale = q_params.scale;
+      output_scale = q_params.scale;
       final_zero_point = q_params.zero_point;
     }
   } else {
@@ -3278,8 +3279,8 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
       std::move(embedder_per_layer_context), quantization_params,
       std::move(ple_table_ptrs), std::move(ple_quant_params),
       std::move(ple_per_tensor_scales), table_count, ple_embedding_dim_val,
-      output_type, ple_table_element_type, final_scale, final_zero_point,
-      std::move(kv_quant_params), speculative_decoding_type,
+      output_type, ple_table_element_type, mul_scale, output_scale,
+      final_zero_point, std::move(kv_quant_params), speculative_decoding_type,
       std::move(drafter_context), std::move(drafter_aux_context)));
   return executor;
 }
@@ -3486,8 +3487,8 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelWithoutPerLayerEmbedding(
       std::move(cache_update_inference_context), std::move(prefill_runner_set),
       std::move(maybe_embedding_lookup_manager),
       /*embedder_per_layer_context=*/std::nullopt, quantization_params, {}, {},
-      {}, 0, 0, litert::ElementType::None, litert::ElementType::None, 1.0f, 0,
-      std::move(kv_quant_params), speculative_decoding_type,
+      {}, 0, 0, litert::ElementType::None, litert::ElementType::None, 1.0f,
+      1.0f, 0, std::move(kv_quant_params), speculative_decoding_type,
       std::move(drafter_context), std::move(drafter_aux_context)));
   return executor;
 }

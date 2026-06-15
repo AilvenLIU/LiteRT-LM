@@ -337,7 +337,8 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
       int ple_embedding_dim = 0,
       litert::ElementType output_type = litert::ElementType::None,
       litert::ElementType ple_table_element_type = litert::ElementType::None,
-      float final_scale = 1.0f, int32_t final_zero_point = 0,
+      float mul_scale = 1.0f, float output_scale = 1.0f,
+      int32_t final_zero_point = 0,
       absl::flat_hash_map<absl::string_view, HWQuantParams> kv_quant_params =
           {},
       SpeculativeDecodingType speculative_decoding_type =
@@ -365,7 +366,8 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
         ple_embedding_dim_(ple_embedding_dim),
         output_type_(output_type),
         ple_table_element_type_(ple_table_element_type),
-        final_scale_(final_scale),
+        mul_scale_(mul_scale),
+        output_scale_(output_scale),
         final_zero_point_(final_zero_point),
         speculative_decoding_type_(speculative_decoding_type),
         drafter_context_(std::move(drafter_context)),
@@ -659,7 +661,8 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
   int ple_embedding_dim_ = 0;
   litert::ElementType output_type_ = litert::ElementType::None;
   litert::ElementType ple_table_element_type_ = litert::ElementType::None;
-  float final_scale_ = 1.0f;
+  float mul_scale_ = 1.0f;
+  float output_scale_ = 1.0f;
   int32_t final_zero_point_ = 0;
 
   // MTP / Speculative Decoding members.

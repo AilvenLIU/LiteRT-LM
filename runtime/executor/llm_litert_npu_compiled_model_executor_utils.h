@@ -149,9 +149,9 @@ struct HWQuantizationParams {
 absl::Status HWPerLayerEmbeddingLookup(
     const int* token_ids, int num_tokens, const uint8_t* const* table_ptrs,
     const HWQuantizationParams* quant_params, int num_tables,
-    int ple_embedding_dim, void* output_buffer,
-    litert::ElementType output_type, litert::ElementType ple_table_element_type,
-    float final_scale = 1.0f, int32_t final_zero_point = 0);
+    int ple_embedding_dim, void* output_buffer, litert::ElementType output_type,
+    litert::ElementType ple_table_element_type, float mul_scale = 1.0f,
+    float output_scale = 1.0f, int32_t final_zero_point = 0);
 
 // Dequantize logits to float32.
 absl::Status DequantizeLogits(const ::litert::TensorBuffer& src,

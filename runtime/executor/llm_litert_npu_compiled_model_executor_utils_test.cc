@@ -848,7 +848,7 @@ TEST_F(ExecutorUtilsTest, HWPerLayerEmbeddingLookupInt16) {
   auto status = HWPerLayerEmbeddingLookup(
       token_ids.data(), num_tokens, table_ptrs.data(), qp, kNumTables, kColSize,
       output.data(), litert::ElementType::Int16, litert::ElementType::Int4,
-      final_scale, final_zero_point);
+      1.0f, final_scale, final_zero_point);
 
   ASSERT_TRUE(status.ok());
 
