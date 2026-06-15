@@ -179,7 +179,7 @@ jobs:
 
       - name: Save bazel cache if it's new or being refreshed.
         uses: actions/cache/save@v4
-        if: env.REFRESH_CACHE == 'true' || steps.bazel-cache.outputs.cache-hit != 'true'
+        if: env.REFRESH_CACHE == 'true'
         with:
           path: |
             ~/.cache/bazel-macos
