@@ -32,6 +32,7 @@
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "runtime/components/logits_processor/constrained_decoding/fake_constraint.h"
+#include "runtime/components/logits_processor/repetition_penalty_config.h"
 #include "runtime/components/sentencepiece_tokenizer.h"
 #include "runtime/components/stop_token_detector.h"
 #include "runtime/components/tokenizer.h"
@@ -62,6 +63,7 @@ class BytePairEncodingTokenizer : public Tokenizer {
               (override));
   MOCK_METHOD(TokenizerType, GetTokenizerType, (), (const, override));
   MOCK_METHOD(std::vector<std::string>, GetTokens, (), (const, override));
+  MOCK_METHOD(int, GetVocabSize, (), (const, override));
 };
 
 absl::AnyInvocable<void(absl::StatusOr<Responses>)> CreateTestCallback(
@@ -185,7 +187,8 @@ TEST_F(PipelineTest, Decode) {
   EXPECT_OK(stop_token_detector.AddStopTokenSequence({2294}));
   auto responses =
       Decode(*executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
-             /*constraint=*/nullptr, benchmark_info);
+             RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+             benchmark_info);
   EXPECT_OK(responses);
   // The response is " How's it going?" since "!" is the stop token which is
   // not included in the response.
@@ -211,7 +214,8 @@ TEST_F(PipelineTest, DecodeWithTwoStopTokens) {
   EXPECT_OK(stop_token_detector.AddStopTokenSequence({2295, 2294}));
   auto responses =
       Decode(*executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
-             /*constraint=*/nullptr, benchmark_info);
+             RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+             benchmark_info);
   EXPECT_OK(responses);
   // The response is " How's it going" since "?!" is the stop token which is
   // not included in the response.
@@ -239,7 +243,8 @@ TEST_F(PipelineTest, DecodeReachMaxNumTokens) {
   EXPECT_OK(stop_token_detector.AddStopTokenSequence({2294}));
   auto responses =
       Decode(*executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
-             /*constraint=*/nullptr, benchmark_info);
+             RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+             benchmark_info);
   EXPECT_OK(responses);
   // The response is truncated at the max number of tokens.
   EXPECT_EQ(responses->GetTexts().size(), 1);
@@ -264,6 +269,7 @@ TEST_F(PipelineTest, DecodeWithMaxOutputTokens) {
   EXPECT_OK(stop_token_detector.AddStopTokenSequence({2294}));
   auto responses =
       Decode(*executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
+             RepetitionPenaltyConfig::Default(),
              /*constraint=*/nullptr, benchmark_info, /*cancelled=*/nullptr,
              /*max_output_tokens=*/3);
   EXPECT_OK(responses);
@@ -301,7 +307,8 @@ TEST_F(PipelineTest, DecodeWithMultipleOutputCandidates) {
   EXPECT_OK(stop_token_detector.AddStopTokenSequence({2294}));
   auto responses =
       Decode(*executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
-             /*constraint=*/nullptr, benchmark_info);
+             RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+             benchmark_info);
   EXPECT_OK(responses);
   EXPECT_EQ(responses->GetTexts().size(), 3);
   EXPECT_EQ(responses->GetTexts()[0], " How's it going?");
@@ -316,8 +323,90 @@ TEST_F(PipelineTest, DecodeWithoutPrefillFailed) {
   EXPECT_OK(stop_token_detector.AddStopTokenSequence({2294}));
   auto responses =
       Decode(*executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
-             /*constraint=*/nullptr, benchmark_info);
+             RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+             benchmark_info);
   EXPECT_THAT(responses, StatusIs(absl::StatusCode::kFailedPrecondition));
+}
+
+TEST_F(PipelineTest, DecodeWithRepetitionPenaltyConfig) {
+  std::optional<BenchmarkInfo> benchmark_info;
+
+  // Simply pass the `BOS` token as the prefill tokens.
+  std::vector<std::vector<int>> prefill_tokens = {{2}};
+  // The decode tokens are set up with repeating tokens " go" (246).
+  std::vector<std::vector<int>> decode_tokens = {{224}, {24},  {8},   {66},
+                                                 {246}, {246}, {246}, {2294}};
+
+  constexpr int kNumOutputCandidates = 1;
+  StopTokenDetector stop_token_detector(kNumOutputCandidates);
+  EXPECT_OK(stop_token_detector.AddStopTokenSequence({2294}));
+
+  // 1. Original decoding without repetition penalty config.
+  // The output should contain the repeating tokens.
+  {
+    auto executor = std::make_unique<FakeLlmExecutor>(
+        tokenizer_->GetVocabSize(), prefill_tokens, decode_tokens);
+    executor->SetDecodeLogitsOptions(
+        FakeLlmExecutor::DecodeLogitsOptions{.match_value = 10.0f,
+                                             .mismatch_value = -10.0f,
+                                             .end_token_id = 2294,
+                                             .mismatch_end_token_value = 0.0f});
+
+    // Run prefill first.
+    std::vector<int> prefill_token_ids = {2};
+    ASSERT_OK_AND_ASSIGN(auto token_ids_buffer,
+                         tokenizer_->TokenIdsToTensorBuffer(prefill_token_ids));
+    ExecutorTextData text_data(std::move(token_ids_buffer));
+    ExecutorInputs inputs(std::move(text_data), std::nullopt, std::nullopt);
+    auto prefill_responses =
+        Prefill(*executor, inputs,
+                /*wait_for_completion=*/true, benchmark_info);
+    EXPECT_OK(prefill_responses);
+
+    auto responses =
+        Decode(*executor, *tokenizer_, stop_token_detector,
+               kNumOutputCandidates, RepetitionPenaltyConfig::Default(),
+               /*constraint=*/nullptr, benchmark_info);
+    ASSERT_OK(responses);
+    EXPECT_EQ(responses->GetTexts().size(), 1);
+    EXPECT_EQ(responses->GetTexts()[0], " How's it go go go");
+  }
+
+  // 2. Decoding with repetition penalty config.
+  // The repeating tokens should be penalized and not appear in the output.
+  {
+    auto executor = std::make_unique<FakeLlmExecutor>(
+        tokenizer_->GetVocabSize(), prefill_tokens, decode_tokens);
+    executor->SetDecodeLogitsOptions(
+        FakeLlmExecutor::DecodeLogitsOptions{.match_value = 10.0f,
+                                             .mismatch_value = -10.0f,
+                                             .end_token_id = 2294,
+                                             .mismatch_end_token_value = 0.0f});
+
+    // Run prefill first.
+    std::vector<int> prefill_token_ids = {2};
+    ASSERT_OK_AND_ASSIGN(auto token_ids_buffer,
+                         tokenizer_->TokenIdsToTensorBuffer(prefill_token_ids));
+    ExecutorTextData text_data(std::move(token_ids_buffer));
+    ExecutorInputs inputs(std::move(text_data), std::nullopt, std::nullopt);
+    auto prefill_responses =
+        Prefill(*executor, inputs,
+                /*wait_for_completion=*/true, benchmark_info);
+    EXPECT_OK(prefill_responses);
+
+    // Create a config with penalties strong enough to suppress the repetition.
+    RepetitionPenaltyConfig config(/*repetition_penalty=*/2.0f,
+                                   /*presence_penalty=*/10.0f,
+                                   /*frequency_penalty=*/1.0f,
+                                   /*window_size=*/5);
+
+    auto responses = Decode(*executor, *tokenizer_, stop_token_detector,
+                            kNumOutputCandidates, config,
+                            /*constraint=*/nullptr, benchmark_info);
+    ASSERT_OK(responses);
+    EXPECT_EQ(responses->GetTexts().size(), 1);
+    EXPECT_EQ(responses->GetTexts()[0], " How's it go");
+  }
 }
 
 TEST_F(PipelineTest, DecodeWithConstrainedDecoding) {
@@ -349,9 +438,9 @@ TEST_F(PipelineTest, DecodeWithConstrainedDecoding) {
   constexpr int kNumOutputCandidates = 1;
   StopTokenDetector stop_token_detector(kNumOutputCandidates);
   EXPECT_OK(stop_token_detector.AddStopTokenSequence({0}));
-  auto responses =
-      Decode(*executor, *tokenizer_, stop_token_detector, kNumOutputCandidates,
-             constraint.get(), benchmark_info);
+  auto responses = Decode(
+      *executor, *tokenizer_, stop_token_detector, kNumOutputCandidates,
+      RepetitionPenaltyConfig::Default(), constraint.get(), benchmark_info);
   EXPECT_OK(responses);
   EXPECT_EQ(responses->GetTexts().size(), 1);
   EXPECT_EQ(responses->GetTexts()[0], " How's it");
@@ -377,10 +466,10 @@ TEST_F(PipelineTest, DecodeStreaming) {
   std::vector<std::string> responses(kNumOutputCandidates);
   absl::Status status;
   bool done = false;
-  EXPECT_OK(DecodeStreaming(*executor_, *tokenizer_, stop_token_detector,
-                            kNumOutputCandidates, /*constraint=*/nullptr,
-                            benchmark_info,
-                            CreateTestCallback(responses, status, done)));
+  EXPECT_OK(DecodeStreaming(
+      *executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
+      RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+      benchmark_info, CreateTestCallback(responses, status, done)));
   // The response is " How's it going?" since "!" is the stop token which is
   // not included in the response.
   EXPECT_EQ(responses[0], " How's it going?");
@@ -410,10 +499,10 @@ TEST_F(PipelineTest, DecodeStreamingReachMaxNumTokens) {
   std::vector<std::string> responses(kNumOutputCandidates);
   absl::Status status;
   bool done = false;
-  EXPECT_OK(DecodeStreaming(*executor_, *tokenizer_, stop_token_detector,
-                            kNumOutputCandidates, /*constraint=*/nullptr,
-                            benchmark_info,
-                            CreateTestCallback(responses, status, done)));
+  EXPECT_OK(DecodeStreaming(
+      *executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
+      RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+      benchmark_info, CreateTestCallback(responses, status, done)));
   // The response is truncated at the max number of tokens.
   EXPECT_EQ(responses[0], " How's");
 }
@@ -438,11 +527,11 @@ TEST_F(PipelineTest, DecodeStreamingWithMaxOutputTokens) {
   std::vector<std::string> responses(kNumOutputCandidates);
   absl::Status status;
   bool done = false;
-  EXPECT_OK(DecodeStreaming(*executor_, *tokenizer_, stop_token_detector,
-                            kNumOutputCandidates, /*constraint=*/nullptr,
-                            benchmark_info,
-                            CreateTestCallback(responses, status, done),
-                            /*cancelled=*/nullptr, /*max_output_tokens=*/3));
+  EXPECT_OK(DecodeStreaming(
+      *executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
+      RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+      benchmark_info, CreateTestCallback(responses, status, done),
+      /*cancelled=*/nullptr, /*max_output_tokens=*/3));
   // The response is truncated at max_output_tokens.
   EXPECT_EQ(responses[0], " How's");
 }
@@ -480,10 +569,10 @@ TEST_F(PipelineTest, DecodeStreamingWithConstrainedDecoding) {
   std::vector<std::string> responses(kNumOutputCandidates);
   absl::Status status;
   bool done = false;
-  EXPECT_OK(DecodeStreaming(*executor, *tokenizer_, stop_token_detector,
-                            kNumOutputCandidates, constraint.get(),
-                            benchmark_info,
-                            CreateTestCallback(responses, status, done)));
+  EXPECT_OK(DecodeStreaming(
+      *executor, *tokenizer_, stop_token_detector, kNumOutputCandidates,
+      RepetitionPenaltyConfig::Default(), constraint.get(), benchmark_info,
+      CreateTestCallback(responses, status, done)));
   EXPECT_EQ(responses[0], " How's it");
 }
 
@@ -530,7 +619,8 @@ TEST_F(PipelineTest, DecodeBytePairEncodingTokens) {
   EXPECT_OK(stop_token_detector.AddStopTokenSequence({2294}));
   auto responses =
       Decode(*executor_, *tokenizer, stop_token_detector, kNumOutputCandidates,
-             /*constraint=*/nullptr, benchmark_info);
+             RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+             benchmark_info);
   EXPECT_OK(responses);
   // The response is " How's it going?" since "!" is the stop token which is
   // not included in the response.
@@ -568,7 +658,8 @@ TEST_F(PipelineTest, DecodeStopTokenIsPartialBytePairEncodingTokens) {
   EXPECT_OK(stop_token_detector.AddStopTokenSequence({224, 24}));
   auto responses =
       Decode(*executor_, *tokenizer, stop_token_detector, kNumOutputCandidates,
-             /*constraint=*/nullptr, benchmark_info);
+             RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+             benchmark_info);
   EXPECT_OK(responses);
   // Empty response as the stop token is encoded as a partial byte pair encoding
   // token.
@@ -725,7 +816,8 @@ TEST_F(PipelineCustomSamplingTest, DecodeCustomSampling) {
   auto responses = DecodeCustomSampling(
       executor, *tokenizer_, stop_token_detector,
       /*num_output_candidates=*/2, *sampler, std::move(decoded_ids.Value()),
-      /*constraint=*/nullptr, benchmark_info);
+      RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+      benchmark_info);
   EXPECT_OK(responses);
   EXPECT_EQ(responses->GetTexts().size(), 2);
   // First candidate: " How's it going?!".
@@ -794,7 +886,8 @@ TEST_F(PipelineCustomSamplingTest,
   auto responses = DecodeCustomSampling(
       executor, *tokenizer_, stop_token_detector,
       /*num_output_candidates=*/2, *sampler, std::move(decoded_ids.Value()),
-      /*constraint=*/constraint.get(), benchmark_info);
+      RepetitionPenaltyConfig::Default(), /*constraint=*/constraint.get(),
+      benchmark_info);
   EXPECT_OK(responses);
   EXPECT_EQ(responses->GetTexts().size(), 2);
   // First candidate: " How's it".
@@ -953,7 +1046,8 @@ TEST_F(PipelineCustomSamplingTest, DecodeCustomSamplingReachMaxNumTokens) {
   auto responses = DecodeCustomSampling(
       executor, *tokenizer_, stop_token_detector,
       /*num_output_candidates=*/2, *sampler, std::move(decoded_ids.Value()),
-      /*constraint=*/nullptr, benchmark_info);
+      RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+      benchmark_info);
   EXPECT_OK(responses);
   EXPECT_EQ(responses->GetTexts().size(), 2);
   // First candidate truncated at max number of tokens: " How's".
@@ -1001,7 +1095,8 @@ TEST_F(PipelineCustomSamplingTest, DecodeCustomSamplingWithMaxOutputTokens) {
   auto responses = DecodeCustomSampling(
       executor, *tokenizer_, stop_token_detector,
       /*num_output_candidates=*/2, *sampler, std::move(decoded_ids.Value()),
-      /*constraint=*/nullptr, benchmark_info, /*cancelled=*/nullptr,
+      RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+      benchmark_info, /*cancelled=*/nullptr,
       /*max_output_tokens=*/3);
   EXPECT_OK(responses);
   EXPECT_EQ(responses->GetTexts().size(), 2);
@@ -1063,8 +1158,8 @@ TEST_F(PipelineCustomSamplingTest, DecodeCustomSamplingStreaming) {
   EXPECT_OK(DecodeCustomSamplingStreaming(
       executor, *tokenizer_, stop_token_detector,
       /*num_output_candidates=*/2, *sampler, std::move(decoded_ids.Value()),
-      /*constraint=*/nullptr, benchmark_info,
-      CreateTestCallback(responses, status, done)));
+      RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+      benchmark_info, CreateTestCallback(responses, status, done)));
   // First candidate: " How's it going" - ("?!") are stop tokens that is not
   // included in the output.
   EXPECT_EQ(responses[0], " How's it going");
@@ -1118,8 +1213,8 @@ TEST_F(PipelineCustomSamplingTest,
   EXPECT_OK(DecodeCustomSamplingStreaming(
       executor, *tokenizer_, stop_token_detector,
       /*num_output_candidates=*/2, *sampler, std::move(decoded_ids.Value()),
-      /*constraint=*/nullptr, benchmark_info,
-      CreateTestCallback(responses, status, done)));
+      RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+      benchmark_info, CreateTestCallback(responses, status, done)));
   // First candidate truncated at max number of tokens: " How's".
   EXPECT_EQ(responses[0], " How's");
   // Second candidate truncated at max number of tokens: " Hello".
@@ -1170,8 +1265,9 @@ TEST_F(PipelineCustomSamplingTest,
   EXPECT_OK(DecodeCustomSamplingStreaming(
       executor, *tokenizer_, stop_token_detector,
       /*num_output_candidates=*/2, *sampler, std::move(decoded_ids.Value()),
-      /*constraint=*/nullptr, benchmark_info,
-      CreateTestCallback(responses, status, done), /*cancelled=*/nullptr,
+      RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+      benchmark_info, CreateTestCallback(responses, status, done),
+      /*cancelled=*/nullptr,
       /*max_output_tokens=*/3));
   // First candidate truncated at max number of tokens: " How's".
   EXPECT_EQ(responses[0], " How's");
@@ -1230,7 +1326,8 @@ TEST_F(PipelineCustomSamplingTest, DecodeComplexStopTokenDetector) {
   auto responses = DecodeCustomSampling(
       executor, *tokenizer_, stop_token_detector,
       /*num_output_candidates=*/2, *sampler, std::move(decoded_ids.Value()),
-      /*constraint=*/nullptr, benchmark_info);
+      RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+      benchmark_info);
   EXPECT_OK(responses);
   // Expect two output candidates.
   EXPECT_EQ(responses->GetTexts().size(), 2);
@@ -1304,7 +1401,8 @@ TEST_F(PipelineCustomSamplingTest,
     status = DecodeCustomSamplingStreaming(
         delayed_executor, *tokenizer_, stop_token_detector,
         /*num_output_candidates=*/2, *sampler, std::move(decoded_ids.Value()),
-        /*constraint=*/nullptr, benchmark_info,
+        RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+        benchmark_info,
         CreateTestCallback(responses, callback_status, done,
                            /*delay_on_next=*/true),
         &cancelled);
@@ -1372,8 +1470,8 @@ TEST_F(PipelineCustomSamplingTest,
   EXPECT_OK(DecodeCustomSamplingStreaming(
       executor, *tokenizer_, stop_token_detector,
       /*num_output_candidates=*/2, *sampler, std::move(decoded_ids.Value()),
-      /*constraint=*/constraint.get(), benchmark_info,
-      CreateTestCallback(responses, callback_status, done)));
+      RepetitionPenaltyConfig::Default(), /*constraint=*/constraint.get(),
+      benchmark_info, CreateTestCallback(responses, callback_status, done)));
   EXPECT_EQ(responses[0], " Hello World");
   EXPECT_EQ(responses[1], " Hello World");
 }
@@ -1449,7 +1547,8 @@ TEST_F(PipelineCustomSamplingTest, DecodeStopTokenAndBPEDetector) {
   auto responses = DecodeCustomSampling(
       executor, *tokenizer, stop_token_detector,
       /*num_output_candidates=*/2, *sampler, std::move(decoded_ids.Value()),
-      /*constraint=*/nullptr, benchmark_info);
+      RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+      benchmark_info);
 
   EXPECT_OK(responses);
   EXPECT_EQ(responses->GetTexts().size(), 2);
@@ -1478,10 +1577,10 @@ TEST_F(PipelineCallbackTest, DecodeStreaming_SuccessfulCompletion) {
   absl::Status status;
   std::vector<std::string> responses(kNumOutputCandidates);
   bool done = false;
-  EXPECT_OK(DecodeStreaming(*executor_, *tokenizer_, stop_token_detector,
-                            kNumOutputCandidates, /*constraint=*/nullptr,
-                            benchmark_info,
-                            CreateTestCallback(responses, status, done)));
+  EXPECT_OK(DecodeStreaming(
+      *executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
+      RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+      benchmark_info, CreateTestCallback(responses, status, done)));
   EXPECT_EQ(responses[0], " How's it going?");
   EXPECT_TRUE(done);
   EXPECT_OK(status);
@@ -1508,10 +1607,10 @@ TEST_F(PipelineCallbackTest, DecodeStreaming_ErrorCompletion) {
   absl::Status status;
   std::vector<std::string> responses(kNumOutputCandidates);
   bool done = false;
-  EXPECT_OK(DecodeStreaming(*executor_, *tokenizer_, stop_token_detector,
-                            kNumOutputCandidates, /*constraint=*/nullptr,
-                            benchmark_info,
-                            CreateTestCallback(responses, status, done)));
+  EXPECT_OK(DecodeStreaming(
+      *executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
+      RepetitionPenaltyConfig::Default(), /*constraint=*/nullptr,
+      benchmark_info, CreateTestCallback(responses, status, done)));
   EXPECT_EQ(responses[0], " How's");
   EXPECT_TRUE(done);
   EXPECT_THAT(
@@ -1553,6 +1652,7 @@ TEST_F(PipelineCallbackTest,
   bool done = false;
   EXPECT_OK(DecodeStreaming(*executor_, *tokenizer_, stop_token_detector,
                             kNumOutputCandidates,
+                            RepetitionPenaltyConfig::Default(),
                             /*constraint=*/nullptr, benchmark_info,
                             CreateTestCallback(responses, status, done)));
   EXPECT_EQ(responses[0], " How's it going?");

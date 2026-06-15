@@ -21,6 +21,7 @@
 #include <string>
 #include <tuple>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "absl/base/attributes.h"  // from @com_google_absl
@@ -40,6 +41,7 @@
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "runtime/components/logits_processor/constrained_decoding/constraint.h"
+#include "runtime/components/logits_processor/repetition_penalty_config.h"
 #include "runtime/components/model_resources.h"
 #include "runtime/components/sampler.h"
 #include "runtime/components/sampler_factory.h"
@@ -50,6 +52,7 @@
 #include "runtime/engine/io_types.h"
 #include "runtime/executor/audio_executor.h"
 #include "runtime/executor/audio_executor_settings.h"
+#include "runtime/executor/executor_settings_base.h"
 #include "runtime/executor/llm_executor.h"
 #include "runtime/executor/llm_executor_io_types.h"
 #include "runtime/executor/vision_executor_settings.h"
@@ -745,6 +748,7 @@ absl::Status SerialExecutionManager::AddPrefillTask(
 
 absl::Status SerialExecutionManager::AddDecodeTask(
     SessionId session_id, TaskId task_id, absl::flat_hash_set<TaskId> dep_tasks,
+    RepetitionPenaltyConfig repetition_penalty_config,
     Constraint* absl_nullable constraint,
     std::shared_ptr<std::atomic<bool>> absl_nonnull cancelled,
     absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback,
@@ -753,7 +757,8 @@ absl::Status SerialExecutionManager::AddDecodeTask(
     callback = [](absl::StatusOr<Responses>) {};
   }
 
-  auto task = [this, task_id, constraint, max_output_tokens]() mutable {
+  auto task = [this, task_id, repetition_penalty_config, constraint,
+               max_output_tokens]() mutable {
     auto task_info_or = StartTask(task_id);
     if (!task_info_or.ok()) {
       FinishTaskAndLogErrors(task_id, task_info_or.status(),
@@ -797,8 +802,8 @@ absl::Status SerialExecutionManager::AddDecodeTask(
     auto responses = Tasks::Decode(
         *llm_executor.value(), *tokenizer_, *session_info->stop_token_detector,
         num_output_candidates, session_info->benchmark_info, optional_sampler,
-        constraint, std::move(decoded_ids_buffer), callback, cancelled.get(),
-        max_output_tokens);
+        repetition_penalty_config, constraint, std::move(decoded_ids_buffer),
+        callback, cancelled.get(), max_output_tokens);
 
     if (!responses.ok() && absl::IsCancelled(responses.status())) {
       responses = Responses(TaskState::kCancelled);

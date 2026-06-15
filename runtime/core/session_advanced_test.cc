@@ -180,6 +180,8 @@ class ExtendedTokenizer : public Tokenizer {
     return tokenizer_->GetTokens();
   }
 
+  int GetVocabSize() const override { return tokenizer_->GetVocabSize(); }
+
  private:
   explicit ExtendedTokenizer(std::unique_ptr<SentencePieceTokenizer> tokenizer)
       : tokenizer_(std::move(tokenizer)) {};

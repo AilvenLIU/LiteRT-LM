@@ -100,6 +100,7 @@ cc_library(
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
+        "//runtime/components/logits_processor:repetition_penalty_config",
         "//runtime/components/logits_processor/constrained_decoding:constraint",
         "//runtime/proto:engine_cc_proto",
         "//runtime/util:litert_status_util",

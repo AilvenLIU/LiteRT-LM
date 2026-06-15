@@ -43,6 +43,7 @@ class MockTokenizer : public Tokenizer {
   MOCK_METHOD(absl::StatusOr<std::string>, TokenIdsToText, (const TokenIds&),
               (override));
   MOCK_METHOD(std::vector<std::string>, GetTokens, (), (const, override));
+  MOCK_METHOD(int, GetVocabSize, (), (const, override));
 };
 
 class LlgConstraintTest : public ::testing::Test {

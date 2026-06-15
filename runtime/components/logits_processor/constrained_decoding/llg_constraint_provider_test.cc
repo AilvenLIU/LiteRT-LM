@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #include "runtime/components/logits_processor/constrained_decoding/llg_constraint_provider.h"
 
 #include <memory>
@@ -43,6 +42,7 @@ class MockTokenizer : public Tokenizer {
   MOCK_METHOD(absl::StatusOr<std::string>, TokenIdsToText, (const TokenIds&),
               (override));
   MOCK_METHOD(std::vector<std::string>, GetTokens, (), (const, override));
+  MOCK_METHOD(int, GetVocabSize, (), (const, override));
 };
 
 class LlgConstraintProviderTest : public ::testing::Test {

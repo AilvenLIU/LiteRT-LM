@@ -33,6 +33,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "runtime/components/logits_processor/constrained_decoding/constraint.h"
+#include "runtime/components/logits_processor/repetition_penalty_config.h"
 #include "runtime/proto/engine.pb.h"
 #include "runtime/util/status_macros.h"
 
@@ -370,9 +371,7 @@ class Responses {
   }
 
   // Returns the mutable token ids vector.
-  std::vector<std::vector<int>>& GetMutableTokenIds() {
-    return token_ids_;
-  };
+  std::vector<std::vector<int>>& GetMutableTokenIds() { return token_ids_; };
 
   // Returns the const token scores vector.
   const std::optional<std::vector<std::vector<float>>>& GetTokenScores() const {
@@ -534,6 +533,18 @@ class DecodeConfig {
   // Creates a default DecodeConfig.
   static DecodeConfig CreateDefault();
 
+  // Sets the repetition penalty config to penalize repetitive tokens during
+  // decoding.
+  void SetRepetitionPenaltyConfig(
+      const RepetitionPenaltyConfig& repetition_penalty_config) {
+    repetition_penalty_config_ = repetition_penalty_config;
+  }
+
+  // Returns the repetition penalty config.
+  RepetitionPenaltyConfig GetRepetitionPenaltyConfig() const {
+    return repetition_penalty_config_;
+  }
+
   // Sets the optional constraint used to guide the generation.
   // `DecodeConfig` does not take ownership of the `constraint`, which must
   // outlives the single generation process.
@@ -555,6 +566,8 @@ class DecodeConfig {
  private:
   DecodeConfig() = default;
 
+  RepetitionPenaltyConfig repetition_penalty_config_ =
+      RepetitionPenaltyConfig::Default();
   Constraint* absl_nullable constraint_ = nullptr;
   std::optional<int> max_output_tokens_ = std::nullopt;
 };

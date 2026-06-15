@@ -97,4 +97,8 @@ std::vector<std::string> HuggingFaceTokenizer::GetTokens() const {
   return tokens;
 }
 
+int HuggingFaceTokenizer::GetVocabSize() const {
+  return tokenizer_->GetVocabSize();
+}
+
 }  // namespace litert::lm

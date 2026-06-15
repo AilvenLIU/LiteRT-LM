@@ -40,6 +40,7 @@
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "runtime/components/logits_processor/constrained_decoding/constraint.h"
+#include "runtime/components/logits_processor/repetition_penalty_config.h"
 #include "runtime/components/model_resources.h"
 #include "runtime/components/sampler.h"
 #include "runtime/components/sampler_factory.h"
@@ -854,6 +855,7 @@ absl::Status ThreadedExecutionManager::AddPrefillTask(
 
 absl::Status ThreadedExecutionManager::AddDecodeTask(
     SessionId session_id, TaskId task_id, absl::flat_hash_set<TaskId> dep_tasks,
+    RepetitionPenaltyConfig repetition_penalty_config,
     Constraint* absl_nullable constraint,
     std::shared_ptr<std::atomic<bool>> absl_nonnull cancelled,
     absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback,
@@ -862,7 +864,7 @@ absl::Status ThreadedExecutionManager::AddDecodeTask(
     callback = [](absl::StatusOr<Responses> responses) {};
   }
 
-  auto task = [this, task_id, constraint, cancelled,
+  auto task = [this, task_id, repetition_penalty_config, constraint, cancelled,
                max_output_tokens]() mutable -> void {
     auto task_info = StartTask(task_id);
     if (!task_info.ok()) {
@@ -920,8 +922,8 @@ absl::Status ThreadedExecutionManager::AddDecodeTask(
     auto responses = Tasks::Decode(
         *llm_executor.value(), *tokenizer_, *session_info->stop_token_detector,
         num_output_candidates, session_info->benchmark_info, optional_sampler,
-        constraint, std::move(decoded_ids_buffer), callback, cancelled.get(),
-        max_output_tokens);
+        repetition_penalty_config, constraint, std::move(decoded_ids_buffer),
+        callback, cancelled.get(), max_output_tokens);
     if (!responses.ok() && absl::IsCancelled(responses.status())) {
       responses = Responses(TaskState::kCancelled);
     }

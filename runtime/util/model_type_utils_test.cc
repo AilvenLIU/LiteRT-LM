@@ -43,6 +43,7 @@ class MockTokenizer : public Tokenizer {
               (override));
   MOCK_METHOD(TokenizerType, GetTokenizerType, (), (const, override));
   MOCK_METHOD(std::vector<std::string>, GetTokens, (), (const, override));
+  MOCK_METHOD(int, GetVocabSize, (), (const, override));
 };
 
 TEST(ModelTypeUtilsTest, InferLlmModelTypeGemma3N) {

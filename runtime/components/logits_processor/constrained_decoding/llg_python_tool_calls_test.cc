@@ -151,6 +151,8 @@ class SimpleTokenizer : public Tokenizer {
     return tokens;
   }
 
+  int GetVocabSize() const override { return kVocabSize; }
+
  private:
   absl::flat_hash_map<std::string, int> vocab_;
   absl::flat_hash_map<int, std::string> id_to_piece_;
