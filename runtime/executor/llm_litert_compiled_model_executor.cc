@@ -26,6 +26,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/memory/memory.h"  // from @com_google_absl
@@ -607,6 +608,8 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::PrefillInternal(
         RETURN_IF_ERROR(llm_context_->processed_context()
                             .processed_tokens()
                             .MarkPendingInputTokenAsProcessed());
+        llm_context_->runtime_state().current_step = internal_start_step + 1;
+
         ++prefill_input_pos_ptr;
         ++input_idx;
       }
@@ -1843,6 +1846,15 @@ absl::Status LlmLiteRtCompiledModelExecutorDynamic::Prefill(
 
   // Only accept batch size 1 for now.
   LITERT_RETURN_IF_ERROR(PrepareFirstPrefillAfterDecode(0));
+
+  if (embedding_lookup_ != nullptr) {
+    RETURN_IF_ERROR(embedding_lookup_->UpdateMultiModalEmbeddings(inputs));
+  }
+  auto cleanup = absl::MakeCleanup([this]() {
+    if (embedding_lookup_ != nullptr) {
+      embedding_lookup_->CleanupMultiModalEmbeddings().IgnoreError();
+    }
+  });
 
   LITERT_ASSIGN_OR_RETURN(auto token_ids_buffer, inputs.GetTextTokenIdsPtr());
   LITERT_ASSIGN_OR_RETURN(auto tensor_type, token_ids_buffer->TensorType());

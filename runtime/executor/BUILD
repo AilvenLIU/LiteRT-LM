@@ -273,6 +273,7 @@ cc_library(
         ":llm_processed_context",
         ":magic_number_configs_helper",
         "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/memory",
