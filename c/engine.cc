@@ -270,6 +270,8 @@ struct LiteRtLmConversationConfig {
   std::string extra_context_json;
   bool enable_constrained_decoding = false;
   bool filter_channel_content_from_kv_cache = false;
+  bool stream_tool_calls = false;
+  std::string stream_tool_calls_channel_name = "tool_call";
 };
 
 struct LiteRtLmConversationOptionalArgs {
@@ -444,6 +446,17 @@ void litert_lm_conversation_config_set_filter_channel_content_from_kv_cache(
   if (config) {
     config->filter_channel_content_from_kv_cache =
         filter_channel_content_from_kv_cache;
+  }
+}
+
+void litert_lm_conversation_config_set_stream_tool_calls(
+    LiteRtLmConversationConfig* config, bool stream_tool_calls,
+    const char* channel_name) {
+  if (config) {
+    config->stream_tool_calls = stream_tool_calls;
+    if (channel_name != nullptr) {
+      config->stream_tool_calls_channel_name = channel_name;
+    }
   }
 }
 
@@ -1140,6 +1153,8 @@ LiteRtLmConversation* litert_lm_conversation_create(
     builder.SetEnableConstrainedDecoding(c_config->enable_constrained_decoding);
     builder.SetFilterChannelContentFromKvCache(
         c_config->filter_channel_content_from_kv_cache);
+    builder.SetStreamToolCalls(c_config->stream_tool_calls,
+                               c_config->stream_tool_calls_channel_name);
     auto config = builder.Build(*engine->engine);
 
     if (!config.ok()) {

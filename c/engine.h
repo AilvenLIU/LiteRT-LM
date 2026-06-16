@@ -224,6 +224,15 @@ void litert_lm_conversation_config_set_filter_channel_content_from_kv_cache(
     LiteRtLmConversationConfig* config,
     bool filter_channel_content_from_kv_cache);
 
+// Sets whether to stream tool call tokens.
+// @param config The config to modify.
+// @param stream_tool_calls Whether to stream tool call tokens.
+// @param channel_name The channel name to use for tool call tokens.
+LITERT_LM_C_API_EXPORT
+void litert_lm_conversation_config_set_stream_tool_calls(
+    LiteRtLmConversationConfig* config, bool stream_tool_calls,
+    const char* channel_name);
+
 // Destroys a LiteRT LM Conversation Config.
 // @param config The config to destroy.
 LITERT_LM_C_API_EXPORT

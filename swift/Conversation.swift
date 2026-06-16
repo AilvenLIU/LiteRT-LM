@@ -116,11 +116,13 @@ public class Conversation {
     }
     let optionalArgs = litert_lm_conversation_optional_args_create()
     if let visualTokenBudget = ExperimentalFlags.visualTokenBudget {
-      litert_lm_conversation_optional_args_set_visual_token_budget(optionalArgs, Int32(visualTokenBudget))
+      litert_lm_conversation_optional_args_set_visual_token_budget(
+        optionalArgs, Int32(visualTokenBudget))
     }
     defer { litert_lm_conversation_optional_args_delete(optionalArgs) }
 
-    guard let responsePtr = litert_lm_conversation_send_message(
+    guard
+      let responsePtr = litert_lm_conversation_send_message(
         handle, messageString, extraContextString, optionalArgs)
     else {
       throw LiteRTLMError.conversation(.invalidResponse("Native sendMessage returned null."))
@@ -186,14 +188,15 @@ public class Conversation {
   /// - Parameter message: The message to send.
   /// - Parameter extraContext: The extra context to send to the model.
   /// - Returns: An async throwing stream of `Message` chunks.
-  public func sendMessageStream(_ message: Message, extraContext: [String: Any]? = nil)
-    -> AsyncThrowingStream<Message, Error>
-  {
+  public func sendMessageStream(
+    _ message: Message, extraContext: [String: Any]? = nil
+  ) -> AsyncThrowingStream<Message, Error> {
     return AsyncThrowingStream { continuation in
       do {
         let handle = try self.checkIsAlive()
         let messageJson: [String: Any] = message.toJson
-        let context = StreamContext(continuation: continuation, conversation: self)
+        let context = StreamContext(
+          continuation: continuation, conversation: self)
 
         try self.sendToStream(
           handle: handle, messageJson: messageJson, extraContext: extraContext, context: context)
@@ -236,7 +239,8 @@ public class Conversation {
 
     let optionalArgs = litert_lm_conversation_optional_args_create()
     if let visualTokenBudget = ExperimentalFlags.visualTokenBudget {
-      litert_lm_conversation_optional_args_set_visual_token_budget(optionalArgs, Int32(visualTokenBudget))
+      litert_lm_conversation_optional_args_set_visual_token_budget(
+        optionalArgs, Int32(visualTokenBudget))
     }
     defer { litert_lm_conversation_optional_args_delete(optionalArgs) }
 
@@ -390,8 +394,10 @@ public class Conversation {
     var toolCallCount: Int = 0
     var pendingToolCalls: [[String: Any]] = []
 
-    init(continuation: AsyncThrowingStream<Message, Error>.Continuation, conversation: Conversation)
-    {
+    init(
+      continuation: AsyncThrowingStream<Message, Error>.Continuation,
+      conversation: Conversation
+    ) {
       self.continuation = continuation
       self.conversation = conversation
     }

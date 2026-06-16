@@ -104,7 +104,8 @@ absl::StatusOr<ConversationConfig> ConversationConfig::CreateInternal(
     std::optional<std::vector<Channel>> overwrite_channels,
     bool filter_channel_content_from_kv_cache,
     bool return_error_on_parse_failure, bool return_error_on_max_tokens_reached,
-    bool enable_thinking) {
+    bool enable_thinking, bool stream_tool_calls,
+    const std::string& stream_tool_calls_channel_name) {
   if (preface.has_value() && !std::holds_alternative<JsonPreface>(*preface)) {
     return absl::InvalidArgumentError("Only JsonPreface is supported for now.");
   }
@@ -171,7 +172,8 @@ absl::StatusOr<ConversationConfig> ConversationConfig::CreateInternal(
       processor_config, enable_constrained_decoding, prefill_preface_on_init,
       std::move(constraint_provider_config), std::move(channels),
       filter_channel_content_from_kv_cache, return_error_on_parse_failure,
-      return_error_on_max_tokens_reached, enable_thinking);
+      return_error_on_max_tokens_reached, enable_thinking, stream_tool_calls,
+      stream_tool_calls_channel_name);
 }
 
 absl::StatusOr<std::string>
@@ -580,7 +582,9 @@ absl::Status Conversation::SendMessageAsync(
               optional_args.args.value_or(std::monostate()),
               config_.GetChannels(), std::move(user_callback),
               std::move(cancel_callback), std::move(complete_message_callback),
-              open_channel_name, config_.return_error_on_max_tokens_reached()));
+              open_channel_name, config_.return_error_on_max_tokens_reached(),
+              config_.stream_tool_calls(),
+              config_.stream_tool_calls_channel_name()));
 
   ASSIGN_OR_RETURN(
       auto decode_config,

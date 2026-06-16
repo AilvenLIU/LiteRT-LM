@@ -166,6 +166,40 @@ TEST_F(InternalCallbackTest, ToolCall) {
               })json")));
 }
 
+TEST_F(InternalCallbackTest, ToolCallStreaming) {
+  auto user_callback = CreateUserMessageCallback(output_, done_, status_);
+  auto callback =
+      CreateInternalCallback(*model_data_processor_, processor_args_, channels_,
+                             std::move(user_callback),
+                             /*cancel_callback=*/nullptr,
+                             /*complete_message_callback=*/nullptr,
+                             /*open_channel_name=*/std::nullopt,
+                             /*return_error_on_max_tokens_reached=*/false,
+                             /*stream_tool_calls=*/true);
+
+  callback(Responses(TaskState::kProcessing, {"```tool_code\n"}));
+  callback(Responses(TaskState::kProcessing, {"tool_name"}));
+  callback(Responses(TaskState::kProcessing, {"(x=1)"}));
+  callback(Responses(TaskState::kProcessing, {"\n```"}));
+
+  EXPECT_THAT(output_, ElementsAre(ChannelMessage("tool_name", "tool_call"),
+                                   ChannelMessage("(x=1)", "tool_call"),
+                                   nlohmann::ordered_json::parse(R"json({
+                              "role": "assistant",
+                              "tool_calls": [
+                                {
+                                  "type": "function",
+                                  "function": {
+                                    "name": "tool_name",
+                                    "arguments": {
+                                      "x": 1
+                                    }
+                                  }
+                                }
+                              ]
+                            })json")));
+}
+
 TEST_F(InternalCallbackTest, TextAndToolCall) {
   auto user_callback = CreateUserMessageCallback(output_, done_, status_);
   auto callback =

@@ -105,6 +105,14 @@ class ConversationConfig {
   // Returns whether thinking/reasoning generation is enabled.
   bool enable_thinking() const { return enable_thinking_; }
 
+  // Returns whether to stream tool call tokens.
+  bool stream_tool_calls() const { return stream_tool_calls_; }
+
+  // Returns the channel name for tool call tokens if they are streamed.
+  const std::string& stream_tool_calls_channel_name() const {
+    return stream_tool_calls_channel_name_;
+  }
+
  public:
   // Builder class for ConversationConfig.
   //
@@ -208,13 +216,22 @@ class ConversationConfig {
       return *this;
     }
 
+    // Sets whether to stream tool call tokens.
+    Builder& SetStreamToolCalls(bool stream_tool_calls,
+                                const std::string& channel_name = "tool_call") {
+      stream_tool_calls_ = stream_tool_calls;
+      stream_tool_calls_channel_name_ = channel_name;
+      return *this;
+    }
+
     absl::StatusOr<ConversationConfig> Build(const Engine& engine) {
       return ConversationConfig::CreateInternal(
           engine, session_config_, preface_, overwrite_prompt_template_,
           overwrite_processor_config_, enable_constrained_decoding_,
           prefill_preface_on_init_, constraint_provider_config_, channels_,
           filter_channel_content_from_kv_cache_, return_error_on_parse_failure_,
-          return_error_on_max_tokens_reached_, enable_thinking_);
+          return_error_on_max_tokens_reached_, enable_thinking_,
+          stream_tool_calls_, stream_tool_calls_channel_name_);
     }
 
     // Returns a unique pointer to a ConversationConfig.
@@ -237,6 +254,8 @@ class ConversationConfig {
     bool return_error_on_parse_failure_ = true;
     bool return_error_on_max_tokens_reached_ = false;
     bool enable_thinking_ = false;
+    bool stream_tool_calls_ = false;
+    std::string stream_tool_calls_channel_name_ = "tool_call";
   };
 
   // Returns the constrained decoding config.
@@ -285,20 +304,22 @@ class ConversationConfig {
       bool filter_channel_content_from_kv_cache = false,
       bool return_error_on_parse_failure = true,
       bool return_error_on_max_tokens_reached = false,
-      bool enable_thinking = false);
+      bool enable_thinking = false, bool stream_tool_calls = false,
+      const std::string& stream_tool_calls_channel_name = "tool_call");
 
-  explicit ConversationConfig(SessionConfig session_config, Preface preface,
-                              PromptTemplate prompt_template,
-                              DataProcessorConfig processor_config,
-                              bool constrained_decoding_enabled = false,
-                              bool prefill_preface_on_init = false,
-                              std::optional<ConstraintProviderConfig>
-                                  constraint_provider_config = std::nullopt,
-                              std::vector<Channel> channels = {},
-                              bool filter_channel_content_from_kv_cache = false,
-                              bool return_error_on_parse_failure = true,
-                              bool return_error_on_max_tokens_reached = false,
-                              bool enable_thinking = false)
+  explicit ConversationConfig(
+      SessionConfig session_config, Preface preface,
+      PromptTemplate prompt_template, DataProcessorConfig processor_config,
+      bool constrained_decoding_enabled = false,
+      bool prefill_preface_on_init = false,
+      std::optional<ConstraintProviderConfig> constraint_provider_config =
+          std::nullopt,
+      std::vector<Channel> channels = {},
+      bool filter_channel_content_from_kv_cache = false,
+      bool return_error_on_parse_failure = true,
+      bool return_error_on_max_tokens_reached = false,
+      bool enable_thinking = false, bool stream_tool_calls = false,
+      const std::string& stream_tool_calls_channel_name = "tool_call")
       : session_config_(std::move(session_config)),
         preface_(std::move(preface)),
         prompt_template_(std::move(prompt_template)),
@@ -311,7 +332,9 @@ class ConversationConfig {
             filter_channel_content_from_kv_cache),
         return_error_on_parse_failure_(return_error_on_parse_failure),
         return_error_on_max_tokens_reached_(return_error_on_max_tokens_reached),
-        enable_thinking_(enable_thinking) {}
+        enable_thinking_(enable_thinking),
+        stream_tool_calls_(stream_tool_calls),
+        stream_tool_calls_channel_name_(stream_tool_calls_channel_name) {}
 
   SessionConfig session_config_;
   Preface preface_;
@@ -325,6 +348,8 @@ class ConversationConfig {
   bool return_error_on_parse_failure_;
   bool return_error_on_max_tokens_reached_;
   bool enable_thinking_;
+  bool stream_tool_calls_;
+  std::string stream_tool_calls_channel_name_;
 };
 
 // Optional arguments for sending a message to the LLM.
