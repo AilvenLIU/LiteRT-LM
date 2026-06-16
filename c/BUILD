@@ -148,5 +148,7 @@ cc_binary(
     linkshared = 1,
     deps = ENGINE_COMMON_DEPS + [
         "//runtime/core:engine_impl",
-    ],
+    ] + select({
+        "//conditions:default": [],
+    }),
 )
