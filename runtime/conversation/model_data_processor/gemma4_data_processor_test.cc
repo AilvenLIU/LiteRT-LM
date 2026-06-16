@@ -15,8 +15,6 @@
 #include "runtime/conversation/model_data_processor/gemma4_data_processor.h"
 
 #include <filesystem>  // NOLINT: Required for path manipulation.
-#include <fstream>
-#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -27,14 +25,13 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/status/status.h"  // from @com_google_absl
-#include "absl/status/statusor.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "nlohmann/json.hpp"  // from @nlohmann_json
 #include "runtime/components/prompt_template.h"
 #include "runtime/components/sentencepiece_tokenizer.h"
 #include "runtime/components/tokenizer.h"
 #include "runtime/conversation/io_types.h"
 #include "runtime/conversation/model_data_processor/gemma4_data_processor_config.h"
+#include "runtime/conversation/model_data_processor/test_utils.h"
 #include "runtime/engine/io_types.h"
 #include "runtime/util/test_utils.h"  // NOLINT
 
@@ -45,40 +42,6 @@ using json = nlohmann::ordered_json;
 using ::testing::ElementsAre;
 using ::testing::Eq;
 using ::testing::status::IsOkAndHolds;
-
-constexpr char kTestdataDir[] =
-    "litert_lm/runtime/components/testdata/";
-
-constexpr char kImageTestdataDir[] =
-    "litert_lm/runtime/components/preprocessor/testdata/";
-
-std::string GetTestdataPath(const std::string& file_name) {
-  return (std::filesystem::path(::testing::SrcDir()) / kTestdataDir / file_name)
-      .string();
-}
-
-absl::StatusOr<std::string> GetContents(const std::string& path) {
-  std::ifstream input_stream(path);
-  if (!input_stream.is_open()) {
-    return absl::InternalError(absl::StrCat("Could not open file: ", path));
-  }
-
-  std::string content;
-  content.assign((std::istreambuf_iterator<char>(input_stream)),
-                 (std::istreambuf_iterator<char>()));
-  return std::move(content);
-}
-
-MATCHER_P(HasInputText, text_input, "") {
-  if (!std::holds_alternative<InputText>(arg)) {
-    return false;
-  }
-  auto text_bytes = std::get<InputText>(arg).GetRawTextString();
-  if (!text_bytes.ok()) {
-    return false;
-  }
-  return text_bytes.value() == text_input->GetRawTextString().value();
-}
 
 // Checks that the image tensor map has the expected keys and that the image
 // tensor has at most `max_num_patches` patches.
@@ -102,13 +65,6 @@ MATCHER_P(HasInputImage, max_num_patches, "") {
   auto image_tensor = (*tensor_map)->at("images").Duplicate();
   auto image_tensor_type = (*image_tensor).TensorType();
   if ((*image_tensor_type).Layout().Dimensions()[1] > max_num_patches) {
-    return false;
-  }
-  return true;
-}
-
-MATCHER(HasInputImageEnd, "") {
-  if (!std::holds_alternative<InputImageEnd>(arg)) {
     return false;
   }
   return true;
@@ -149,9 +105,7 @@ TEST_F(Gemma4DataProcessorTest, ToInputDataVectorTextAndImage) {
   const std::string rendered_template_prompt =
       "<|turn>user\nHere is an image of apples <|image|><turn|>";
 
-  std::string image_path = (std::filesystem::path(::testing::SrcDir()) /
-                            kImageTestdataDir / "apple.png")
-                               .string();
+  std::string image_path = GetImageTestdataPath("apple.png");
   const nlohmann::ordered_json message = {
       {"role", "user"},
       {"content",
@@ -166,12 +120,10 @@ TEST_F(Gemma4DataProcessorTest, ToInputDataVectorTextAndImage) {
 
     InputText expected_text1(
         "<|turn>user\nHere is an image of apples <|image>");
-    InputText expected_text2("\n\n");
-    InputText expected_text3("<turn|>");
+    InputText expected_text2("<turn|>");
     EXPECT_THAT(input_data,
                 ElementsAre(HasInputText(&expected_text1), HasInputImage(2520),
-                            HasInputImageEnd(), HasInputText(&expected_text2),
-                            HasInputText(&expected_text3)));
+                            HasInputImageEnd(), HasInputText(&expected_text2)));
   }
 
   {
@@ -184,12 +136,10 @@ TEST_F(Gemma4DataProcessorTest, ToInputDataVectorTextAndImage) {
 
     InputText expected_text1(
         "<|turn>user\nHere is an image of apples <|image>");
-    InputText expected_text2("\n\n");
-    InputText expected_text3("<turn|>");
+    InputText expected_text2("<turn|>");
     EXPECT_THAT(input_data,
                 ElementsAre(HasInputText(&expected_text1), HasInputImage(900),
-                            HasInputImageEnd(), HasInputText(&expected_text2),
-                            HasInputText(&expected_text3)));
+                            HasInputImageEnd(), HasInputText(&expected_text2)));
   }
 
   {
@@ -204,12 +154,10 @@ TEST_F(Gemma4DataProcessorTest, ToInputDataVectorTextAndImage) {
 
     InputText expected_text1(
         "<|turn>user\nHere is an image of apples <|image>");
-    InputText expected_text2("\n\n");
-    InputText expected_text3("<turn|>");
+    InputText expected_text2("<turn|>");
     EXPECT_THAT(input_data,
                 ElementsAre(HasInputText(&expected_text1), HasInputImage(2520),
-                            HasInputImageEnd(), HasInputText(&expected_text2),
-                            HasInputText(&expected_text3)));
+                            HasInputImageEnd(), HasInputText(&expected_text2)));
   }
 }
 

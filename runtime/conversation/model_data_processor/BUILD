@@ -73,6 +73,67 @@ cc_test(
 )
 
 cc_library(
+    name = "processor_test_utils",
+    testonly = True,
+    srcs = ["test_utils.cc"],
+    hdrs = ["test_utils.h"],
+    deps = [
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "//runtime/conversation:io_types",
+        "//runtime/engine:io_types",
+        "//runtime/util:convert_tensor_buffer",
+    ],
+)
+
+cc_library(
+    name = "multimodal_processor_helper",
+    srcs = ["multimodal_processor_helper.cc"],
+    hdrs = ["multimodal_processor_helper.h"],
+    deps = [
+        ":data_utils",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@nlohmann_json//:json",
+        "//runtime/components/preprocessor:audio_preprocessor",
+        "//runtime/components/preprocessor:image_preprocessor",
+        "//runtime/engine:io_types",
+        "//runtime/util:litert_status_util",
+        "//runtime/util:memory_mapped_file",
+        "@com_googlesource_code_re2//:re2",
+    ],
+)
+
+cc_test(
+    name = "multimodal_processor_helper_test",
+    srcs = ["multimodal_processor_helper_test.cc"],
+    data = [
+        "//runtime/components/preprocessor/testdata",
+        "//runtime/components/testdata",
+    ],
+    deps = [
+        ":multimodal_processor_helper",
+        ":processor_test_utils",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/status:statusor",
+        "@nlohmann_json//:json",
+        "@litert//litert/cc:litert_layout",
+        "//runtime/components/preprocessor:audio_preprocessor",
+        "//runtime/components/preprocessor:audio_preprocessor_miniaudio",
+        "//runtime/components/preprocessor:image_preprocessor",
+        "//runtime/components/preprocessor:image_preprocessor_impl",
+        "//runtime/conversation:io_types",
+        "//runtime/engine:io_types",
+        "//runtime/util:test_utils",
+    ],
+)
+
+cc_library(
     name = "gemma3_data_processor_config",
     hdrs = [
         "gemma3_data_processor_config.h",
@@ -224,10 +285,10 @@ cc_library(
         ":data_utils",
         ":fastvlm_data_processor_config",
         ":model_data_processor",
+        ":multimodal_processor_helper",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@nlohmann_json//:json",
         "@litert//litert/cc:litert_layout",
@@ -288,6 +349,7 @@ cc_library(
         ":data_utils",
         ":gemma3_data_processor_config",
         ":model_data_processor",
+        ":multimodal_processor_helper",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
@@ -330,6 +392,7 @@ cc_test(
     deps = [
         ":gemma3_data_processor",
         ":gemma3_data_processor_config",
+        ":processor_test_utils",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
@@ -342,7 +405,6 @@ cc_test(
         "//runtime/components/preprocessor:audio_preprocessor",
         "//runtime/components/preprocessor:audio_preprocessor_miniaudio",
         "//runtime/components/preprocessor:image_preprocessor",
-        "//runtime/components/preprocessor:image_preprocessor_impl",
         "//runtime/conversation:io_types",
         "//runtime/engine:io_types",
         "//runtime/util:convert_tensor_buffer",
@@ -426,6 +488,7 @@ cc_library(
         ":data_utils",
         ":gemma4_data_processor_config",
         ":model_data_processor",
+        ":multimodal_processor_helper",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
