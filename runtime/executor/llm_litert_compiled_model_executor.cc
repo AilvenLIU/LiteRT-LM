@@ -1659,11 +1659,6 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
   auto section_offset =
       resources.GetWeightsSectionOffset(ModelType::kTfLitePrefillDecode);
   if (section_offset.ok()) {
-    if (backend != Backend::GPU) {
-      return absl::InvalidArgumentError(
-          "Weights section offset is only "
-          "supported for GPU backend.");
-    }
     Options::ScopedWeightSectionMap section_map;
     section_map["tflite_weights"] = {
         section_offset.value().first,
