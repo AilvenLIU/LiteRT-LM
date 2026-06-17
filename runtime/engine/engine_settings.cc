@@ -324,10 +324,10 @@ absl::Status EngineSettings::MaybeUpdateAndValidate(
   }
 
   // Set the default values for the sampler params.
+  Backend backend = main_executor_settings_.GetBackend();
   if (!metadata.has_sampler_params()) {
     proto::SamplerParameters& sampler_params =
         *metadata.mutable_sampler_params();
-    Backend backend = main_executor_settings_.GetBackend();
     if (backend == Backend::NPU || backend == Backend::GPU_ARTISAN) {
       sampler_params.set_type(proto::SamplerParameters::TYPE_UNSPECIFIED);
     } else if (backend == Backend::CPU || backend == Backend::GPU
@@ -341,6 +341,13 @@ absl::Status EngineSettings::MaybeUpdateAndValidate(
       return absl::InvalidArgumentError(
           absl::StrCat("Not recognized backend: ", backend));
     }
+  }
+
+  if (metadata.sampler_params().type() ==
+          proto::SamplerParameters::TYPE_UNSPECIFIED &&
+      (backend == Backend::CPU || backend == Backend::GPU)) {
+    metadata.mutable_sampler_params()->set_type(
+        proto::SamplerParameters::TOP_P);
   }
 
   if (!metadata.has_llm_model_type()) {
