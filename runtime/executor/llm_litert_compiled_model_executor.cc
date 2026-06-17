@@ -1921,10 +1921,19 @@ absl::Status LlmLiteRtCompiledModelExecutorDynamic::PrefillInternal(
   // If there is no pending input token and no input token to prefill, we can
   // return early by storing the token as a pending input token.
   if (!has_pending_input_token && prefill_length == 0) {
-    RETURN_IF_ERROR(
-        llm_context_->processed_context()
-            .processed_tokens()
-            .AddPendingInputToken({std::make_shared<TokenData>(ids[0])}));
+    auto pending_token = std::make_shared<TokenData>(ids[0]);
+    if (embedding_lookup_ != nullptr) {
+      RETURN_IF_ERROR(embedding_lookup_->LookupPrefill(
+          pending_token->id(), pending_token->mutable_embedding()));
+      if (per_layer_embedding_lookup_ != nullptr) {
+        RETURN_IF_ERROR(per_layer_embedding_lookup_->LookupPrefill(
+            pending_token->id(), pending_token->mutable_per_layer_embedding()));
+      }
+    }
+    RETURN_IF_ERROR(llm_context_->processed_context()
+                        .processed_tokens()
+                        .AddPendingInputToken({std::move(pending_token)}));
+    ++llm_context_->runtime_state().current_step;
     return absl::OkStatus();
   }
 
