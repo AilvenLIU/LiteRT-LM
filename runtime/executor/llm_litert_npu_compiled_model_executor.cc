@@ -1926,6 +1926,8 @@ LlmLiteRtNpuCompiledModelExecutor::Decode(
 absl::Status LlmLiteRtNpuCompiledModelExecutor::PrefillInternal(
     absl::string_view prefill_signature, absl::Span<const int> ids) {
   auto start_prepare_inputs = absl::Now();
+  std::vector<int> tokens_to_embed;
+  tokens_to_embed.reserve(ids.size());
   {
     // Prefill input tokens.
     LITERT_ASSIGN_OR_RETURN(
@@ -2026,6 +2028,7 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::PrefillInternal(
         processed_tokens_.GetNextUnprocessedToken();
     int input_idx = 0;
     if (!pending_input_token.empty()) {
+      tokens_to_embed.push_back(pending_input_token[0]->id());
       // We'll write any pending embedding directly into the transformer
       // embedding buffer.
       if (UseEmbeddingLookupManager()) {
@@ -2058,6 +2061,7 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::PrefillInternal(
     // 'processed_tokens_' and used in the next prefill or decode.
     processed_input_tokens.reserve(ids.size() - 1);
     for (int i = 0; i < ids.size() - 1; input_idx++, current_step_++, i++) {
+      tokens_to_embed.push_back(ids[i]);
       prefill_input_ptr[input_idx] = ids[i];
       prefill_input_pos_ptr[input_idx] = current_step_;
       if (mask_input_tokens_ptr) {
@@ -2142,8 +2146,10 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::PrefillInternal(
             ple_output_buffer, ::litert::TensorBuffer::LockMode::kWrite));
     void* output_ptr = lock.second;
 
+    // Use tokens_to_embed for PLE lookup since we need the lookup for the
+    // pending token (if available) and ids[0, last_token-1].
     RETURN_IF_ERROR(HWPerLayerEmbeddingLookup(
-        ids.data(), ids.size(), ple_table_ptrs_.data(),
+        tokens_to_embed.data(), tokens_to_embed.size(), ple_table_ptrs_.data(),
         ple_quant_params_.data(), num_tables_, ple_embedding_dim_, output_ptr,
         output_type_, ple_table_element_type_, mul_scale_, output_scale_,
         final_zero_point_));
