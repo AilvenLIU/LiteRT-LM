@@ -164,6 +164,7 @@ public struct ConversationConfig {
 
   // The file path to the Audio LoRA weights file.
   public let audioLoraPath: String?
+  public let enableToolCallStreaming: Bool
 
   /// - Parameters:
   ///   - systemMessage: The system message to be used in the conversation.
@@ -173,13 +174,15 @@ public struct ConversationConfig {
   ///     default values.
   ///   - loraPath: The file path to the Text LoRA weights file.
   ///   - audioLoraPath: The file path to the Audio LoRA weights file.
+  ///   - enableToolCallStreaming: Whether to enable conversation tool call streaming.
   public init(
     systemMessage: Message? = nil,
     initialMessages: [Message] = [],
     tools: [Tool] = [],
     samplerConfig: SamplerConfig? = nil,
     loraPath: String? = nil,
-    audioLoraPath: String? = nil
+    audioLoraPath: String? = nil,
+    enableToolCallStreaming: Bool = false
   ) {
     self.systemMessage = systemMessage.flatMap { msg in
       if msg.toString.isEmpty {
@@ -193,5 +196,6 @@ public struct ConversationConfig {
     self.samplerConfig = samplerConfig
     self.loraPath = loraPath
     self.audioLoraPath = audioLoraPath
+    self.enableToolCallStreaming = enableToolCallStreaming
   }
 }

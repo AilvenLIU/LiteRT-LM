@@ -224,7 +224,9 @@ public actor Engine {
     litert_lm_conversation_config_set_enable_constrained_decoding(
       cConversationConfig, ExperimentalFlags.enableConversationConstrainedDecoding)
     litert_lm_conversation_config_set_stream_tool_calls(
-      cConversationConfig, ExperimentalFlags.enableConversationToolCallStreaming,
+      cConversationConfig,
+      conversationConfig.enableToolCallStreaming
+        && ExperimentalFlags.enableConversationToolCallStreaming,
       ExperimentalFlags.conversationToolCallStreamingChannelName)
 
     guard
