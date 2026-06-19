@@ -456,6 +456,9 @@ http_archive(
     name = "skia",
     patch_args = ["-p1"],
     patches = ["@//:PATCH.skia"],
+    repo_mapping = {
+        "@libpng": "@png",
+    },
     sha256 = "2fe28173428f8eebf2aa8a665bad32136086cc065f50c7154678a96250d1cde1",
     strip_prefix = "skia-226ae9d866748a2e68b6dbf114b37129c380a298",
     urls = ["https://github.com/google/skia/archive/226ae9d866748a2e68b6dbf114b37129c380a298.zip"],
