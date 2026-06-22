@@ -45,6 +45,7 @@ class Conversation(interfaces.AbstractConversation):
       extra_context=None,
       sampler_config=None,
       lora_config=None,
+      max_output_tokens=None,
   ):
     super().__init__(
         messages=messages,
@@ -54,6 +55,7 @@ class Conversation(interfaces.AbstractConversation):
         extra_context=extra_context,
         sampler_config=sampler_config,
         lora_config=lora_config,
+        max_output_tokens=max_output_tokens,
     )
     self._lib = lib
     self._ptr = conv_ptr

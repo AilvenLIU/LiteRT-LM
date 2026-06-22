@@ -289,6 +289,7 @@ class AbstractEngine(abc.ABC):
       filter_channel_content_from_kv_cache: bool = False,
       sampler_config: SamplerConfig | None = None,
       lora_config: LoraConfig | None = None,
+      max_output_tokens: int | None = None,
   ) -> AbstractConversation:
     """Creates a new conversation for this engine.
 
@@ -307,6 +308,7 @@ class AbstractEngine(abc.ABC):
         sampler_config: Configuration for the sampling process. If None, then
           uses the engine's default values.
         lora_config: Configuration for LoRA adapters.
+        max_output_tokens: The maximum number of output tokens.
     """
 
   @abc.abstractmethod
@@ -360,6 +362,7 @@ class AbstractConversation(abc.ABC):
       extra_context: Extra context for the chat template.
       sampler_config: Configuration for the sampling process.
       lora_config: Configuration for LoRA adapters.
+      max_output_tokens: The maximum number of output tokens.
   """
 
   def __init__(
@@ -378,6 +381,7 @@ class AbstractConversation(abc.ABC):
       extra_context: collections.abc.Mapping[str, Any] | None = None,
       sampler_config: SamplerConfig | None = None,
       lora_config: LoraConfig | None = None,
+      max_output_tokens: int | None = None,
   ):
     """Initializes the instance.
 
@@ -392,6 +396,7 @@ class AbstractConversation(abc.ABC):
         sampler_config: Configuration for the sampling process. If None, then
           uses the engine's default values.
         lora_config: Configuration for LoRA adapters.
+        max_output_tokens: The maximum number of output tokens.
     """
     self.messages = messages or []
     self.tools = tools or []
@@ -400,6 +405,7 @@ class AbstractConversation(abc.ABC):
     self.extra_context = extra_context or {}
     self.sampler_config = sampler_config
     self.lora_config = lora_config
+    self.max_output_tokens = max_output_tokens
 
   def __enter__(self) -> AbstractConversation:
     """Initializes the conversation."""

@@ -24,7 +24,7 @@ import warnings
 from . import interfaces
 from . import tools as litert_tools
 from ._ffi import _get_lib
-from ._ffi import TokenUnionType
+
 from ._messages import Message
 from .conversation import Conversation
 from .session import Session
@@ -208,6 +208,7 @@ class Engine(interfaces.AbstractEngine):
       system_message: str | None = None,
       enable_constrained_decoding: bool = False,
       lora_config: interfaces.LoraConfig | None = None,
+      max_output_tokens: int | None = None,
   ) -> Conversation:
     session_config = self._lib.litert_lm_session_config_create()
     if sampler_config:
@@ -232,6 +233,11 @@ class Engine(interfaces.AbstractEngine):
       )
       if status != 0:
         raise RuntimeError(f"Failed to set audio LoRA path: {audio_lora_path}")
+
+    if max_output_tokens is not None:
+      self._lib.litert_lm_session_config_set_max_output_tokens(
+          session_config, int(max_output_tokens)
+      )
 
     conv_config = self._lib.litert_lm_conversation_config_create()
     if not conv_config:
@@ -308,6 +314,7 @@ class Engine(interfaces.AbstractEngine):
         extra_context=extra_context or {},
         sampler_config=sampler_config,
         lora_config=lora_config,
+        max_output_tokens=max_output_tokens,
     )
 
   def create_session(
@@ -383,7 +390,8 @@ class Engine(interfaces.AbstractEngine):
       all_ids = []
       for i in range(num):
         u_ptr = self._lib.litert_lm_token_unions_get_token_at(unions_ptr, i)
-        # _parse_token_union handles deleting the owned LiteRtLmTokenUnion pointer.
+        # _parse_token_union handles deleting the owned LiteRtLmTokenUnion
+        # pointer.
         val = _parse_token_union(self._lib, u_ptr)
         if isinstance(val, int):
           all_ids.append([val])
