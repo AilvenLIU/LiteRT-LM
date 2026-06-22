@@ -264,6 +264,7 @@ class SessionAdvanced : public SessionInterface {
   struct CheckpointInfo {
     int step;
     SessionState state;
+    absl::flat_hash_set<TaskId> last_task_ids;
   };
 
   // The checkpoint map for the session.

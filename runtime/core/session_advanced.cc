@@ -483,7 +483,7 @@ absl::Status SessionAdvanced::SaveCheckpoint(absl::string_view label) {
   }
   ASSIGN_OR_RETURN(int current_step,
                    execution_manager_lock->GetCurrentStep(*session_info_));
-  checkpoint_map_[label] = {current_step, session_state_};
+  checkpoint_map_[label] = {current_step, session_state_, last_task_ids_};
   return absl::OkStatus();
 }
 
@@ -497,6 +497,11 @@ absl::Status SessionAdvanced::RewindToCheckpoint(absl::string_view label) {
   }
   int target_step = it->second.step;
   session_state_ = it->second.state;
+  // Restore the task dependencies. This is necessary to prevent task-dependency
+  // errors when a task is failed before the rewind. Otherwise, if the task
+  // failed, because of the dependency chain, all tasks after the rewind point
+  // would be considered as failed then finished immediately.
+  last_task_ids_ = it->second.last_task_ids;
 
   // Remove all checkpoints after the current step.
   absl::erase_if(checkpoint_map_, [target_step](const auto& pair) {
@@ -522,6 +527,12 @@ absl::Status SessionAdvanced::RewindToStep(int step) {
   } else {
     session_state_ = SessionState::kFresh;
   }
+
+  // Break dependency chain on raw step rewind. This is necessary to prevent
+  // task-dependency errors when a task is failed before the rewind. Otherwise,
+  // if the task failed, because of the dependency chain, all tasks after the
+  // rewind point would be considered as failed then finished immediately.
+  last_task_ids_.clear();
 
   // Remove all checkpoints after the current step.
   absl::erase_if(checkpoint_map_,

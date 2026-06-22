@@ -203,6 +203,7 @@ class SessionAdvancedTest : public testing::Test {
     tokenizer_ = std::move(*tokenizer);
     model_resources_ = std::unique_ptr<ModelResources>();
     sampler_params_.set_type(proto::SamplerParameters::TYPE_UNSPECIFIED);
+    fake_executor_ = nullptr;
   }
 
   absl::StatusOr<std::unique_ptr<SessionAdvanced>> CreateTestSession() {
@@ -221,6 +222,7 @@ class SessionAdvancedTest : public testing::Test {
             // "How's it going?"
             /*decode_tokens=*/{
                 {224}, {24}, {8}, {66}, {246}, {18}, {2295}, {2294}}));
+    fake_executor_ = executor.get();
     ASSIGN_OR_RETURN(
         execution_manager_,
         ThreadedExecutionManager::Create(
@@ -238,6 +240,7 @@ class SessionAdvancedTest : public testing::Test {
   std::unique_ptr<ModelResources> model_resources_;
   proto::SamplerParameters sampler_params_;
   std::shared_ptr<ExecutionManager> execution_manager_;
+  FakeLlmExecutor* fake_executor_ = nullptr;
 };
 
 absl::StatusOr<std::unique_ptr<AudioExecutorSettings>>
@@ -1158,6 +1161,83 @@ TEST_F(SessionAdvancedTest, RewindToStep) {
   EXPECT_OK(session->RewindToStep(0));
   ASSERT_OK_AND_ASSIGN(int step4, session->GetCurrentStep());
   EXPECT_EQ(step4, 0);
+}
+
+TEST_F(SessionAdvancedTest, RewindToCheckpointRecoversFromFailure) {
+  ASSERT_OK_AND_ASSIGN(auto session, CreateTestSession());
+  ASSERT_NE(fake_executor_, nullptr);
+
+  std::vector<InputData> inputs;
+  inputs.emplace_back(InputText("Hello World!"));
+  EXPECT_OK(session->RunPrefill(inputs));
+
+  // Save checkpoint in clean state.
+  EXPECT_OK(session->SaveCheckpoint("checkpoint-1"));
+
+  // Simulate decode failure.
+  fake_executor_->SetDecodeStatus(
+      absl::InternalError("Simulated decode failure"));
+
+  auto decode_config = DecodeConfig::CreateDefault();
+  decode_config.SetMaxOutputTokens(2);
+  // This decode should fail.
+  EXPECT_THAT(
+      session->RunDecode(decode_config),
+      StatusIs(absl::StatusCode::kInternal, "Simulated decode failure"));
+
+  // Rewind to checkpoint. If the bug is present, last_task_ids_ will still
+  // point to the failed task. If fixed, it will point back to the prefill task.
+  EXPECT_OK(session->RewindToCheckpoint("checkpoint-1"));
+
+  // Restore decode status to OK.
+  fake_executor_->SetDecodeStatus(absl::OkStatus());
+
+  // Run decode again.
+  // If the bug is present, this will instantly fail with kDependentTaskFailed
+  // (propagated from the previous failed decode task) and return an error or
+  // empty result.
+  // If fixed, it will succeed and return the expected tokens.
+  ASSERT_OK_AND_ASSIGN(auto responses, session->RunDecode(decode_config));
+  EXPECT_EQ(responses.GetTexts().size(), 1);
+  EXPECT_EQ(responses.GetTexts()[0], " How'");
+}
+
+TEST_F(SessionAdvancedTest, RewindToStepRecoversFromFailure) {
+  ASSERT_OK_AND_ASSIGN(auto session, CreateTestSession());
+  ASSERT_NE(fake_executor_, nullptr);
+
+  std::vector<InputData> inputs;
+  inputs.emplace_back(InputText("Hello World!"));
+  EXPECT_OK(session->RunPrefill(inputs));
+
+  // Get step after prefill (should be 8).
+  ASSERT_OK_AND_ASSIGN(int step_before_decode, session->GetCurrentStep());
+  EXPECT_EQ(step_before_decode, 8);
+
+  // Simulate decode failure.
+  fake_executor_->SetDecodeStatus(
+      absl::InternalError("Simulated decode failure"));
+
+  auto decode_config = DecodeConfig::CreateDefault();
+  decode_config.SetMaxOutputTokens(2);
+  // This decode should fail.
+  EXPECT_THAT(
+      session->RunDecode(decode_config),
+      StatusIs(absl::StatusCode::kInternal, "Simulated decode failure"));
+
+  // Rewind to step before decode. If the bug is present, last_task_ids_ will
+  // still point to the failed task. If fixed, it will be cleared.
+  EXPECT_OK(session->RewindToStep(step_before_decode));
+
+  // Restore decode status to OK.
+  fake_executor_->SetDecodeStatus(absl::OkStatus());
+
+  // Run decode again.
+  // If the bug is present, this will instantly fail with kDependentTaskFailed.
+  // If fixed, it will succeed.
+  ASSERT_OK_AND_ASSIGN(auto responses, session->RunDecode(decode_config));
+  EXPECT_EQ(responses.GetTexts().size(), 1);
+  EXPECT_EQ(responses.GetTexts()[0], " How'");
 }
 
 TEST_F(SessionAdvancedTest, RunPrefillAndDecodeAsyncWithInternalSampler) {
