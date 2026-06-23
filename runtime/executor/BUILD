@@ -887,7 +887,11 @@ cc_test(
         ":vision_litert_compiled_model_executor",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@litert//litert/cc:litert_macros",
         "@litert//litert/test:matchers",
         "//runtime/components:model_resources_litert_lm",
         "//runtime/util:litert_lm_loader",
@@ -898,7 +902,11 @@ cc_test(
             "@litert//litert/cc:litert_api_with_dynamic_runtime",
         ],
         "//conditions:default": [
+            "@litert//litert/cc:litert_element_type",
             "@litert//litert/cc:litert_environment",
+            "@litert//litert/cc:litert_layout",
+            "@litert//litert/cc:litert_ranked_tensor_type",
+            "@litert//litert/cc:litert_tensor_buffer",
         ],
     }),
 )
@@ -1080,8 +1088,28 @@ cc_library(
         "//conditions:default": [
             "@litert//litert/cc:litert_macros",
             "@litert//litert/cc:litert_model",
+            "@litert//litert/cc:litert_ranked_tensor_type",
         ],
     }),
+)
+
+cc_test(
+    name = "vision_executor_utils_test",
+    srcs = ["vision_executor_utils_test.cc"],
+    data = ["//runtime/testdata"],
+    deps = [
+        ":executor_settings_base",
+        ":litert_compiled_model_executor_utils",
+        ":vision_executor_utils",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+        "@litert//litert/cc:litert_model",
+        "//runtime/components:model_resources",
+        "//runtime/util:scoped_file",
+        "//runtime/util:test_utils",
+    ],
 )
 
 cc_library(
