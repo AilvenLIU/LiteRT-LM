@@ -181,6 +181,7 @@ def run_interactive(
     enable_speculative_decoding: bool | None = None,
     no_template: bool = False,
     max_num_tokens: int | None = None,
+    max_num_images: int | None = None,
     filter_channel_content_from_kv_cache: bool = False,
     vision_backend: str | None = None,
     audio_backend: str | None = None,
@@ -260,6 +261,7 @@ def run_interactive(
           backend=backend_val,
           enable_speculative_decoding=enable_speculative_decoding,
           max_num_tokens=max_num_tokens,
+          max_num_images=max_num_images,
           vision_backend=vision_backend_val,
           audio_backend=audio_backend_val,
           cache_dir=cache_dir_val,
@@ -517,6 +519,7 @@ def run(
     from_huggingface_repo: The HuggingFace repository ID.
     huggingface_token: The HuggingFace API token.
     max_num_tokens: Maximum number of tokens for the KV cache.
+    max_num_images: Maximum number of images for multimodal model cache.
     filter_channel_content_from_kv_cache: Whether to filter channel content from
       the KV cache.
     vision_backend: The backend to use for vision tasks.
@@ -540,7 +543,7 @@ def run(
     return
 
   expanded_attachments = []
-
+  num_images = 0
   for a in attachment:
     expanded = os.path.expanduser(a)
     if not os.path.exists(expanded):
@@ -548,7 +551,9 @@ def run(
     expanded_attachments.append(expanded)
 
     try:
-      model.get_attachment_type(expanded)
+      a_type =model.get_attachment_type(expanded)
+      if a_type == "image":
+        num_images += 1
     except ValueError as e:
       raise click.BadParameter(str(e)) from e
   # If the stdin is not connected to the terminal, e.g., piped or redirected
@@ -608,6 +613,8 @@ def run(
         )
         return
 
+  max_num_images = None if not num_images == 0 else num_images
+
   run_interactive(
       model_obj,
       prompt=prompt,
@@ -617,6 +624,7 @@ def run(
       enable_speculative_decoding=enable_speculative_decoding,
       no_template=no_template,
       max_num_tokens=max_num_tokens,
+      max_num_images=max_num_images,
       filter_channel_content_from_kv_cache=filter_channel_content_from_kv_cache,
       vision_backend=vision_backend,
       audio_backend=audio_backend,
