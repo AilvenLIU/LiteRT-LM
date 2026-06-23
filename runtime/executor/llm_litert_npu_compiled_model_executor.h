@@ -443,28 +443,26 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
 
   // Creates the context for the embedder model.  Instead of creating new
   // output buffers for the embedder, the context will use the input buffers
-  // of the provided 'gemma_prefill_input_buffers' and
-  // 'gemma_decode_input_buffers'.  Similarly, instead of creating the buffers
-  // for the input tokens the provided 'prefill_input_tokens' and
-  // 'decode_input_tokens' will be duplicated and re-used as the input buffers.
+  // of the provided 'gemma_prefill_input_buffers', 'gemma_decode_input_buffers'
+  // and 'gemma_verify_input_buffers'. The input token buffers for the embedder
+  // model (prefill, decode, and verify) will be allocated fresh instead of
+  // being shared to avoid lock conflicts.
   //
   // Arguments:
   // - env: The LiteRT environment.
   // - embedder_model: The embedder model.
-  // - prefill_input_tokens: The tensor buffer for prefill input tokens.
-  // - decode_input_tokens: The tensor buffer for decode input tokens.
   // - gemma_prefill_input_buffers: A map of input buffers for the Gemma prefill
   //   model, keyed by input name. The output buffers of the embedder model
   //   will be shared with these input buffers.
   // - gemma_decode_input_buffers: A map of input buffers for the Gemma decode
   //   model, keyed by input name. The output buffers of the embedder model
   //   will be shared with these input buffers.
+  // - gemma_verify_input_buffers: A map of input buffers for the Gemma verify
+  //   model, keyed by input name. The output buffers of the embedder model
+  //   will be shared with these input buffers.
   // - settings: The executor settings.
   static absl::StatusOr<EmbedderContext> CreateEmbedderContextWithBufferSharing(
       ::litert::Environment& env, const litert::Model& embedder_model,
-      const ::litert::TensorBuffer& prefill_input_tokens,
-      const ::litert::TensorBuffer& decode_input_tokens,
-      const ::litert::TensorBuffer& verify_input_tokens,
       absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
           gemma_prefill_input_buffers,
       absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&

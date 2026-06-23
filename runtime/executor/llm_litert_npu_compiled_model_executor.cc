@@ -143,6 +143,7 @@ struct MaskSignatures {
   // Prefill and decode use identical tensor signature names.
   static constexpr absl::string_view kMaskInputTimeStep = "time_step";
   static constexpr absl::string_view kMaskInputTokens = "input_tokens";
+  static constexpr absl::string_view kMaskInputValidMask = "valid_mask";
   static constexpr absl::string_view kMaskOutputLocalMask = "mask_local";
   static constexpr absl::string_view kMaskOutputGlobalMask = "mask_global";
 };
@@ -480,9 +481,6 @@ LlmLiteRtNpuCompiledModelExecutor::~LlmLiteRtNpuCompiledModelExecutor() {
 absl::StatusOr<LlmLiteRtNpuCompiledModelExecutor::EmbedderContext>
 LlmLiteRtNpuCompiledModelExecutor::CreateEmbedderContextWithBufferSharing(
     ::litert::Environment& env, const litert::Model& embedder_model,
-    const ::litert::TensorBuffer& prefill_input_tokens,
-    const ::litert::TensorBuffer& decode_input_tokens,
-    const ::litert::TensorBuffer& verify_input_tokens,
     absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
         gemma_prefill_input_buffers,
     absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
@@ -510,7 +508,10 @@ LlmLiteRtNpuCompiledModelExecutor::CreateEmbedderContextWithBufferSharing(
 
   LITERT_ASSIGN_OR_RETURN(
       prefill_input_buffers[EmbedderSignatures::kEmbedderInput],
-      prefill_input_tokens.Duplicate());
+      embedder_compiled_model.CreateInputBuffer(
+          EmbedderSignatures::kPrefillEmbedder,
+          EmbedderSignatures::kEmbedderInput));
+  prefill_input_buffers[EmbedderSignatures::kEmbedderInput].Clear();
 
   LITERT_ASSIGN_OR_RETURN(
       prefill_output_buffers[EmbedderSignatures::kEmbedderOutput],
@@ -518,7 +519,10 @@ LlmLiteRtNpuCompiledModelExecutor::CreateEmbedderContextWithBufferSharing(
 
   LITERT_ASSIGN_OR_RETURN(
       decode_input_buffers[EmbedderSignatures::kEmbedderInput],
-      decode_input_tokens.Duplicate());
+      embedder_compiled_model.CreateInputBuffer(
+          EmbedderSignatures::kDecodeEmbedder,
+          EmbedderSignatures::kEmbedderInput));
+  decode_input_buffers[EmbedderSignatures::kEmbedderInput].Clear();
 
   LITERT_ASSIGN_OR_RETURN(
       decode_output_buffers[EmbedderSignatures::kEmbedderOutput],
@@ -528,7 +532,10 @@ LlmLiteRtNpuCompiledModelExecutor::CreateEmbedderContextWithBufferSharing(
           EmbedderSignatures::kVerifyEmbedder)) {
     LITERT_ASSIGN_OR_RETURN(
         verify_input_buffers[EmbedderSignatures::kEmbedderInput],
-        verify_input_tokens.Duplicate());
+        embedder_compiled_model.CreateInputBuffer(
+            EmbedderSignatures::kVerifyEmbedder,
+            EmbedderSignatures::kEmbedderInput));
+    verify_input_buffers[EmbedderSignatures::kEmbedderInput].Clear();
 
     LITERT_ASSIGN_OR_RETURN(
         verify_output_buffers[EmbedderSignatures::kEmbedderOutput],
@@ -654,14 +661,35 @@ LlmLiteRtNpuCompiledModelExecutor::CreateMaskContextWithBufferSharing(
       npu_auxiliary_context.npu_auxiliary_compiled_model.CreateInputBuffer(
           MaskSignatures::kPrefillMask, MaskSignatures::kMaskInputTokens));
   prefill_input_buffers[MaskSignatures::kMaskInputTokens].Clear();
-  const std::set<absl::string_view> mask_output_names = {
-      MaskSignatures::kMaskOutputLocalMask,
-      MaskSignatures::kMaskOutputGlobalMask};
-  for (const auto& mask_output_name : mask_output_names) {
+
+  LITERT_ASSIGN_OR_RETURN(
+      auto prefill_mask_input_names,
+      npu_auxiliary_context.npu_auxiliary_compiled_model.GetSignatureInputNames(
+          MaskSignatures::kPrefillMask));
+  if (absl::c_find(prefill_mask_input_names,
+                   MaskSignatures::kMaskInputValidMask) !=
+      prefill_mask_input_names.end()) {
+    LITERT_ASSIGN_OR_RETURN(
+        prefill_input_buffers[MaskSignatures::kMaskInputValidMask],
+        npu_auxiliary_context.npu_auxiliary_compiled_model.CreateInputBuffer(
+            MaskSignatures::kPrefillMask, MaskSignatures::kMaskInputValidMask));
+    prefill_input_buffers[MaskSignatures::kMaskInputValidMask].Clear();
+  }
+
+  LITERT_ASSIGN_OR_RETURN(
+      auto prefill_mask_output_names,
+      npu_auxiliary_context.npu_auxiliary_compiled_model
+          .GetSignatureOutputNames(MaskSignatures::kPrefillMask));
+  for (const auto& mask_output_name : prefill_mask_output_names) {
     if (gemma_prefill_input_buffers.contains(mask_output_name)) {
       LITERT_ASSIGN_OR_RETURN(
           prefill_output_buffers[mask_output_name],
           gemma_prefill_input_buffers[mask_output_name].Duplicate());
+    } else {
+      LITERT_ASSIGN_OR_RETURN(
+          prefill_output_buffers[mask_output_name],
+          npu_auxiliary_context.npu_auxiliary_compiled_model.CreateOutputBuffer(
+              MaskSignatures::kPrefillMask, mask_output_name));
     }
   }
 
@@ -676,11 +704,34 @@ LlmLiteRtNpuCompiledModelExecutor::CreateMaskContextWithBufferSharing(
           MaskSignatures::kDecodeMask, MaskSignatures::kMaskInputTokens));
   decode_input_buffers[MaskSignatures::kMaskInputTokens].Clear();
 
-  for (const auto& mask_output_name : mask_output_names) {
+  LITERT_ASSIGN_OR_RETURN(
+      auto decode_mask_input_names,
+      npu_auxiliary_context.npu_auxiliary_compiled_model.GetSignatureInputNames(
+          MaskSignatures::kDecodeMask));
+  if (absl::c_find(decode_mask_input_names,
+                   MaskSignatures::kMaskInputValidMask) !=
+      decode_mask_input_names.end()) {
+    LITERT_ASSIGN_OR_RETURN(
+        decode_input_buffers[MaskSignatures::kMaskInputValidMask],
+        npu_auxiliary_context.npu_auxiliary_compiled_model.CreateInputBuffer(
+            MaskSignatures::kDecodeMask, MaskSignatures::kMaskInputValidMask));
+    decode_input_buffers[MaskSignatures::kMaskInputValidMask].Clear();
+  }
+
+  LITERT_ASSIGN_OR_RETURN(
+      auto decode_mask_output_names,
+      npu_auxiliary_context.npu_auxiliary_compiled_model
+          .GetSignatureOutputNames(MaskSignatures::kDecodeMask));
+  for (const auto& mask_output_name : decode_mask_output_names) {
     if (gemma_decode_input_buffers.contains(mask_output_name)) {
       LITERT_ASSIGN_OR_RETURN(
           decode_output_buffers[mask_output_name],
           gemma_decode_input_buffers[mask_output_name].Duplicate());
+    } else {
+      LITERT_ASSIGN_OR_RETURN(
+          decode_output_buffers[mask_output_name],
+          npu_auxiliary_context.npu_auxiliary_compiled_model.CreateOutputBuffer(
+              MaskSignatures::kDecodeMask, mask_output_name));
     }
   }
 
@@ -697,11 +748,36 @@ LlmLiteRtNpuCompiledModelExecutor::CreateMaskContextWithBufferSharing(
             MaskSignatures::kVerifyMask, MaskSignatures::kMaskInputTokens));
     verify_input_buffers[MaskSignatures::kMaskInputTokens].Clear();
 
-    for (const auto& mask_output_name : mask_output_names) {
+    LITERT_ASSIGN_OR_RETURN(
+        auto verify_mask_input_names,
+        npu_auxiliary_context.npu_auxiliary_compiled_model
+            .GetSignatureInputNames(MaskSignatures::kVerifyMask));
+    if (absl::c_find(verify_mask_input_names,
+                     MaskSignatures::kMaskInputValidMask) !=
+        verify_mask_input_names.end()) {
+      LITERT_ASSIGN_OR_RETURN(
+          verify_input_buffers[MaskSignatures::kMaskInputValidMask],
+          npu_auxiliary_context.npu_auxiliary_compiled_model.CreateInputBuffer(
+              MaskSignatures::kVerifyMask,
+              MaskSignatures::kMaskInputValidMask));
+      verify_input_buffers[MaskSignatures::kMaskInputValidMask].Clear();
+    }
+
+    LITERT_ASSIGN_OR_RETURN(
+        auto verify_mask_output_names,
+        npu_auxiliary_context.npu_auxiliary_compiled_model
+            .GetSignatureOutputNames(MaskSignatures::kVerifyMask));
+    for (const auto& mask_output_name : verify_mask_output_names) {
       if (gemma_verify_input_buffers.contains(mask_output_name)) {
         LITERT_ASSIGN_OR_RETURN(
             verify_output_buffers[mask_output_name],
             gemma_verify_input_buffers[mask_output_name].Duplicate());
+      } else {
+        LITERT_ASSIGN_OR_RETURN(
+            verify_output_buffers[mask_output_name],
+            npu_auxiliary_context.npu_auxiliary_compiled_model
+                .CreateOutputBuffer(MaskSignatures::kVerifyMask,
+                                    mask_output_name));
       }
     }
   }
@@ -1892,6 +1968,51 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::PrefillInternal(
     auto* prefill_timestep_ptr =
         static_cast<int32_t*>(prefill_timestep_lock_and_addr.second);
 
+    // Mask input tokens.
+    int32_t* mask_input_tokens_ptr = nullptr;
+    std::optional<::litert::TensorBufferScopedLock> mask_input_tokens_lock;
+    auto it = mask_context_.prefill_input_buffers.find(
+        MaskSignatures::kMaskInputTokens);
+    if (it != mask_context_.prefill_input_buffers.end()) {
+      auto& buf = it->second;
+      LITERT_ASSIGN_OR_RETURN(auto type, buf.TensorType());
+      LITERT_ASSIGN_OR_RETURN(auto mask_input_tokens_size, buf.Size());
+      LITERT_ASSIGN_OR_RETURN(auto num_elements, type.Layout().NumElements());
+      LITERT_ASSIGN_OR_RETURN(auto buffer_type, buf.BufferType());
+      NPU_EXECUTOR_LOG(INFO)
+          << "mask_input_tokens type: " << (int)type.ElementType()
+          << " size: " << mask_input_tokens_size
+          << " num_elements: " << num_elements
+          << " buffer_type: " << (int)buffer_type;
+      auto lock_res = ::litert::TensorBufferScopedLock::Create(
+          buf, ::litert::TensorBuffer::LockMode::kWrite);
+      if (!lock_res) {
+        NPU_EXECUTOR_LOG(ERROR) << "Failed to lock mask_input_tokens: "
+                                << lock_res.Error().Message();
+        return ::litert::ErrorStatusBuilder(lock_res.Error());
+      }
+      auto lock = std::move(*lock_res);
+      mask_input_tokens_ptr = static_cast<int32_t*>(lock.second);
+      mask_input_tokens_lock.emplace(std::move(lock.first));
+      memset(mask_input_tokens_ptr, -1, mask_input_tokens_size);
+    }
+
+    bool* valid_mask_ptr = nullptr;
+    std::optional<::litert::TensorBufferScopedLock> valid_mask_lock;
+    auto valid_mask_it = mask_context_.prefill_input_buffers.find(
+        MaskSignatures::kMaskInputValidMask);
+    if (valid_mask_it != mask_context_.prefill_input_buffers.end()) {
+      auto& buf = valid_mask_it->second;
+      LITERT_ASSIGN_OR_RETURN(auto type, buf.TensorType());
+      RET_CHECK(type.ElementType() == ::litert::ElementType::Bool)
+          << "valid_mask tensor must have Bool element type.";
+      LITERT_ASSIGN_OR_RETURN(
+          auto lock, ::litert::TensorBufferScopedLock::Create(
+                         buf, ::litert::TensorBuffer::LockMode::kWrite));
+      valid_mask_ptr = static_cast<bool*>(lock.second);
+      valid_mask_lock.emplace(std::move(lock.first));
+    }
+
     memset(prefill_input_ptr, 0, prefill_input_size);
     memset(prefill_input_pos_ptr, 0, prefill_input_pos_size);
     memset(prefill_timestep_ptr, 0, prefill_timestep_size);
@@ -1923,6 +2044,9 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::PrefillInternal(
 
       prefill_input_ptr[input_idx] = pending_input_token[0]->id();
       prefill_input_pos_ptr[input_idx] = internal_start_step;
+      if (mask_input_tokens_ptr) {
+        mask_input_tokens_ptr[input_idx] = pending_input_token[0]->id();
+      }
       RETURN_IF_ERROR(processed_tokens_.MarkPendingInputTokenAsProcessed());
       ++input_idx;
     }
@@ -1936,9 +2060,20 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::PrefillInternal(
     for (int i = 0; i < ids.size() - 1; input_idx++, current_step_++, i++) {
       prefill_input_ptr[input_idx] = ids[i];
       prefill_input_pos_ptr[input_idx] = current_step_;
+      if (mask_input_tokens_ptr) {
+        mask_input_tokens_ptr[input_idx] = ids[i];
+      }
       processed_input_tokens.push_back(ids[i]);
     }
     processed_tokens_.AddProcessedTokens(processed_input_tokens);
+    if (valid_mask_ptr) {
+      auto& buf = valid_mask_it->second;
+      LITERT_ASSIGN_OR_RETURN(auto type, buf.TensorType());
+      LITERT_ASSIGN_OR_RETURN(auto num_elements, type.Layout().NumElements());
+      for (size_t i = 0; i < num_elements; ++i) {
+        valid_mask_ptr[i] = (i < input_idx);
+      }
+    }
 
     auto end_prepare_inputs = absl::Now();
     latency_stats_.prefill_prepare_input_latency_us +=
@@ -2123,6 +2258,23 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::DecodeInternal(
     RETURN_IF_ERROR(SetFirstElement(
         mask_context_.decode_input_buffers[MaskSignatures::kMaskInputTimeStep],
         step));
+
+    if (mask_context_.decode_input_buffers.contains(
+            MaskSignatures::kMaskInputTokens)) {
+      RETURN_IF_ERROR(SetFirstElement(
+          mask_context_.decode_input_buffers[MaskSignatures::kMaskInputTokens],
+          id));
+    }
+    if (mask_context_.decode_input_buffers.contains(
+            MaskSignatures::kMaskInputValidMask)) {
+      auto& buf =
+          mask_context_
+              .decode_input_buffers[MaskSignatures::kMaskInputValidMask];
+      LITERT_ASSIGN_OR_RETURN(
+          auto lock, ::litert::TensorBufferScopedLock::Create(
+                         buf, ::litert::TensorBuffer::LockMode::kWrite));
+      static_cast<bool*>(lock.second)[0] = true;
+    }
 
     // 3. Cache update position
     RETURN_IF_ERROR(SetFirstElement(
@@ -3024,12 +3176,9 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
   LITERT_ASSIGN_OR_RETURN(
       auto embedder_context,
       CreateEmbedderContextWithBufferSharing(
-          env, *embedder_lrt_model,
-          mask_context.prefill_input_buffers[MaskSignatures::kMaskInputTokens],
-          mask_context.decode_input_buffers[MaskSignatures::kMaskInputTokens],
-          mask_context.verify_input_buffers[MaskSignatures::kMaskInputTokens],
-          gemma_prefill_input_buffers, gemma_decode_input_buffers,
-          gemma_verify_input_buffers, executor_settings));
+          env, *embedder_lrt_model, gemma_prefill_input_buffers,
+          gemma_decode_input_buffers, gemma_verify_input_buffers,
+          executor_settings));
 
   LITERT_ASSIGN_OR_RETURN(
       auto rope_context,
@@ -3393,13 +3542,9 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelWithoutPerLayerEmbedding(
   LITERT_ASSIGN_OR_RETURN(
       auto embedder_context,
       CreateEmbedderContextWithBufferSharing(
-          env, *embedder_lrt_model,
-          mask_context.prefill_input_buffers[MaskSignatures::kMaskInputTokens],
-          mask_context.decode_input_buffers[MaskSignatures::kMaskInputTokens],
-          llm_inference_context
-              .verify_input_buffers[LlmSignatures::kInputEmbeddings],
-          gemma_prefill_input_buffers, gemma_decode_input_buffers,
-          gemma_verify_input_buffers, executor_settings));
+          env, *embedder_lrt_model, gemma_prefill_input_buffers,
+          gemma_decode_input_buffers, gemma_verify_input_buffers,
+          executor_settings));
 
   LITERT_ASSIGN_OR_RETURN(
       auto rope_context,

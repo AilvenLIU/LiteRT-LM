@@ -744,7 +744,8 @@ namespace {
 template <typename T>
 void FillMasksInternal(T* mask_local, T* mask_global, int64_t seq_q,
                        int64_t seq_k, int32_t time_step,
-                       const int32_t* input_tokens, T valid_val, T masked_val) {
+                       const int32_t* input_tokens, const bool* valid_mask,
+                       T valid_val, T masked_val) {
   // Detection logic for capacity and batch_size.
   int64_t kv_cache_capacity = seq_k;
   bool has_batch_suffix = false;
@@ -805,8 +806,13 @@ void FillMasksInternal(T* mask_local, T* mask_global, int64_t seq_q,
         int64_t k = kv_cache_capacity + k_rel;
         if (k >= seq_k) break;
         // Causal + Validity check (for verify_mask).
-        if (k_rel <= q &&
-            (input_tokens == nullptr || input_tokens[k_rel] != -1)) {
+        bool is_valid = true;
+        if (valid_mask != nullptr) {
+          is_valid = valid_mask[k_rel];
+        } else if (input_tokens != nullptr) {
+          is_valid = (input_tokens[k_rel] != -1);
+        }
+        if (k_rel <= q && is_valid) {
           if (global_row) global_row[k] = valid_val;
           if (local_row)
             local_row[k] = valid_val;  // Current batch is always in window.
@@ -826,6 +832,7 @@ absl::Status HWMaskUpdate(
   static constexpr absl::string_view kMaskGlobal = "mask_global";
   static constexpr absl::string_view kInputTimeStep = "time_step";
   static constexpr absl::string_view kInputTokens = "input_tokens";
+  static constexpr absl::string_view kValidMask = "valid_mask";
 
   LITERT_ASSIGN_OR_RETURN(auto time_step_lock,
                           ::litert::TensorBufferScopedLock::Create(
@@ -833,13 +840,15 @@ absl::Status HWMaskUpdate(
                               ::litert::TensorBuffer::LockMode::kRead));
   int32_t time_step = static_cast<const int32_t*>(time_step_lock.second)[0];
 
+  std::optional<::litert::TensorBufferScopedLock> input_tokens_lock;
   const int32_t* input_tokens = nullptr;
   if (in_buffers.contains(kInputTokens)) {
-    LITERT_ASSIGN_OR_RETURN(auto input_tokens_lock,
+    LITERT_ASSIGN_OR_RETURN(auto lock,
                             ::litert::TensorBufferScopedLock::Create(
                                 in_buffers.at(kInputTokens),
                                 ::litert::TensorBuffer::LockMode::kRead));
-    input_tokens = static_cast<const int32_t*>(input_tokens_lock.second);
+    input_tokens = static_cast<const int32_t*>(lock.second);
+    input_tokens_lock.emplace(std::move(lock.first));
   }
 
   // Get Outputs and Shapes
@@ -894,35 +903,50 @@ absl::Status HWMaskUpdate(
     global_ptr = lock.second;
   }
 
+  std::optional<::litert::TensorBufferScopedLock> valid_mask_lock;
+  const bool* valid_mask = nullptr;
+  if (in_buffers.contains(kValidMask)) {
+    auto& buf = in_buffers.at(kValidMask);
+    LITERT_ASSIGN_OR_RETURN(auto valid_mask_type, buf.TensorType());
+    if (valid_mask_type.ElementType() != ::litert::ElementType::Bool) {
+      return absl::InvalidArgumentError("valid_mask must be Bool type");
+    }
+    LITERT_ASSIGN_OR_RETURN(auto lock,
+                            ::litert::TensorBufferScopedLock::Create(
+                                buf, ::litert::TensorBuffer::LockMode::kRead));
+    valid_mask = static_cast<const bool*>(lock.second);
+    valid_mask_lock.emplace(std::move(lock.first));
+  }
+
   // Dispatch by Dtype
   if (mask_type.ElementType() == ::litert::ElementType::Int8) {
     FillMasksInternal<int8_t>(static_cast<int8_t*>(local_ptr),
                               static_cast<int8_t*>(global_ptr), seq_q, seq_k,
-                              time_step, input_tokens,
+                              time_step, input_tokens, valid_mask,
                               /*valid_val=*/127, /*masked_val=*/-128);
   } else if (mask_type.ElementType() == ::litert::ElementType::Int16) {
     FillMasksInternal<int16_t>(static_cast<int16_t*>(local_ptr),
                                static_cast<int16_t*>(global_ptr), seq_q, seq_k,
-                               time_step, input_tokens,
+                               time_step, input_tokens, valid_mask,
                                /*valid_val=*/0, /*masked_val=*/-32767);
   } else if (mask_type.ElementType() == ::litert::ElementType::Float32) {
     FillMasksInternal<float>(static_cast<float*>(local_ptr),
                              static_cast<float*>(global_ptr), seq_q, seq_k,
-                             time_step, input_tokens,
+                             time_step, input_tokens, valid_mask,
                              /*valid_val=*/0.0f, /*masked_val=*/-1e9f);
   } else if (mask_type.ElementType() == ::litert::ElementType::Float16) {
     // Opaque uint16_t representation of IEEE 754 Float16.
     // valid_val is 0.0f (0x0000) and masked_val is -infinity (0xFC00).
     FillMasksInternal<uint16_t>(static_cast<uint16_t*>(local_ptr),
                                 static_cast<uint16_t*>(global_ptr), seq_q,
-                                seq_k, time_step, input_tokens,
+                                seq_k, time_step, input_tokens, valid_mask,
                                 /*valid_val=*/0x0000, /*masked_val=*/0xFC00);
   } else if (mask_type.ElementType() == ::litert::ElementType::BFloat16) {
     // Opaque uint16_t representation of Brain Float16.
     // valid_val is 0.0f (0x0000) and masked_val is -infinity (0xFF80).
     FillMasksInternal<uint16_t>(static_cast<uint16_t*>(local_ptr),
                                 static_cast<uint16_t*>(global_ptr), seq_q,
-                                seq_k, time_step, input_tokens,
+                                seq_k, time_step, input_tokens, valid_mask,
                                 /*valid_val=*/0x0000, /*masked_val=*/0xFF80);
   } else {
     return absl::InvalidArgumentError("Unsupported mask element type");
