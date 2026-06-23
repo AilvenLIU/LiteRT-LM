@@ -39,6 +39,7 @@
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "runtime/components/logits_processor/constrained_decoding/constrained_decoder.h"
 #include "runtime/components/logits_processor/constrained_decoding/constraint.h"
+#include "runtime/components/logits_processor/constrained_decoding/thinking_budget_constraint.h"
 #include "runtime/components/logits_processor/logits_processor.h"
 #include "runtime/components/logits_processor/repetition_penalty_config.h"
 #include "runtime/components/logits_processor/repetition_penalty_processor.h"
@@ -477,7 +478,10 @@ absl::StatusOr<Responses> Decode(
     SuppressTokensConfig suppress_tokens_config, Constraint* constraint,
     std::optional<litert::TensorBuffer> decoded_ids,
     absl::AnyInvocable<void(absl::StatusOr<Responses>)>& callback,
-    std::atomic<bool>* cancelled, int max_output_tokens) {
+    std::atomic<bool>* cancelled, int max_output_tokens,
+    std::optional<int> thinking_token_budget,
+    const std::vector<int>& thinking_end_token_ids,
+    const std::vector<int>& thinking_start_token_ids) {
   const bool is_streaming = callback != nullptr;
   const bool is_custom_sampling = sampler.has_value();
 
@@ -507,6 +511,26 @@ absl::StatusOr<Responses> Decode(
 
   ASSIGN_OR_RETURN(int executor_step_before_decode, executor.GetCurrentStep());
   const int max_num_tokens = TryGetMaxNumTokens(executor);
+
+  std::unique_ptr<Constraint> thinking_budget_constraint;
+  int vocab_size = tokenizer.GetTokens().size();
+
+  // Apply the thinking budget constraint whenever thinking is enabled (budget
+  // != 0). Even if the budget is -1 (unlimited), the constraint is required to
+  // suspend any active user_constraint until the thinking phase ends.
+  if (thinking_token_budget.has_value() && *thinking_token_budget != 0) {
+    if (thinking_end_token_ids.empty()) {
+      ABSL_LOG(WARNING)
+          << "Thinking budget is set but thinking_end_token_ids is empty. "
+             "Ignoring thinking budget constraint.";
+    } else {
+      thinking_budget_constraint = std::make_unique<ThinkingBudgetConstraint>(
+          constraint, *thinking_token_budget, thinking_start_token_ids,
+          thinking_end_token_ids, vocab_size);
+      constraint = thinking_budget_constraint.get();
+    }
+  }
+
   DecodeOneStep run_one_step(&executor, &tokenizer, num_output_candidates,
                              stop_token_detector, benchmark_info, sampler,
                              std::move(repetition_penalty_config),

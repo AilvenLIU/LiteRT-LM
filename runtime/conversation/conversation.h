@@ -39,6 +39,7 @@
 #include "runtime/conversation/io_types.h"
 #include "runtime/conversation/model_data_processor/config_registry.h"
 #include "runtime/conversation/model_data_processor/model_data_processor.h"
+#include "runtime/conversation/thinking_config.h"
 #include "runtime/engine/engine.h"
 #include "runtime/engine/engine_settings.h"
 #include "runtime/engine/io_types.h"
@@ -104,8 +105,15 @@ class ConversationConfig {
     return return_error_on_max_tokens_reached_;
   }
 
+  // Returns the thinking configuration.
+  std::optional<ThinkingConfig> thinking_config() const {
+    return thinking_config_;
+  }
+
   // Returns whether thinking/reasoning generation is enabled.
-  bool enable_thinking() const { return enable_thinking_; }
+  bool enable_thinking() const {
+    return thinking_config_.has_value() && thinking_config_->enable_thinking();
+  }
 
   // Returns whether to stream tool call tokens.
   bool stream_tool_calls() const { return stream_tool_calls_; }
@@ -222,9 +230,9 @@ class ConversationConfig {
       return *this;
     }
 
-    // Sets whether thinking/reasoning generation is enabled.
-    Builder& SetEnableThinking(bool enable_thinking) {
-      enable_thinking_ = enable_thinking;
+    // Sets the thinking configuration.
+    Builder& SetThinkingConfig(ThinkingConfig thinking_config) {
+      thinking_config_ = thinking_config;
       return *this;
     }
 
@@ -256,7 +264,7 @@ class ConversationConfig {
           overwrite_processor_config_, enable_constrained_decoding_,
           prefill_preface_on_init_, constraint_provider_config_, channels_,
           filter_channel_content_from_kv_cache_, return_error_on_parse_failure_,
-          return_error_on_max_tokens_reached_, enable_thinking_,
+          return_error_on_max_tokens_reached_, thinking_config_,
           stream_tool_calls_, stream_tool_calls_channel_name_,
           repetition_penalty_config_, suppress_tokens_config_);
     }
@@ -280,7 +288,7 @@ class ConversationConfig {
     bool filter_channel_content_from_kv_cache_ = false;
     bool return_error_on_parse_failure_ = true;
     bool return_error_on_max_tokens_reached_ = false;
-    bool enable_thinking_ = false;
+    std::optional<ThinkingConfig> thinking_config_ = std::nullopt;
     bool stream_tool_calls_ = false;
     std::string stream_tool_calls_channel_name_ = "tool_call";
     RepetitionPenaltyConfig repetition_penalty_config_ =
@@ -339,7 +347,8 @@ class ConversationConfig {
       bool filter_channel_content_from_kv_cache = false,
       bool return_error_on_parse_failure = true,
       bool return_error_on_max_tokens_reached = false,
-      bool enable_thinking = false, bool stream_tool_calls = false,
+      std::optional<ThinkingConfig> thinking_config = std::nullopt,
+      bool stream_tool_calls = false,
       const std::string& stream_tool_calls_channel_name = "tool_call",
       RepetitionPenaltyConfig repetition_penalty_config =
           RepetitionPenaltyConfig::Default(),
@@ -357,7 +366,8 @@ class ConversationConfig {
       bool filter_channel_content_from_kv_cache = false,
       bool return_error_on_parse_failure = true,
       bool return_error_on_max_tokens_reached = false,
-      bool enable_thinking = false, bool stream_tool_calls = false,
+      std::optional<ThinkingConfig> thinking_config = std::nullopt,
+      bool stream_tool_calls = false,
       const std::string& stream_tool_calls_channel_name = "tool_call",
       RepetitionPenaltyConfig repetition_penalty_config =
           RepetitionPenaltyConfig::Default(),
@@ -375,7 +385,7 @@ class ConversationConfig {
             filter_channel_content_from_kv_cache),
         return_error_on_parse_failure_(return_error_on_parse_failure),
         return_error_on_max_tokens_reached_(return_error_on_max_tokens_reached),
-        enable_thinking_(enable_thinking),
+        thinking_config_(thinking_config),
         stream_tool_calls_(stream_tool_calls),
         stream_tool_calls_channel_name_(stream_tool_calls_channel_name),
         repetition_penalty_config_(std::move(repetition_penalty_config)),
@@ -392,7 +402,7 @@ class ConversationConfig {
   bool filter_channel_content_from_kv_cache_;
   bool return_error_on_parse_failure_;
   bool return_error_on_max_tokens_reached_;
-  bool enable_thinking_;
+  std::optional<ThinkingConfig> thinking_config_;
   bool stream_tool_calls_;
   std::string stream_tool_calls_channel_name_;
   RepetitionPenaltyConfig repetition_penalty_config_;
@@ -465,9 +475,9 @@ struct OptionalArgs {
   // context provided in the Preface, overwriting existing keys.
   std::optional<nlohmann::ordered_json> extra_context = std::nullopt;
 
-  // Whether to enable thinking/reasoning generation. If provided, this value
-  // overrides the default value in `ConversationConfig`.
-  std::optional<bool> enable_thinking = std::nullopt;
+  // The thinking configuration. If provided, this value overrides the default
+  // value in `ConversationConfig`.
+  std::optional<ThinkingConfig> thinking_config = std::nullopt;
 };
 
 // A multi-turn centric stateful Conversation API for high-level user
@@ -693,7 +703,8 @@ class Conversation {
 
   absl::StatusOr<DecodeConfig> CreateDecodeConfig(
       std::optional<ConstraintArg> decoding_constraint = std::nullopt,
-      std::optional<int> max_output_tokens = std::nullopt);
+      std::optional<int> max_output_tokens = std::nullopt,
+      std::optional<ThinkingConfig> thinking_config = std::nullopt);
 
   // Adds a task controller to the task_controllers_ map if task_group_id is
   // provided.

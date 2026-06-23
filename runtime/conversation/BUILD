@@ -30,6 +30,11 @@ cc_library(
 )
 
 cc_library(
+    name = "thinking_config",
+    hdrs = ["thinking_config.h"],
+)
+
+cc_library(
     name = "prompt_utils",
     srcs = ["prompt_utils.cc"],
     hdrs = ["prompt_utils.h"],
@@ -109,6 +114,7 @@ cc_library(
         ":internal_callback_util",
         ":io_types",
         ":prompt_utils",
+        ":thinking_config",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -172,6 +178,7 @@ cc_test(
     deps = [
         ":conversation",
         ":io_types",
+        ":thinking_config",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -183,8 +190,6 @@ cc_test(
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
         "@nlohmann_json//:json",
-        "@litert//support/tokenizer",
-        "@litert//support/tokenizer:sentencepiece_tokenizer",
         "//runtime/components:prompt_template",
         "//runtime/components/logits_processor:repetition_penalty_config",
         "//runtime/components/logits_processor:suppress_tokens_config",

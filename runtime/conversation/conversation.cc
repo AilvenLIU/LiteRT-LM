@@ -49,6 +49,7 @@
 #include "runtime/conversation/model_data_processor/model_data_processor.h"
 #include "runtime/conversation/model_data_processor/model_data_processor_factory.h"
 #include "runtime/conversation/prompt_utils.h"
+#include "runtime/conversation/thinking_config.h"
 #include "runtime/engine/engine.h"
 #include "runtime/engine/engine_settings.h"
 #include "runtime/engine/io_types.h"
@@ -92,6 +93,17 @@ bool IsUserMessage(const nlohmann::ordered_json& json_msg) {
          json_msg[kRoleKey].get<absl::string_view>() == kUser;
 }
 
+std::optional<ThinkingConfig> ResolveThinkingConfig(
+    const ConversationConfig& config, const OptionalArgs& optional_args) {
+  if (optional_args.thinking_config.has_value()) {
+    return optional_args.thinking_config;
+  }
+  if (config.thinking_config().has_value()) {
+    return config.thinking_config();
+  }
+  return std::nullopt;
+}
+
 }  // namespace
 
 absl::StatusOr<ConversationConfig> ConversationConfig::CreateDefault(
@@ -109,7 +121,7 @@ absl::StatusOr<ConversationConfig> ConversationConfig::CreateInternal(
     std::optional<std::vector<Channel>> overwrite_channels,
     bool filter_channel_content_from_kv_cache,
     bool return_error_on_parse_failure, bool return_error_on_max_tokens_reached,
-    bool enable_thinking, bool stream_tool_calls,
+    std::optional<ThinkingConfig> thinking_config, bool stream_tool_calls,
     const std::string& stream_tool_calls_channel_name,
     RepetitionPenaltyConfig repetition_penalty_config,
     SuppressTokensConfig suppress_tokens_config) {
@@ -188,7 +200,7 @@ absl::StatusOr<ConversationConfig> ConversationConfig::CreateInternal(
       processor_config, enable_constrained_decoding, prefill_preface_on_init,
       std::move(constraint_provider_config), std::move(channels),
       filter_channel_content_from_kv_cache, return_error_on_parse_failure,
-      return_error_on_max_tokens_reached, enable_thinking, stream_tool_calls,
+      return_error_on_max_tokens_reached, thinking_config, stream_tool_calls,
       stream_tool_calls_channel_name, std::move(repetition_penalty_config),
       std::move(suppress_tokens_config));
 }
@@ -202,11 +214,12 @@ Conversation::GetSingleTurnTextFromSingleTurnTemplate(
   if (!extra_context.has_value()) {
     extra_context = nlohmann::ordered_json::object();
   }
-  if (optional_args.enable_thinking.has_value()) {
-    (*extra_context)["enable_thinking"] = *optional_args.enable_thinking;
-  } else if (!extra_context->contains("enable_thinking") &&
-             config_.enable_thinking()) {
-    (*extra_context)["enable_thinking"] = true;
+  std::optional<ThinkingConfig> thinking_config =
+      ResolveThinkingConfig(config_, optional_args);
+
+  if (thinking_config.has_value() &&
+      !extra_context->contains("enable_thinking")) {
+    (*extra_context)["enable_thinking"] = thinking_config->enable_thinking();
   }
   ASSIGN_OR_RETURN(
       auto result,
@@ -226,8 +239,12 @@ absl::StatusOr<std::string> Conversation::GetSingleTurnTextFromFullHistory(
   RETURN_IF_ERROR(FillPrefaceForPromptTemplateInput(
       preface_, model_data_processor_.get(), old_tmpl_input));
 
-  if (config_.enable_thinking()) {
-    old_tmpl_input.extra_context["enable_thinking"] = true;
+  std::optional<ThinkingConfig> thinking_config =
+      ResolveThinkingConfig(config_, optional_args);
+
+  if (thinking_config.has_value()) {
+    old_tmpl_input.extra_context["enable_thinking"] =
+        thinking_config->enable_thinking();
   }
 
   // Merge extra context for the message into the extra context provided in the
@@ -236,11 +253,6 @@ absl::StatusOr<std::string> Conversation::GetSingleTurnTextFromFullHistory(
     for (const auto& [key, value] : optional_args.extra_context->items()) {
       old_tmpl_input.extra_context[key] = value;
     }
-  }
-
-  if (optional_args.enable_thinking.has_value()) {
-    old_tmpl_input.extra_context["enable_thinking"] =
-        *optional_args.enable_thinking;
   }
 
   absl::MutexLock lock(history_mutex_);  // NOLINT
@@ -310,7 +322,8 @@ absl::StatusOr<std::string> Conversation::GetSingleTurnText(
 
 absl::StatusOr<DecodeConfig> Conversation::CreateDecodeConfig(
     std::optional<ConstraintArg> decoding_constraint,
-    std::optional<int> max_output_tokens) {
+    std::optional<int> max_output_tokens,
+    std::optional<ThinkingConfig> thinking_config) {
   auto decode_config = DecodeConfig::CreateDefault();
 
   decode_config.SetRepetitionPenaltyConfig(config_.repetition_penalty_config());
@@ -319,7 +332,31 @@ absl::StatusOr<DecodeConfig> Conversation::CreateDecodeConfig(
   if (max_output_tokens.has_value()) {
     decode_config.SetMaxOutputTokens(max_output_tokens.value());
   }
-
+  if (thinking_config.has_value() && thinking_config->enable_thinking()) {
+    decode_config.SetThinkingTokenBudget(
+        thinking_config->thinking_token_budget());
+    const Channel* thinking_channel = nullptr;
+    // TODO(b/521921341): Support dynamically configuring the thinking channel
+    // name via LlmMetadata. Use "thought" as the default name for now.
+    for (const auto& channel : config_.GetChannels()) {
+      if (channel.channel_name == "thought") {
+        thinking_channel = &channel;
+        break;
+      }
+    }
+    if (thinking_channel != nullptr) {
+      ASSIGN_OR_RETURN(auto start_token_ids,
+                       const_cast<Tokenizer&>(engine_.GetTokenizer())
+                           .TextToTokenIds(thinking_channel->start));
+      decode_config.SetThinkingStartTokenIds(std::move(start_token_ids));
+      ASSIGN_OR_RETURN(auto end_token_ids,
+                       const_cast<Tokenizer&>(engine_.GetTokenizer())
+                           .TextToTokenIds(thinking_channel->end));
+      decode_config.SetThinkingEndTokenIds(std::move(end_token_ids));
+    }
+  } else {
+    decode_config.SetThinkingTokenBudget(0);
+  }
   if (decoding_constraint.has_value() && constraint_provider_ != nullptr) {
     ASSIGN_OR_RETURN(constraint_, constraint_provider_->CreateConstraint(
                                       std::move(decoding_constraint).value()));
@@ -375,9 +412,9 @@ absl::StatusOr<std::unique_ptr<Conversation>> Conversation::Create(
     bool fallback =
         !conversation->prompt_template_.GetCapabilities().supports_single_turn;
     std::optional<nlohmann::ordered_json> extra_context = std::nullopt;
-    if (config.enable_thinking()) {
-      extra_context =
-          nlohmann::ordered_json::object({{"enable_thinking", true}});
+    if (config.thinking_config().has_value()) {
+      extra_context = nlohmann::ordered_json::object(
+          {{"enable_thinking", config.thinking_config()->enable_thinking()}});
     }
     const auto render_result =
         conversation->model_data_processor_->RenderSingleTurnTemplate(
@@ -391,8 +428,9 @@ absl::StatusOr<std::unique_ptr<Conversation>> Conversation::Create(
       RETURN_IF_ERROR(FillPrefaceForPromptTemplateInput(
           config.GetPreface(), conversation->model_data_processor_.get(),
           tmpl_input));
-      if (config.enable_thinking()) {
-        tmpl_input.extra_context["enable_thinking"] = true;
+      if (config.thinking_config().has_value()) {
+        tmpl_input.extra_context["enable_thinking"] =
+            config.thinking_config()->enable_thinking();
       }
       tmpl_input.add_generation_prompt = false;
       ASSIGN_OR_RETURN(single_turn_text,
@@ -610,7 +648,8 @@ absl::Status Conversation::SendMessageAsync(
   ASSIGN_OR_RETURN(
       auto decode_config,
       CreateDecodeConfig(std::move(optional_args.decoding_constraint),
-                         optional_args.max_output_tokens));
+                         optional_args.max_output_tokens,
+                         ResolveThinkingConfig(config_, optional_args)));
 
   std::optional<std::string> task_group_id = optional_args.task_group_id;
 
@@ -642,7 +681,8 @@ absl::Status Conversation::SendMessageAsync(
                               TaskState::kMaxNumTokensReached)) {
                 (*callback)(responses);
               } else if (IsEmptyInputError(responses.status()) ||
-                         responses->GetTaskState() == TaskState::kDone) {
+                         (responses.ok() &&
+                          responses->GetTaskState() == TaskState::kDone)) {
                 // Scenario 2: Prefill was skipped due to empty input, or
                 // prefill completed successfully. In either case, we can now
                 // start the decode process.
@@ -809,11 +849,16 @@ absl::StatusOr<std::string> Conversation::RenderPrefaceIntoString(
   RETURN_IF_ERROR(FillPrefaceForPromptTemplateInput(
       preface_, model_data_processor_.get(), tmpl_input));
 
-  if (optional_args.enable_thinking.has_value()) {
+  std::optional<ThinkingConfig> resolved_thinking_config = std::nullopt;
+  if (optional_args.thinking_config.has_value()) {
+    resolved_thinking_config = optional_args.thinking_config;
+  } else if (config_.thinking_config().has_value()) {
+    resolved_thinking_config = config_.thinking_config();
+  }
+
+  if (resolved_thinking_config.has_value()) {
     tmpl_input.extra_context["enable_thinking"] =
-        *optional_args.enable_thinking;
-  } else if (config_.enable_thinking()) {
-    tmpl_input.extra_context["enable_thinking"] = true;
+        resolved_thinking_config->enable_thinking();
   }
 
   if (optional_args.extra_context.has_value()) {
@@ -838,8 +883,16 @@ absl::StatusOr<std::string> Conversation::GetPrefillTextForMessages(
   RETURN_IF_ERROR(FillPrefaceForPromptTemplateInput(
       preface_, model_data_processor_.get(), old_context));
 
-  if (config_.enable_thinking()) {
-    old_context.extra_context["enable_thinking"] = true;
+  std::optional<ThinkingConfig> resolved_thinking_config = std::nullopt;
+  if (optional_args.thinking_config.has_value()) {
+    resolved_thinking_config = optional_args.thinking_config;
+  } else if (config_.thinking_config().has_value()) {
+    resolved_thinking_config = config_.thinking_config();
+  }
+
+  if (resolved_thinking_config.has_value()) {
+    old_context.extra_context["enable_thinking"] =
+        resolved_thinking_config->enable_thinking();
   }
 
   // Merge extra context for the message into the extra context provided in the
