@@ -405,7 +405,7 @@ class MainTest(absltest.TestCase):
   @unittest.mock.patch(
       "litert_lm_cli.commands.run.run_interactive"
   )
-  def test_run_with_audio_attachment_missing_backend(
+  def test_run_with_audio_attachment_default_backend(
       self, mock_run_interactive, mock_from_model_ref, mock_exists
   ):
     mock_model = unittest.mock.MagicMock()
@@ -426,11 +426,10 @@ class MainTest(absltest.TestCase):
     )
 
     self.assertEqual(result.exit_code, 0)
-    self.assertIn(
-        "Error: Audio attachments require --audio-backend to be set.",
-        result.output,
-    )
-    mock_run_interactive.assert_not_called()
+    mock_run_interactive.assert_called_once()
+    kwargs = mock_run_interactive.call_args.kwargs
+    self.assertIsNone(kwargs["audio_backend"])
+    self.assertIsNone(kwargs["vision_backend"])
 
   @unittest.mock.patch("os.path.exists", return_value=True)
   @unittest.mock.patch(
@@ -439,7 +438,7 @@ class MainTest(absltest.TestCase):
   @unittest.mock.patch(
       "litert_lm_cli.commands.run.run_interactive"
   )
-  def test_run_with_image_attachment_missing_backend(
+  def test_run_with_image_attachment_default_backend(
       self, mock_run_interactive, mock_from_model_ref, mock_exists
   ):
     mock_model = unittest.mock.MagicMock()
@@ -460,11 +459,10 @@ class MainTest(absltest.TestCase):
     )
 
     self.assertEqual(result.exit_code, 0)
-    self.assertIn(
-        "Error: Image attachments require --vision-backend to be set.",
-        result.output,
-    )
-    mock_run_interactive.assert_not_called()
+    mock_run_interactive.assert_called_once()
+    kwargs = mock_run_interactive.call_args.kwargs
+    self.assertIsNone(kwargs["audio_backend"])
+    self.assertIsNone(kwargs["vision_backend"])
 
   @unittest.mock.patch("os.path.exists", return_value=True)
   @unittest.mock.patch(

@@ -24,6 +24,7 @@ import prompt_toolkit
 from prompt_toolkit import key_binding
 
 import litert_lm
+from litert_lm_builder import litertlm_builder
 from litert_lm_cli import cli_helpers
 from litert_lm_cli import common
 from litert_lm_cli import help_formatter
@@ -209,11 +210,21 @@ def run_interactive(
     backend_val = model.parse_backend(
         backend, model_obj=model_obj, cpu_thread_count=cpu_thread_count
     )
-    vision_backend_val = (
-        model.parse_backend(vision_backend) if vision_backend else None
+    vision_backend_val = model.parse_backend(
+        vision_backend,
+        model_obj=model_obj,
+        target_model_types={
+            litertlm_builder.TfLiteModelType.VISION_ENCODER.value,
+        },
+        label="vision",
     )
-    audio_backend_val = (
-        model.parse_backend(audio_backend) if audio_backend else None
+    audio_backend_val = model.parse_backend(
+        audio_backend,
+        model_obj=model_obj,
+        target_model_types={
+            litertlm_builder.TfLiteModelType.AUDIO_ENCODER_HW.value,
+        },
+        label="audio",
     )
 
     sampler_config = None
@@ -529,8 +540,6 @@ def run(
     return
 
   expanded_attachments = []
-  has_audio = False
-  has_image = False
 
   for a in attachment:
     expanded = os.path.expanduser(a)
@@ -539,32 +548,9 @@ def run(
     expanded_attachments.append(expanded)
 
     try:
-      a_type = model.get_attachment_type(expanded)
-      if a_type == "audio":
-        has_audio = True
-      elif a_type == "image":
-        has_image = True
+      model.get_attachment_type(expanded)
     except ValueError as e:
       raise click.BadParameter(str(e)) from e
-
-  if has_audio and not audio_backend:
-    click.echo(
-        click.style(
-            "Error: Audio attachments require --audio-backend to be set.",
-            fg="red",
-        )
-    )
-    return
-
-  if has_image and not vision_backend:
-    click.echo(
-        click.style(
-            "Error: Image attachments require --vision-backend to be set.",
-            fg="red",
-        )
-    )
-    return
-
   # If the stdin is not connected to the terminal, e.g., piped or redirected
   # input, then handle the input as the one-shot prompt.
   #

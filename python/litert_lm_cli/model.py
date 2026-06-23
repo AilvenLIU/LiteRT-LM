@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import collections
 import dataclasses
 import glob
 import importlib.util
@@ -31,6 +32,12 @@ import click
 import litert_lm
 from litert_lm_builder import litertlm_builder
 from litert_lm_builder import litertlm_peek
+
+# The default model types representing the main text model components.
+_DEFAULT_TARGET_MODEL_TYPES = frozenset({
+    litertlm_builder.TfLiteModelType.ARTISAN_TEXT_DECODER.value,
+    litertlm_builder.TfLiteModelType.PREFILL_DECODE.value,
+})
 
 
 def get_attachment_type(path: str) -> str:
@@ -104,61 +111,76 @@ def load_preset(preset: str):
   return tools, messages, extra_context
 
 
-def model_default_backend(model_path: str) -> str:
+def model_default_backend(
+    model_path: str,
+    target_model_types: collections.abc.Container[
+        str
+    ] = _DEFAULT_TARGET_MODEL_TYPES,
+) -> str | None:
   """Inspects the .litertlm file metadata to detect the default backend.
 
   Args:
     model_path: The path to the .litertlm model file.
+    target_model_types: The model types to look for. Defaults to main model
+      types (ARTISAN_TEXT_DECODER, PREFILL_DECODE).
 
   Returns:
-    The default backend name (e.g., 'gpu', 'cpu'). Defaults to 'cpu' if no
-    constraints are specified.
+    The default backend name (e.g., 'gpu', 'cpu') or None if not found.
+    Returning None for optional adapters (audio/vision) when they are not
+    present in the model is crucial. It signals the CLI to pass None to the
+    Engine, safely disabling them and preventing C++ initialization crashes.
   """
   try:
     with io.StringIO() as dummy_out:
       metadata = litertlm_peek.read_litertlm_header(model_path, dummy_out)
-      section_metadata = metadata.SectionMetadata()
-      if not section_metadata:
-        return "cpu"
-      for i in range(section_metadata.ObjectsLength()):
-        section = section_metadata.Objects(i)
-        if not section:
-          continue
-        model_type = litertlm_peek.get_model_type(section)
-        if model_type:
-          model_type_lower = model_type.lower()
-          if model_type_lower in (
-              litertlm_builder.TfLiteModelType.ARTISAN_TEXT_DECODER.value,
-              litertlm_builder.TfLiteModelType.PREFILL_DECODE.value,
-          ):
-            if (
-                model_type_lower
-                == litertlm_builder.TfLiteModelType.ARTISAN_TEXT_DECODER.value
-            ):
-              return "gpu"
-            if section.ItemsLength() > 0:
-              for j in range(section.ItemsLength()):
-                item = section.Items(j)
-                if item is None:
-                  continue
-                item_dict = litertlm_peek.kvp_to_dict(item)
-                if item_dict.get("key") == "backend_constraint":
-                  val = item_dict.get("value")
-                  if val:
-                    backends = [b.strip().lower() for b in val.split(",")]
-                    if backends:
-                      return backends[0]
+      if metadata:
+        section_metadata = metadata.SectionMetadata()
+        if section_metadata:
+          for i in range(section_metadata.ObjectsLength()):
+            section = section_metadata.Objects(i)
+            if not section:
+              continue
+            model_type = litertlm_peek.get_model_type(section)
+            if model_type:
+              model_type_lower = model_type.lower()
+              if model_type_lower in target_model_types:
+                if (
+                    model_type_lower
+                    == litertlm_builder.TfLiteModelType.ARTISAN_TEXT_DECODER.value
+                ):
+                  return "gpu"
+                if section.ItemsLength() > 0:
+                  for j in range(section.ItemsLength()):
+                    item = section.Items(j)
+                    if item is None:
+                      continue
+                    item_dict = litertlm_peek.kvp_to_dict(item)
+                    if item_dict.get("key") == "backend_constraint":
+                      val = item_dict.get("value")
+                      if val:
+                        backends = [b.strip().lower() for b in val.split(",")]
+                        if backends:
+                          return backends[0]
+                return "cpu"
   except Exception as e:  # pylint: disable=broad-exception-caught
     click.echo(
         click.style(f"Failed to inspect model metadata: {e!r}", fg="yellow")
     )
-  return "cpu"
+
+  # Fallback for main model if not found in metadata or on error.
+  # Optional adapters return None if not found, to disable them.
+  if target_model_types == _DEFAULT_TARGET_MODEL_TYPES:
+    return "cpu"
+  return None
 
 
 def _create_backend_obj(
-    backend_name: str, cpu_thread_count: int | None = None
-) -> litert_lm.Backend:
-  if backend_name == "gpu":
+    backend_name: str | None, cpu_thread_count: int | None = None
+) -> litert_lm.Backend | None:
+  """Creates a litert_lm.Backend object from name, or returns None."""
+  if backend_name is None:
+    return None
+  elif backend_name == "gpu":
     return litert_lm.Backend.GPU()
   elif backend_name == "npu":
     return litert_lm.Backend.NPU()
@@ -171,32 +193,47 @@ def parse_backend(
     *,
     model_obj: Model | None = None,
     cpu_thread_count: int | None = None,
-) -> litert_lm.Backend:
+    target_model_types: collections.abc.Container[
+        str
+    ] = _DEFAULT_TARGET_MODEL_TYPES,
+    label: str | None = None,
+) -> litert_lm.Backend | None:
   """Parses the backend string and resolves it against model constraints.
 
   Args:
     backend: The backend requested by the user (e.g., "cpu", "gpu", "npu").
     model_obj: Optional Model instance to check for constraints.
     cpu_thread_count: Optional thread count for CPU backend.
+    target_model_types: Container of model types to look for when resolving
+      default backend. Defaults to main model types.
+    label: Optional label for the backend (e.g., "audio", "vision") used in log
+      messages.
 
   Returns:
-    The resolved litert_lm.Backend to use.
+    The resolved litert_lm.Backend to use, or None if not supported.
   """
   if backend is not None:
     return _create_backend_obj(backend.lower(), cpu_thread_count)
 
   if model_obj is not None:
-    default_backend = model_default_backend(model_obj.model_path)
+    default_backend = model_default_backend(
+        model_obj.model_path, target_model_types
+    )
+    if default_backend is None:
+      return None
+
     if default_backend != "cpu":
+      label_str = f" for {label}" if label else ""
       click.echo(
           click.style(
-              f"Using model's default backend: {default_backend}",
+              f"Using model's default backend{label_str}: {default_backend}",
               fg="bright_black",
           )
       )
+
     return _create_backend_obj(default_backend, cpu_thread_count)
 
-  return litert_lm.Backend.CPU(thread_count=cpu_thread_count)
+  return None
 
 
 @dataclasses.dataclass

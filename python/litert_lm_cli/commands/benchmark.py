@@ -62,6 +62,7 @@ def run_benchmark(
     backend_val = model.parse_backend(
         backend, model_obj=model_obj, cpu_thread_count=cpu_thread_count
     )
+    assert backend_val is not None
     cache_dir_val = common.cache_dir_value_from_cache_mode(cache)
 
     if is_android:

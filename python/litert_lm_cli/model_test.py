@@ -42,13 +42,17 @@ class ModelTest(parameterized.TestCase):
       mock_default_backend,
   ):
     mock_default_backend.return_value = "cpu"
+    mock_model = mock.Mock(spec=model.Model)
+    mock_model.model_path = "dummy_path"
 
     # Mock NPU to avoid RuntimeError on Linux
     with mock.patch.object(
         litert_lm.Backend, "NPU", autospec=True
     ) as mock_npu_class:
       result = model.parse_backend(
-          backend=backend, cpu_thread_count=cpu_thread_count
+          backend=backend,
+          model_obj=mock_model,
+          cpu_thread_count=cpu_thread_count,
       )
 
       if expected_type_str == "cpu":
@@ -88,43 +92,85 @@ class ModelTest(parameterized.TestCase):
           litertlm_builder.TfLiteModelType.ARTISAN_TEXT_DECODER.value,
           None,
           "gpu",
+          None,
       ),
       (
           "artisan_always_gpu_uppercase",
           litertlm_builder.TfLiteModelType.ARTISAN_TEXT_DECODER.value.upper(),
           None,
           "gpu",
+          None,
       ),
       (
           "prefill_decode_gpu",
           litertlm_builder.TfLiteModelType.PREFILL_DECODE.value,
           "gpu",
           "gpu",
+          None,
       ),
       (
           "prefill_decode_gpu_uppercase",
           litertlm_builder.TfLiteModelType.PREFILL_DECODE.value.upper(),
           "gpu",
           "gpu",
+          None,
       ),
       (
           "prefill_decode_cpu",
           litertlm_builder.TfLiteModelType.PREFILL_DECODE.value,
           "cpu",
           "cpu",
+          None,
       ),
       (
           "prefill_decode_none",
           litertlm_builder.TfLiteModelType.PREFILL_DECODE.value,
           None,
           "cpu",
+          None,
       ),
-      ("other_model_gpu_ignored", "other_model", "gpu", "cpu"),
+      ("other_model_gpu_ignored", "other_model", "gpu", "cpu", None),
       (
           "prefill_decode_multi",
           litertlm_builder.TfLiteModelType.PREFILL_DECODE.value,
           "gpu,npu",
           "gpu",
+          None,
+      ),
+      (
+          "audio_encoder_hw_cpu",
+          litertlm_builder.TfLiteModelType.AUDIO_ENCODER_HW.value,
+          "cpu",
+          "cpu",
+          {litertlm_builder.TfLiteModelType.AUDIO_ENCODER_HW.value},
+      ),
+      (
+          "audio_encoder_hw_gpu",
+          litertlm_builder.TfLiteModelType.AUDIO_ENCODER_HW.value,
+          "gpu",
+          "gpu",
+          {litertlm_builder.TfLiteModelType.AUDIO_ENCODER_HW.value},
+      ),
+      (
+          "vision_encoder_cpu",
+          litertlm_builder.TfLiteModelType.VISION_ENCODER.value,
+          "cpu",
+          "cpu",
+          {litertlm_builder.TfLiteModelType.VISION_ENCODER.value},
+      ),
+      (
+          "vision_encoder_gpu",
+          litertlm_builder.TfLiteModelType.VISION_ENCODER.value,
+          "gpu",
+          "gpu",
+          {litertlm_builder.TfLiteModelType.VISION_ENCODER.value},
+      ),
+      (
+          "audio_encoder_hw_ignored_for_main",
+          litertlm_builder.TfLiteModelType.AUDIO_ENCODER_HW.value,
+          "gpu",
+          "cpu",
+          None,
       ),
   )
   @mock.patch.object(model, "litertlm_peek")
@@ -133,6 +179,7 @@ class ModelTest(parameterized.TestCase):
       model_type,
       backend_constraint,
       expected_backend,
+      target_model_types,
       mock_peek,
   ):
     mock_metadata = mock.Mock()
@@ -159,7 +206,12 @@ class ModelTest(parameterized.TestCase):
     else:
       mock_section.ItemsLength.return_value = 0
 
-    result = model.model_default_backend("dummy_path")
+    if target_model_types is None:
+      result = model.model_default_backend("dummy_path")
+    else:
+      result = model.model_default_backend(
+          "dummy_path", target_model_types=target_model_types
+      )
     self.assertEqual(result, expected_backend)
 
 

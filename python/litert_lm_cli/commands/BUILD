@@ -124,6 +124,7 @@ pytype_strict_library(
     deps = [
         ":convert",
         "//python/litert_lm",
+        "//python/litert_lm_builder:litertlm_builder",
         "//python/litert_lm_cli:cli_helpers",
         "//python/litert_lm_cli:common",
         "//python/litert_lm_cli:help_formatter",
