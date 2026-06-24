@@ -105,3 +105,62 @@ cc_test(
         "@litert//tflite/types:half",
     ],
 )
+
+cc_library(
+    name = "no_repeat_ngram_config",
+    hdrs = ["no_repeat_ngram_config.h"],
+    visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "no_repeat_ngram_config_test",
+    srcs = ["no_repeat_ngram_config_test.cc"],
+    deps = [
+        ":no_repeat_ngram_config",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "no_repeat_ngram_processor",
+    srcs = ["no_repeat_ngram_processor.cc"],
+    hdrs = ["no_repeat_ngram_processor.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":logits_processor",
+        ":no_repeat_ngram_config",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/hash",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:span",
+        "//runtime/util:convert_tensor_buffer",
+        "@litert//tflite/types:half",
+    ] + select({
+        "@litert//litert:litert_link_capi_so": [
+            "@litert//litert/cc:litert_api_with_dynamic_runtime",
+        ],
+        "//conditions:default": [
+            "@litert//litert/cc:litert_element_type",
+            "@litert//litert/cc:litert_layout",
+            "@litert//litert/cc:litert_macros",
+            "@litert//litert/cc:litert_tensor_buffer",
+        ],
+    }),
+)
+
+cc_test(
+    name = "no_repeat_ngram_processor_test",
+    srcs = ["no_repeat_ngram_processor_test.cc"],
+    deps = [
+        ":no_repeat_ngram_config",
+        ":no_repeat_ngram_processor",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:span",
+        "@litert//litert/cc:litert_layout",
+        "//runtime/util:convert_tensor_buffer",
+        "//runtime/util:test_utils",
+        "@litert//tflite/types:half",
+    ],
+)
