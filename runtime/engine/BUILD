@@ -101,20 +101,14 @@ cc_library(
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
+        "@litert//litert/cc:litert_macros",
+        "@litert//litert/cc:litert_tensor_buffer",
         "@litert//support/util:io_types",
         "//runtime/components/logits_processor:repetition_penalty_config",
         "//runtime/components/logits_processor/constrained_decoding:constraint",
         "//runtime/proto:engine_cc_proto",
         "//runtime/util:litert_status_util",
-    ] + select({
-        "@litert//litert:litert_link_capi_so": [
-            "@litert//litert/cc:litert_api_with_dynamic_runtime",
-        ],
-        "//conditions:default": [
-            "@litert//litert/cc:litert_macros",
-            "@litert//litert/cc:litert_tensor_buffer",
-        ],
-    }),
+    ],
 )
 
 cc_test(
@@ -203,7 +197,7 @@ cc_binary(
         "//conditions:default": [],
     }),
     linkopts = select({
-        "@litert//litert:litert_link_capi_so": [],
+        "@litert//litert:litert_runtime_link_mode_dynamic": [],
         # Export LiteRt* symbols for LiteRt accelerator shlibs.
         "@platforms//os:ios": ["-Wl,-exported_symbol,_LiteRt*"],
         "@platforms//os:macos": ["-Wl,-exported_symbol,_LiteRt*"],
@@ -253,7 +247,7 @@ cc_binary(
         "//conditions:default": [],
     }),
     linkopts = select({
-        "@litert//litert:litert_link_capi_so": [],
+        "@litert//litert:litert_runtime_link_mode_dynamic": [],
         # Export LiteRt* symbols for LiteRt accelerator shlibs.
         "@platforms//os:ios": ["-Wl,-exported_symbol,_LiteRt*"],
         "@platforms//os:macos": ["-Wl,-exported_symbol,_LiteRt*"],

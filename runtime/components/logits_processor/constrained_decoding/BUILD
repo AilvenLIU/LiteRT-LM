@@ -87,20 +87,14 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/types:span",
         "@litert//litert/cc:litert_element_type",
+        "@litert//litert/cc:litert_layout",
+        "@litert//litert/cc:litert_macros",
+        "@litert//litert/cc:litert_tensor_buffer",
         "//runtime/components/logits_processor",
         "//runtime/util:convert_tensor_buffer",
         "//runtime/util:litert_status_util",
         "@litert//tflite/types:half",
-    ] + select({
-        "@litert//litert:litert_link_capi_so": [
-            "@litert//litert/cc:litert_api_with_dynamic_runtime",
-        ],
-        "//conditions:default": [
-            "@litert//litert/cc:litert_layout",
-            "@litert//litert/cc:litert_macros",
-            "@litert//litert/cc:litert_tensor_buffer",
-        ],
-    }),
+    ],
 )
 
 cc_library(
