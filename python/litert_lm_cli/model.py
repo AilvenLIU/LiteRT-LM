@@ -25,13 +25,14 @@ import io
 import mimetypes
 import os
 import pathlib
-import traceback
 
 import click
 
 import litert_lm
 from litert_lm_builder import litertlm_builder
 from litert_lm_builder import litertlm_peek
+
+from . import config
 
 # The default model types representing the main text model components.
 _DEFAULT_TARGET_MODEL_TYPES = frozenset({
@@ -191,7 +192,7 @@ def _create_backend_obj(
 def parse_backend(
     backend: str | None = None,
     *,
-    model_obj: Model | None = None,
+    model_obj: Model,
     cpu_thread_count: int | None = None,
     target_model_types: collections.abc.Container[
         str
@@ -202,7 +203,7 @@ def parse_backend(
 
   Args:
     backend: The backend requested by the user (e.g., "cpu", "gpu", "npu").
-    model_obj: Optional Model instance to check for constraints.
+    model_obj: Model instance to check for constraints.
     cpu_thread_count: Optional thread count for CPU backend.
     target_model_types: Container of model types to look for when resolving
       default backend. Defaults to main model types.
@@ -212,28 +213,63 @@ def parse_backend(
   Returns:
     The resolved litert_lm.Backend to use, or None if not supported.
   """
-  if backend is not None:
-    return _create_backend_obj(backend.lower(), cpu_thread_count)
+  model_cfg = config.get_model_config(model_obj.model_id)
+  is_main_model = target_model_types == _DEFAULT_TARGET_MODEL_TYPES
 
-  if model_obj is not None:
-    default_backend = model_default_backend(
-        model_obj.model_path, target_model_types
-    )
-    if default_backend is None:
-      return None
-
-    if default_backend != "cpu":
-      label_str = f" for {label}" if label else ""
-      click.echo(
-          click.style(
-              f"Using model's default backend{label_str}: {default_backend}",
-              fg="bright_black",
-          )
+  # 1. Resolve Backend
+  resolved_backend = backend
+  backend_from_config = False
+  if resolved_backend is None:
+    if is_main_model and model_cfg.backend is not None:
+      resolved_backend = model_cfg.backend
+      backend_from_config = True
+    else:
+      resolved_backend = model_default_backend(
+          model_obj.model_path, target_model_types
       )
+      # Print info message for model's default backend if it is not CPU
+      if resolved_backend and resolved_backend != "cpu":
+        label_str = f" for {label}" if label else ""
+        click.echo(
+            click.style(
+                f"Using model's default backend{label_str}: {resolved_backend}",
+                fg="bright_black",
+            )
+        )
 
-    return _create_backend_obj(default_backend, cpu_thread_count)
+  if resolved_backend is None:
+    return None
 
-  return None
+  # Print info message if backend came from config
+  if backend_from_config:
+    label_str = f" for {label}" if label else ""
+    click.echo(
+        click.style(
+            f"Using backend{label_str} from config for model"
+            f" '{model_obj.model_id}': {resolved_backend}",
+            fg="bright_black",
+        )
+    )
+
+  # 2. Resolve CPU Thread Count
+  resolved_threads = cpu_thread_count
+  threads_from_config = False
+  if resolved_threads is None:
+    if is_main_model and model_cfg.cpu_thread_count is not None:
+      resolved_threads = model_cfg.cpu_thread_count
+      threads_from_config = True
+
+  # Print info message if threads came from config
+  if threads_from_config:
+    click.echo(
+        click.style(
+            "Using cpu_thread_count from config for model"
+            f" '{model_obj.model_id}': {resolved_threads}",
+            fg="bright_black",
+        )
+    )
+
+  return _create_backend_obj(resolved_backend.lower(), resolved_threads)
 
 
 @dataclasses.dataclass
@@ -282,9 +318,15 @@ class Model:
   @classmethod
   def from_model_path(cls, model_path):
     """Creates a Model instance from a model path."""
+    abs_path = os.path.abspath(model_path)
+    if os.path.basename(abs_path) == "model.litertlm":
+      parent_name = pathlib.Path(abs_path).parent.name
+      model_id = parent_name.replace("--", "/")
+    else:
+      model_id = os.path.basename(abs_path)
     return cls(
-        model_id=os.path.basename(model_path),
-        model_path=os.path.abspath(model_path),
+        model_id=model_id,
+        model_path=abs_path,
     )
 
   @classmethod
@@ -306,12 +348,7 @@ def model_id_dir_name(model_id):
   return model_id.replace("/", "--")
 
 
-def get_cli_base_dir() -> str:
-  """Gets the base directory for LiteRT-LM CLI."""
-  env_override = os.environ.get("LITERT_LM_DIR")
-  if env_override:
-    return os.path.abspath(env_override)
-  return os.path.join(os.path.expanduser("~"), ".litert-lm")
+get_cli_base_dir = config.get_cli_base_dir
 
 
 # ~/.litert-lm/models
