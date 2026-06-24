@@ -84,11 +84,6 @@ def _parse_sampler_config(
   )
 
 
-def _is_gpu_only_model(model_path: str) -> bool:
-  """Returns True if the model is GPU-only."""
-  return serve_util._is_gpu_only_model(model_path)
-
-
 class _OpenAIStreamFormatter(abc.ABC):
   """A formatter for OpenAI API compatible Server-Sent Events."""
 
@@ -778,15 +773,8 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
           created_ts = int(os.path.getmtime(m.model_path))
         except OSError:
           created_ts = 0
-        if not _is_gpu_only_model(m.model_path):
-          data.append({
-              "id": m.model_id,
-              "object": "model",
-              "created": created_ts,
-              "owned_by": "litert-lm",
-          })
         data.append({
-            "id": f"{m.model_id},gpu",
+            "id": m.model_id,
             "object": "model",
             "created": created_ts,
             "owned_by": "litert-lm",
@@ -833,16 +821,16 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       return None
     return body
 
-  def _get_engine_for_spec(
+  def _get_engine(
       self,
-      model_spec: str,
+      model_id: str,
       translated_messages: list[dict[str, Any]] | None = None,
       prompt: Any = None,
   ) -> litert_lm.Engine | None:
-    """Parses the model spec and retrieves or initializes the engine.
+    """Retrieves or initializes the engine for the given model ID.
 
     Args:
-      model_spec: The model specification string.
+      model_id: The model identifier string.
       translated_messages: Optional list of already translated messages.
       prompt: Optional prompt payload.
 
@@ -850,47 +838,10 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       The LiteRT-LM Engine instance, or None if initialization failed.
     """
     try:
-      spec = serve_util.parse_model_spec(model_spec)
-      model_id = spec.model_id
-    except ValueError as e:
-      self.send_error(400, "".join(traceback.format_exception_only(e)))
-      return None
-
-    messages_to_scan = []
-    if translated_messages:
-      messages_to_scan.extend(translated_messages)
-    if prompt and isinstance(prompt, dict) and prompt not in messages_to_scan:
-      messages_to_scan.append(prompt)
-
-    need_vision = False
-    need_audio = False
-    for msg in messages_to_scan:
-      if isinstance(msg, dict):
-        content = msg.get("content")
-        if isinstance(content, list):
-          for part in content:
-            if isinstance(part, dict):
-              part_type = part.get("type")
-              if part_type == "image":
-                need_vision = True
-              elif part_type == "audio":
-                need_audio = True
-      if need_vision and need_audio:
-        break
-
-    # TODO: b/515805503 - Make the backend customizable..
-    vision_backend = litert_lm.Backend.CPU() if need_vision else None
-    audio_backend = litert_lm.Backend.CPU() if need_audio else None
-
-    try:
       assert isinstance(self.server, serve_util.LiteRTLMServer)
       return serve_util.get_or_initialize_server_engine(
           self.server,
           model_id=model_id,
-          backend=spec.backend,
-          max_num_tokens=spec.max_num_tokens,
-          vision_backend=vision_backend,
-          audio_backend=audio_backend,
       )
     except FileNotFoundError as e:
       self.send_error(404, "".join(traceback.format_exception_only(e)))
@@ -928,8 +879,8 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
     if body is None:
       return
 
-    model_spec = body.get("model")
-    if not model_spec:
+    model_id = body.get("model")
+    if not model_id:
       self.send_error(400, "Missing model")
       return
 
@@ -966,7 +917,7 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       self.send_error(400, "Missing input or messages")
       return
 
-    engine = self._get_engine_for_spec(model_spec, translated_messages, prompt)
+    engine = self._get_engine(model_id, translated_messages, prompt)
     if engine is None:
       return
 
@@ -1014,14 +965,14 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
         self._handle_chat_completions(
             conv,
             prompt,
-            model_spec,
+            model_id,
             stream,
             now_str=now_str,
             created_ts=created_ts,
             max_completion_tokens=max_completion_tokens,
         )
     except Exception as e:  # pylint: disable=broad-exception-caught
-      self._handle_inference_error(e, model_spec, prompt)
+      self._handle_inference_error(e, model_id, prompt)
 
   def _handle_responses_endpoint(self) -> None:
     """Handles POST requests to responses endpoint."""
@@ -1029,10 +980,10 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
     if body is None:
       return
 
-    model_spec = body.get("model")
+    model_id = body.get("model")
     prompt = body.get("input")
 
-    if not model_spec or not prompt:
+    if not model_id or not prompt:
       self.send_error(400, "Missing model or input")
       return
 
@@ -1043,7 +994,7 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
         self.send_error(400, f"Invalid prompt: {e}")
         return
 
-    engine = self._get_engine_for_spec(model_spec, prompt=prompt)
+    engine = self._get_engine(model_id, prompt=prompt)
     if engine is None:
       return
 
@@ -1065,10 +1016,10 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
             stream,
             now_str=now_str,
             created_ts=created_ts,
-            model_id=model_spec,
+            model_id=model_id,
         )
     except Exception as e:  # pylint: disable=broad-exception-caught
-      self._handle_inference_error(e, model_spec, prompt)
+      self._handle_inference_error(e, model_id, prompt)
 
   def do_POST(self) -> None:  # pylint: disable=invalid-name
     """Handles POST requests for OpenAI API compatible endpoints."""
