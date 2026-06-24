@@ -226,8 +226,11 @@ def get_or_initialize_server_engine(
   Raises:
     FileNotFoundError: If the model package path does not exist.
   """
+  m = model.Model.from_model_id(model_id)
+  if not m.exists():
+    raise FileNotFoundError(f"Model {model_id} not found")
+
   if backend is None:
-    m = model.Model.from_model_id(model_id)
     backend = _select_backend(m.model_path)
 
   if server.litert_lm_engine is not None:
@@ -256,11 +259,6 @@ def get_or_initialize_server_engine(
     server.max_num_tokens = None
     server.vision_backend = None
     server.audio_backend = None
-
-  m = model.Model.from_model_id(model_id)
-
-  if not m.exists():
-    raise FileNotFoundError(f"Model {model_id} not found")
 
   click.echo(
       click.style(f"Initializing engine for model: {m.model_path}", fg="cyan")
