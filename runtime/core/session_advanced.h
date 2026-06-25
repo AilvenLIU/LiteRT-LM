@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/base/thread_annotations.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
@@ -92,11 +93,20 @@ class SessionAdvanced : public SessionInterface {
   // done and release the session from the execution manager.
   ~SessionAdvanced() override;
 
+  ABSL_DEPRECATED(
+      "Prefer Conversation API for chat/context management, or RunPrefill and "
+      "RunDecode for fine-grained execution control.")
   absl::StatusOr<Responses> GenerateContent(
       const std::vector<InputData>& contents) override;
+  ABSL_DEPRECATED(
+      "Prefer Conversation API for chat/context management, or RunPrefill and "
+      "RunDecode for fine-grained execution control.")
   absl::Status GenerateContentStream(
       const std::vector<InputData>& contents,
       absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback) override;
+  ABSL_DEPRECATED(
+      "Prefer Conversation API for chat/context management, or RunPrefill and "
+      "RunDecode for fine-grained execution control.")
   absl::Status GenerateContentStream(
       const std::vector<InputData>& contents,
       absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback,

@@ -18,6 +18,7 @@
 #include <memory>
 #include <vector>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
@@ -108,12 +109,25 @@ class SessionInterface {
   // function will handle the prefill and decode processes internally and
   // the usage is similar to the Gemini Text Generation API
   // (https://ai.google.dev/gemini-api/docs/text-generation).
+  //
+  // DEPRECATED: Prefer using the Conversation API (Conversation::SendMessage /
+  // SendMessageStream) for chat and context management. For fine-grained
+  // control over execution steps or single-turn inference, use RunPrefill and
+  // RunDecode.
   // - contents: The input data for generation.
+  ABSL_DEPRECATED(
+      "Prefer Conversation API for chat/context management, or RunPrefill and "
+      "RunDecode for fine-grained execution control.")
   virtual absl::StatusOr<Responses> GenerateContent(
       const std::vector<InputData>& contents) = 0;
 
   // This is a not blocking call and the function will return right away. The
   // result will be streamed through the callback.
+  //
+  // DEPRECATED: Prefer using the Conversation API (Conversation::SendMessage /
+  // SendMessageStream) for chat and context management. For fine-grained
+  // control over execution steps or single-turn inference, use RunPrefill and
+  // RunDecode.
   //
   // - contents: The input data for generation.
   // - callback: Callback to receive streamed results.
@@ -125,12 +139,23 @@ class SessionInterface {
   //       sent.
   //     - If the generation is cancelled, the callback will be called
   //       with a Cancellation error.
+  ABSL_DEPRECATED(
+      "Prefer Conversation API for chat/context management, or RunPrefill and "
+      "RunDecode for fine-grained execution control.")
   virtual absl::Status GenerateContentStream(
       const std::vector<InputData>& contents,
       absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback) = 0;
 
   // Same as above, but with a custom decode config.
+  //
+  // DEPRECATED: Prefer using the Conversation API (Conversation::SendMessage /
+  // SendMessageStream) for chat and context management. For fine-grained
+  // control over execution steps or single-turn inference, use RunPrefill and
+  // RunDecode.
   // - decode_config: configuration for the model decode process.
+  ABSL_DEPRECATED(
+      "Prefer Conversation API for chat/context management, or RunPrefill and "
+      "RunDecode for fine-grained execution control.")
   virtual absl::Status GenerateContentStream(
       const std::vector<InputData>& contents,
       absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback,
