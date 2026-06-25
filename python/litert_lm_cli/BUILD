@@ -226,7 +226,6 @@ pytype_strict_binary(
     main = "main.py",
     tags = [
         "noios",
-        "nomacos",
         "nowindows",
     ],
     deps = [
