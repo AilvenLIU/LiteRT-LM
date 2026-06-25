@@ -33,24 +33,6 @@ class c_string_p(ctypes.c_char_p):  # pylint: disable=invalid-name
     return obj
 
 
-class LiteRtLmSamplerParams(ctypes.Structure):
-  _fields_ = [
-      ("type", ctypes.c_int),
-      ("top_k", ctypes.c_int),
-      ("top_p", ctypes.c_float),
-      ("temperature", ctypes.c_float),
-      ("seed", ctypes.c_int),
-  ]
-
-
-class LiteRtLmInputData(ctypes.Structure):
-  _fields_ = [
-      ("type", ctypes.c_int),
-      ("data", ctypes.c_void_p),
-      ("size", ctypes.c_size_t),
-  ]
-
-
 class InputDataType(enum.IntEnum):
   TEXT = 0
   IMAGE = 1
@@ -65,7 +47,6 @@ class TokenUnionType(enum.IntEnum):
 
 
 class SamplerType(enum.IntEnum):
-  UNSPECIFIED = 0
   TOP_K = 1
   TOP_P = 2
   GREEDY = 3
@@ -152,6 +133,16 @@ def _setup_lib_signatures(lib):
   # Log level
   lib.litert_lm_set_min_log_level.argtypes = [ctypes.c_int]
 
+  # Input Data
+  lib.litert_lm_input_data_create.restype = ctypes.c_void_p
+  lib.litert_lm_input_data_create.argtypes = [
+      ctypes.c_int,
+      ctypes.c_void_p,
+      ctypes.c_size_t,
+  ]
+  lib.litert_lm_input_data_delete.restype = None
+  lib.litert_lm_input_data_delete.argtypes = [ctypes.c_void_p]
+
   # Engine Settings
   lib.litert_lm_engine_settings_create.restype = ctypes.c_void_p
   lib.litert_lm_engine_settings_create.argtypes = [
@@ -230,6 +221,27 @@ def _setup_lib_signatures(lib):
   lib.litert_lm_engine_create.argtypes = [ctypes.c_void_p]
   lib.litert_lm_engine_delete.argtypes = [ctypes.c_void_p]
 
+  # Sampler Params
+  lib.litert_lm_sampler_params_create.restype = ctypes.c_void_p
+  lib.litert_lm_sampler_params_create.argtypes = [ctypes.c_int]
+  lib.litert_lm_sampler_params_delete.argtypes = [ctypes.c_void_p]
+  lib.litert_lm_sampler_params_set_top_k.argtypes = [
+      ctypes.c_void_p,
+      ctypes.c_int,
+  ]
+  lib.litert_lm_sampler_params_set_top_p.argtypes = [
+      ctypes.c_void_p,
+      ctypes.c_float,
+  ]
+  lib.litert_lm_sampler_params_set_temperature.argtypes = [
+      ctypes.c_void_p,
+      ctypes.c_float,
+  ]
+  lib.litert_lm_sampler_params_set_seed.argtypes = [
+      ctypes.c_void_p,
+      ctypes.c_int,
+  ]
+
   # Session Config
   lib.litert_lm_session_config_create.restype = ctypes.c_void_p
   lib.litert_lm_session_config_create.argtypes = []
@@ -244,7 +256,7 @@ def _setup_lib_signatures(lib):
   ]
   lib.litert_lm_session_config_set_sampler_params.argtypes = [
       ctypes.c_void_p,
-      ctypes.POINTER(LiteRtLmSamplerParams),
+      ctypes.c_void_p,
   ]
   lib.litert_lm_session_config_set_lora_path.restype = ctypes.c_int
   lib.litert_lm_session_config_set_lora_path.argtypes = [
@@ -268,7 +280,7 @@ def _setup_lib_signatures(lib):
   lib.litert_lm_session_run_prefill.restype = ctypes.c_int
   lib.litert_lm_session_run_prefill.argtypes = [
       ctypes.c_void_p,
-      ctypes.POINTER(LiteRtLmInputData),
+      ctypes.POINTER(ctypes.c_void_p),
       ctypes.c_size_t,
   ]
   lib.litert_lm_session_run_decode.restype = ctypes.c_void_p
@@ -289,13 +301,13 @@ def _setup_lib_signatures(lib):
   lib.litert_lm_session_generate_content.restype = ctypes.c_void_p
   lib.litert_lm_session_generate_content.argtypes = [
       ctypes.c_void_p,
-      ctypes.POINTER(LiteRtLmInputData),
+      ctypes.POINTER(ctypes.c_void_p),
       ctypes.c_size_t,
   ]
   lib.litert_lm_session_generate_content_stream.restype = ctypes.c_int
   lib.litert_lm_session_generate_content_stream.argtypes = [
       ctypes.c_void_p,
-      ctypes.POINTER(LiteRtLmInputData),
+      ctypes.POINTER(ctypes.c_void_p),
       ctypes.c_size_t,
       STREAM_CALLBACK_TYPE,
       ctypes.c_void_p,

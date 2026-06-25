@@ -19,7 +19,6 @@ from . import interfaces
 from ._ffi import _get_lib
 from ._ffi import ActivationDataType
 from ._ffi import InputDataType
-from ._ffi import LiteRtLmInputData
 
 
 class Benchmark(interfaces.AbstractBenchmark):
@@ -87,18 +86,22 @@ class Benchmark(interfaces.AbstractBenchmark):
       )
 
     prompt = self.prompt.encode("utf-8")
-    input_data = LiteRtLmInputData()
-    input_data.type = InputDataType.TEXT
-    input_data.data = ctypes.cast(
-        ctypes.c_char_p(prompt), ctypes.c_void_p
+    input_ptr = lib.litert_lm_input_data_create(
+        InputDataType.TEXT, prompt, len(prompt)
     )
-    input_data.size = len(prompt)
+    if not input_ptr:
+      lib.litert_lm_session_delete(session_ptr)
+      lib.litert_lm_engine_delete(engine_ptr)
+      raise RuntimeError("Failed to create input data")
 
-    responses = lib.litert_lm_session_generate_content(
-        session_ptr, ctypes.byref(input_data), 1
-    )
-    if responses:
-      lib.litert_lm_responses_delete(responses)
+    inputs = (ctypes.c_void_p * 1)(input_ptr)
+
+    try:
+      responses = lib.litert_lm_session_generate_content(session_ptr, inputs, 1)
+      if responses:
+        lib.litert_lm_responses_delete(responses)
+    finally:
+      lib.litert_lm_input_data_delete(input_ptr)
 
     info_ptr = lib.litert_lm_session_get_benchmark_info(session_ptr)
     if not info_ptr:

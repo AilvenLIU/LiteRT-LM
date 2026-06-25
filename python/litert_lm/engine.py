@@ -224,10 +224,13 @@ class Engine(interfaces.AbstractEngine):
   ) -> Conversation:
     session_config = self._lib.litert_lm_session_config_create()
     if sampler_config:
-      params = _sampler_config_to_params(sampler_config)
-      self._lib.litert_lm_session_config_set_sampler_params(
-          session_config, ctypes.byref(params)
-      )
+      params = _sampler_config_to_params(self._lib, sampler_config)
+      try:
+        self._lib.litert_lm_session_config_set_sampler_params(
+            session_config, params
+        )
+      finally:
+        self._lib.litert_lm_sampler_params_delete(params)
 
     lora_path = lora_config.lora_path if lora_config else None
     audio_lora_path = lora_config.audio_lora_path if lora_config else None
@@ -346,10 +349,13 @@ class Engine(interfaces.AbstractEngine):
     )
 
     if sampler_config:
-      params = _sampler_config_to_params(sampler_config)
-      self._lib.litert_lm_session_config_set_sampler_params(
-          session_config, ctypes.byref(params)
-      )
+      params = _sampler_config_to_params(self._lib, sampler_config)
+      try:
+        self._lib.litert_lm_session_config_set_sampler_params(
+            session_config, params
+        )
+      finally:
+        self._lib.litert_lm_sampler_params_delete(params)
 
     if max_output_tokens is not None:
       self._lib.litert_lm_session_config_set_max_output_tokens(
