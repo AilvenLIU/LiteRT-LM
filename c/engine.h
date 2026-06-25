@@ -88,6 +88,10 @@ typedef struct LiteRtLmTokenUnion LiteRtLmTokenUnion;
 // Use `litert_lm_token_unions_delete` to free memory.
 typedef struct LiteRtLmTokenUnions LiteRtLmTokenUnions;
 
+// Opaque pointer for LiteRT LM Input Data.
+// Use `litert_lm_input_data_delete` to free memory.
+typedef struct LiteRtLmInputData LiteRtLmInputData;
+
 // Opaque pointer for LiteRT LM Session Config.
 typedef struct LiteRtLmSessionConfig LiteRtLmSessionConfig;
 
@@ -280,16 +284,25 @@ typedef enum {
   kLiteRtLmInputDataTypeAudioEnd,
 } LiteRtLmInputDataType;
 
-// Represents a single piece of input data.
-typedef struct {
-  LiteRtLmInputDataType type;
-  // The data pointer. The interpretation depends on the `type`.
-  // For kInputText, it's a UTF-8 string.
-  // For kInputImage and kInputAudio, it's a pointer to the raw bytes.
-  const void* data;
-  // The size of the data in bytes.
-  size_t size;
-} LiteRtLmInputData;
+// Creates a LiteRT LM Input Data. The caller is responsible for destroying
+// the input data using `litert_lm_input_data_delete`.
+//
+// @param type The type of the input data.
+// @param data The data pointer. For kLiteRtLmInputDataTypeText, it's a UTF-8
+// string.
+//             For image/audio types, it's a pointer to the raw bytes.
+//             The data is copied internally.
+// @param size The size of the data in bytes.
+// @return A pointer to the created input data, or NULL on failure.
+LITERT_LM_C_API_EXPORT
+LiteRtLmInputData* litert_lm_input_data_create(LiteRtLmInputDataType type,
+                                               const void* data, size_t size);
+
+// Destroys a LiteRT LM Input Data.
+//
+// @param input_data The input data to destroy.
+LITERT_LM_C_API_EXPORT
+void litert_lm_input_data_delete(LiteRtLmInputData* input_data);
 
 // Creates LiteRT LM Engine Settings. The caller is responsible for destroying
 // the settings using `litert_lm_engine_settings_delete`.
@@ -519,7 +532,7 @@ void litert_lm_session_cancel_process(LiteRtLmSession* session);
 // @return 0 on success, non-zero on failure.
 LITERT_LM_C_API_EXPORT
 int litert_lm_session_run_prefill(LiteRtLmSession* session,
-                                  const LiteRtLmInputData* inputs,
+                                  const LiteRtLmInputData* const* inputs,
                                   size_t num_inputs);
 
 // Starts the decoding process for the model to predict the response based
@@ -559,7 +572,7 @@ LiteRtLmResponses* litert_lm_session_run_text_scoring(LiteRtLmSession* session,
 //   responsible for deleting the responses using `litert_lm_responses_delete`.
 LITERT_LM_C_API_EXPORT
 LiteRtLmResponses* litert_lm_session_generate_content(
-    LiteRtLmSession* session, const LiteRtLmInputData* inputs,
+    LiteRtLmSession* session, const LiteRtLmInputData* const* inputs,
     size_t num_inputs);
 // Destroys a LiteRT LM Responses object.
 //
@@ -780,11 +793,9 @@ int litert_lm_session_run_decode_async(LiteRtLmSession* session,
 // callback.
 // @return 0 on success, non-zero on failure to start the stream.
 LITERT_LM_C_API_EXPORT
-int litert_lm_session_generate_content_stream(LiteRtLmSession* session,
-                                              const LiteRtLmInputData* inputs,
-                                              size_t num_inputs,
-                                              LiteRtLmStreamCallback callback,
-                                              void* callback_data);
+int litert_lm_session_generate_content_stream(
+    LiteRtLmSession* session, const LiteRtLmInputData* const* inputs,
+    size_t num_inputs, LiteRtLmStreamCallback callback, void* callback_data);
 
 // Creates a LiteRT LM Conversation. The caller is responsible for destroying
 // the conversation using `litert_lm_conversation_delete`.

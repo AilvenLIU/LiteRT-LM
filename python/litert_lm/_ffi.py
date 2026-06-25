@@ -43,14 +43,6 @@ class LiteRtLmSamplerParams(ctypes.Structure):
   ]
 
 
-class LiteRtLmInputData(ctypes.Structure):
-  _fields_ = [
-      ("type", ctypes.c_int),
-      ("data", ctypes.c_void_p),
-      ("size", ctypes.c_size_t),
-  ]
-
-
 class InputDataType(enum.IntEnum):
   TEXT = 0
   IMAGE = 1
@@ -151,6 +143,16 @@ def _setup_lib_signatures(lib):
   """Configures the argument and return types for C API functions."""
   # Log level
   lib.litert_lm_set_min_log_level.argtypes = [ctypes.c_int]
+
+  # Input Data
+  lib.litert_lm_input_data_create.restype = ctypes.c_void_p
+  lib.litert_lm_input_data_create.argtypes = [
+      ctypes.c_int,
+      ctypes.c_void_p,
+      ctypes.c_size_t,
+  ]
+  lib.litert_lm_input_data_delete.restype = None
+  lib.litert_lm_input_data_delete.argtypes = [ctypes.c_void_p]
 
   # Engine Settings
   lib.litert_lm_engine_settings_create.restype = ctypes.c_void_p
@@ -268,7 +270,7 @@ def _setup_lib_signatures(lib):
   lib.litert_lm_session_run_prefill.restype = ctypes.c_int
   lib.litert_lm_session_run_prefill.argtypes = [
       ctypes.c_void_p,
-      ctypes.POINTER(LiteRtLmInputData),
+      ctypes.POINTER(ctypes.c_void_p),
       ctypes.c_size_t,
   ]
   lib.litert_lm_session_run_decode.restype = ctypes.c_void_p
@@ -289,13 +291,13 @@ def _setup_lib_signatures(lib):
   lib.litert_lm_session_generate_content.restype = ctypes.c_void_p
   lib.litert_lm_session_generate_content.argtypes = [
       ctypes.c_void_p,
-      ctypes.POINTER(LiteRtLmInputData),
+      ctypes.POINTER(ctypes.c_void_p),
       ctypes.c_size_t,
   ]
   lib.litert_lm_session_generate_content_stream.restype = ctypes.c_int
   lib.litert_lm_session_generate_content_stream.argtypes = [
       ctypes.c_void_p,
-      ctypes.POINTER(LiteRtLmInputData),
+      ctypes.POINTER(ctypes.c_void_p),
       ctypes.c_size_t,
       STREAM_CALLBACK_TYPE,
       ctypes.c_void_p,

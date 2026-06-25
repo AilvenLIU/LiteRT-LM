@@ -86,6 +86,8 @@ using SessionPtr =
     std::unique_ptr<LiteRtLmSession, decltype(&litert_lm_session_delete)>;
 using ResponsesPtr =
     std::unique_ptr<LiteRtLmResponses, decltype(&litert_lm_responses_delete)>;
+using InputDataPtr =
+    std::unique_ptr<LiteRtLmInputData, decltype(&litert_lm_input_data_delete)>;
 using ConversationPtr =
     std::unique_ptr<LiteRtLmConversation,
                     decltype(&litert_lm_conversation_delete)>;
@@ -857,12 +859,14 @@ TEST(EngineCTest, GenerateContent) {
   ASSERT_NE(session, nullptr);
 
   const char* prompt = "Hello world!";
-  LiteRtLmInputData input_data;
-  input_data.type = kLiteRtLmInputDataTypeText;
-  input_data.data = prompt;
-  input_data.size = strlen(prompt);
+  InputDataPtr input_data(
+      litert_lm_input_data_create(kLiteRtLmInputDataTypeText, prompt,
+                                  strlen(prompt)),
+      &litert_lm_input_data_delete);
+  ASSERT_NE(input_data, nullptr);
+  const LiteRtLmInputData* inputs[] = {input_data.get()};
   ResponsesPtr responses(
-      litert_lm_session_generate_content(session.get(), &input_data, 1),
+      litert_lm_session_generate_content(session.get(), inputs, 1),
       &litert_lm_responses_delete);
   ASSERT_NE(responses, nullptr);
 
@@ -902,12 +906,14 @@ TEST(EngineCTest, CreateSessionWithMaxOutputTokens) {
     ASSERT_NE(session, nullptr);
 
     const char* prompt = "Hello world!";
-    LiteRtLmInputData input_data;
-    input_data.type = kLiteRtLmInputDataTypeText;
-    input_data.data = prompt;
-    input_data.size = strlen(prompt);
+    InputDataPtr input_data(
+        litert_lm_input_data_create(kLiteRtLmInputDataTypeText, prompt,
+                                    strlen(prompt)),
+        &litert_lm_input_data_delete);
+    ASSERT_NE(input_data, nullptr);
+    const LiteRtLmInputData* inputs[] = {input_data.get()};
     ResponsesPtr responses(
-        litert_lm_session_generate_content(session.get(), &input_data, 1),
+        litert_lm_session_generate_content(session.get(), inputs, 1),
         &litert_lm_responses_delete);
     ASSERT_NE(responses, nullptr);
 
@@ -931,12 +937,14 @@ TEST(EngineCTest, CreateSessionWithMaxOutputTokens) {
     ASSERT_NE(session, nullptr);
 
     const char* prompt = "Hello world!";
-    LiteRtLmInputData input_data;
-    input_data.type = kLiteRtLmInputDataTypeText;
-    input_data.data = prompt;
-    input_data.size = strlen(prompt);
+    InputDataPtr input_data(
+        litert_lm_input_data_create(kLiteRtLmInputDataTypeText, prompt,
+                                    strlen(prompt)),
+        &litert_lm_input_data_delete);
+    ASSERT_NE(input_data, nullptr);
+    const LiteRtLmInputData* inputs[] = {input_data.get()};
     ResponsesPtr responses(
-        litert_lm_session_generate_content(session.get(), &input_data, 1),
+        litert_lm_session_generate_content(session.get(), inputs, 1),
         &litert_lm_responses_delete);
     ASSERT_NE(responses, nullptr);
 
@@ -1263,13 +1271,15 @@ TEST(EngineCTest, GenerateContentStream) {
   ASSERT_NE(session, nullptr);
 
   const char* prompt = "Hello world!";
-  LiteRtLmInputData input_data;
-  input_data.type = kLiteRtLmInputDataTypeText;
-  input_data.data = prompt;
-  input_data.size = strlen(prompt);
+  InputDataPtr input_data(
+      litert_lm_input_data_create(kLiteRtLmInputDataTypeText, prompt,
+                                  strlen(prompt)),
+      &litert_lm_input_data_delete);
+  ASSERT_NE(input_data, nullptr);
+  const LiteRtLmInputData* inputs[] = {input_data.get()};
   StreamCallbackData callback_data;
   int result = litert_lm_session_generate_content_stream(
-      session.get(), &input_data, 1, &StreamCallback, &callback_data);
+      session.get(), inputs, 1, &StreamCallback, &callback_data);
   ASSERT_EQ(result, 0);
 
   callback_data.done.WaitForNotification();
@@ -1308,13 +1318,15 @@ TEST(EngineCTest, SessionGenerateContentStreamAndCancel) {
 
   const char* prompt =
       "Hello world! Write a long essay about the history of Rome.";
-  LiteRtLmInputData input_data;
-  input_data.type = kLiteRtLmInputDataTypeText;
-  input_data.data = prompt;
-  input_data.size = strlen(prompt);
+  InputDataPtr input_data(
+      litert_lm_input_data_create(kLiteRtLmInputDataTypeText, prompt,
+                                  strlen(prompt)),
+      &litert_lm_input_data_delete);
+  ASSERT_NE(input_data, nullptr);
+  const LiteRtLmInputData* inputs[] = {input_data.get()};
   StreamCallbackData callback_data;
   int result = litert_lm_session_generate_content_stream(
-      session.get(), &input_data, 1, &StreamCallback, &callback_data);
+      session.get(), inputs, 1, &StreamCallback, &callback_data);
   ASSERT_EQ(result, 0);
 
   litert_lm_session_cancel_process(session.get());
@@ -1502,12 +1514,14 @@ TEST(EngineCTest, Benchmark) {
   ASSERT_NE(session, nullptr);
 
   const char* prompt = "Hello world!";
-  LiteRtLmInputData input_data;
-  input_data.type = kLiteRtLmInputDataTypeText;
-  input_data.data = prompt;
-  input_data.size = strlen(prompt);
+  InputDataPtr input_data(
+      litert_lm_input_data_create(kLiteRtLmInputDataTypeText, prompt,
+                                  strlen(prompt)),
+      &litert_lm_input_data_delete);
+  ASSERT_NE(input_data, nullptr);
+  const LiteRtLmInputData* inputs[] = {input_data.get()};
   ResponsesPtr responses(
-      litert_lm_session_generate_content(session.get(), &input_data, 1),
+      litert_lm_session_generate_content(session.get(), inputs, 1),
       &litert_lm_responses_delete);
   ASSERT_NE(responses, nullptr);
 
@@ -1570,13 +1584,14 @@ TEST(EngineCTest, RunPrefillSuccess) {
   ASSERT_NE(session, nullptr);
 
   const char* prompt = "Hello world!";
-  LiteRtLmInputData input_data;
-  input_data.type = kLiteRtLmInputDataTypeText;
-  input_data.data = prompt;
-  input_data.size = strlen(prompt);
+  InputDataPtr input_data(
+      litert_lm_input_data_create(kLiteRtLmInputDataTypeText, prompt,
+                                  strlen(prompt)),
+      &litert_lm_input_data_delete);
+  ASSERT_NE(input_data, nullptr);
+  const LiteRtLmInputData* inputs[] = {input_data.get()};
 
-  int prefill_result =
-      litert_lm_session_run_prefill(session.get(), &input_data, 1);
+  int prefill_result = litert_lm_session_run_prefill(session.get(), inputs, 1);
   EXPECT_EQ(prefill_result, 0);
 }
 
@@ -1602,12 +1617,14 @@ TEST(EngineCTest, RunPrefillAndDecode) {
   ASSERT_NE(session, nullptr);
 
   const char* prompt = "Hello world!";
-  LiteRtLmInputData input_data;
-  input_data.type = kLiteRtLmInputDataTypeText;
-  input_data.data = prompt;
-  input_data.size = strlen(prompt);
+  InputDataPtr input_data(
+      litert_lm_input_data_create(kLiteRtLmInputDataTypeText, prompt,
+                                  strlen(prompt)),
+      &litert_lm_input_data_delete);
+  ASSERT_NE(input_data, nullptr);
+  const LiteRtLmInputData* inputs[] = {input_data.get()};
 
-  litert_lm_session_run_prefill(session.get(), &input_data, 1);
+  litert_lm_session_run_prefill(session.get(), inputs, 1);
 
   ResponsesPtr responses(litert_lm_session_run_decode(session.get()),
                          &litert_lm_responses_delete);
@@ -1642,12 +1659,14 @@ TEST(EngineCTest, TextScoringBasic) {
   ASSERT_NE(session, nullptr);
 
   const char* prompt = "Hello world!";
-  LiteRtLmInputData input_data;
-  input_data.type = kLiteRtLmInputDataTypeText;
-  input_data.data = prompt;
-  input_data.size = strlen(prompt);
+  InputDataPtr input_data(
+      litert_lm_input_data_create(kLiteRtLmInputDataTypeText, prompt,
+                                  strlen(prompt)),
+      &litert_lm_input_data_delete);
+  ASSERT_NE(input_data, nullptr);
+  const LiteRtLmInputData* inputs[] = {input_data.get()};
 
-  litert_lm_session_run_prefill(session.get(), &input_data, 1);
+  litert_lm_session_run_prefill(session.get(), inputs, 1);
 
   const char* target_texts[] = {"apple"};
   ResponsesPtr responses(
@@ -1681,12 +1700,14 @@ TEST(EngineCTest, TextScoringVerifyScores) {
   ASSERT_NE(session, nullptr);
 
   const char* prompt = "Hello world!";
-  LiteRtLmInputData input_data;
-  input_data.type = kLiteRtLmInputDataTypeText;
-  input_data.data = prompt;
-  input_data.size = strlen(prompt);
+  InputDataPtr input_data(
+      litert_lm_input_data_create(kLiteRtLmInputDataTypeText, prompt,
+                                  strlen(prompt)),
+      &litert_lm_input_data_delete);
+  ASSERT_NE(input_data, nullptr);
+  const LiteRtLmInputData* inputs[] = {input_data.get()};
 
-  litert_lm_session_run_prefill(session.get(), &input_data, 1);
+  litert_lm_session_run_prefill(session.get(), inputs, 1);
 
   const char* target_texts[] = {"apple"};
   ResponsesPtr responses(
@@ -1720,12 +1741,14 @@ TEST(EngineCTest, TextScoringVerifyTokenLengths) {
   ASSERT_NE(session, nullptr);
 
   const char* prompt = "Hello world!";
-  LiteRtLmInputData input_data;
-  input_data.type = kLiteRtLmInputDataTypeText;
-  input_data.data = prompt;
-  input_data.size = strlen(prompt);
+  InputDataPtr input_data(
+      litert_lm_input_data_create(kLiteRtLmInputDataTypeText, prompt,
+                                  strlen(prompt)),
+      &litert_lm_input_data_delete);
+  ASSERT_NE(input_data, nullptr);
+  const LiteRtLmInputData* inputs[] = {input_data.get()};
 
-  litert_lm_session_run_prefill(session.get(), &input_data, 1);
+  litert_lm_session_run_prefill(session.get(), inputs, 1);
 
   const char* target_texts[] = {"apple"};
   ResponsesPtr responses(

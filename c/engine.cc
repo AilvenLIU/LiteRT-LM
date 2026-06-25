@@ -50,6 +50,11 @@
 #include "runtime/util/logging.h"
 #include "runtime/util/scoped_file.h"
 
+struct LiteRtLmInputData {
+  explicit LiteRtLmInputData(litert::lm::InputData d) : data(std::move(d)) {}
+  litert::lm::InputData data;
+};
+
 namespace {
 
 absl::AnyInvocable<void(absl::StatusOr<litert::lm::Responses>)> CreateCallback(
@@ -133,30 +138,17 @@ litert::lm::OptionalArgs CreateOptionalArgs(
   return litert_lm_optional_args;
 }
 
-std::vector<litert::lm::InputData> ToEngineInputData(
-    const LiteRtLmInputData* inputs, size_t num_inputs) {
+absl::StatusOr<std::vector<litert::lm::InputData>> ToEngineInputData(
+    const LiteRtLmInputData* const* inputs, size_t num_inputs) {
   std::vector<litert::lm::InputData> engine_inputs;
   engine_inputs.reserve(num_inputs);
   for (size_t i = 0; i < num_inputs; ++i) {
-    switch (inputs[i].type) {
-      case kLiteRtLmInputDataTypeText:
-        engine_inputs.emplace_back(litert::lm::InputText(std::string(
-            static_cast<const char*>(inputs[i].data), inputs[i].size)));
-        break;
-      case kLiteRtLmInputDataTypeImage:
-        engine_inputs.emplace_back(litert::lm::InputImage(std::string(
-            static_cast<const char*>(inputs[i].data), inputs[i].size)));
-        break;
-      case kLiteRtLmInputDataTypeImageEnd:
-        engine_inputs.emplace_back(litert::lm::InputImageEnd());
-        break;
-      case kLiteRtLmInputDataTypeAudio:
-        engine_inputs.emplace_back(litert::lm::InputAudio(std::string(
-            static_cast<const char*>(inputs[i].data), inputs[i].size)));
-        break;
-      case kLiteRtLmInputDataTypeAudioEnd:
-        engine_inputs.emplace_back(litert::lm::InputAudioEnd());
-        break;
+    if (inputs[i] != nullptr) {
+      auto copy_status = litert::lm::CreateInputDataCopy(inputs[i]->data);
+      if (!copy_status.ok()) {
+        return copy_status.status();
+      }
+      engine_inputs.push_back(std::move(*copy_status));
     }
   }
   return engine_inputs;
@@ -177,6 +169,39 @@ using ::litert::lm::ModelAssets;
 using ::litert::lm::Responses;
 using ::litert::lm::SessionConfig;
 using ::litert::lm::proto::SamplerParameters;
+
+LiteRtLmInputData* litert_lm_input_data_create(LiteRtLmInputDataType type,
+                                               const void* data, size_t size) {
+  switch (type) {
+    case kLiteRtLmInputDataTypeText:
+      return std::make_unique<LiteRtLmInputData>(
+                 litert::lm::InputText(
+                     std::string(static_cast<const char*>(data), size)))
+          .release();
+    case kLiteRtLmInputDataTypeImage:
+      return std::make_unique<LiteRtLmInputData>(
+                 litert::lm::InputImage(
+                     std::string(static_cast<const char*>(data), size)))
+          .release();
+    case kLiteRtLmInputDataTypeImageEnd:
+      return std::make_unique<LiteRtLmInputData>(litert::lm::InputImageEnd())
+          .release();
+    case kLiteRtLmInputDataTypeAudio:
+      return std::make_unique<LiteRtLmInputData>(
+                 litert::lm::InputAudio(
+                     std::string(static_cast<const char*>(data), size)))
+          .release();
+    case kLiteRtLmInputDataTypeAudioEnd:
+      return std::make_unique<LiteRtLmInputData>(litert::lm::InputAudioEnd())
+          .release();
+    default:
+      return nullptr;
+  }
+}
+
+void litert_lm_input_data_delete(LiteRtLmInputData* input_data) {
+  delete input_data;
+}
 
 struct LiteRtLmEngineSettings {
   std::unique_ptr<EngineSettings> settings;
@@ -810,13 +835,17 @@ LiteRtLmResponses* litert_lm_session_run_text_scoring(
 }
 
 int litert_lm_session_run_prefill(LiteRtLmSession* session,
-                                  const LiteRtLmInputData* inputs,
+                                  const LiteRtLmInputData* const* inputs,
                                   size_t num_inputs) {
   if (!session || !session->session || !inputs || num_inputs <= 0) {
     return -1;
   }
   auto engine_inputs = ToEngineInputData(inputs, num_inputs);
-  auto status = session->session->RunPrefill(engine_inputs);
+  if (!engine_inputs.ok()) {
+    ABSL_LOG(ERROR) << "Failed to copy inputs: " << engine_inputs.status();
+    return -1;
+  }
+  auto status = session->session->RunPrefill(*engine_inputs);
   if (!status.ok()) {
     ABSL_LOG(ERROR) << "Failed to run prefill: " << status;
     return -1;
@@ -852,13 +881,17 @@ int litert_lm_session_run_decode_async(LiteRtLmSession* session,
 }
 
 LiteRtLmResponses* litert_lm_session_generate_content(
-    LiteRtLmSession* session, const LiteRtLmInputData* inputs,
+    LiteRtLmSession* session, const LiteRtLmInputData* const* inputs,
     size_t num_inputs) {
   if (!session || !session->session) {
     return nullptr;
   }
   auto engine_inputs = ToEngineInputData(inputs, num_inputs);
-  auto responses = session->session->GenerateContent(std::move(engine_inputs));
+  if (!engine_inputs.ok()) {
+    ABSL_LOG(ERROR) << "Failed to copy inputs: " << engine_inputs.status();
+    return nullptr;
+  }
+  auto responses = session->session->GenerateContent(std::move(*engine_inputs));
   if (!responses.ok()) {
     ABSL_LOG(ERROR) << "Failed to generate content: " << responses.status();
     return nullptr;
@@ -868,18 +901,20 @@ LiteRtLmResponses* litert_lm_session_generate_content(
   return c_responses;
 }
 
-int litert_lm_session_generate_content_stream(LiteRtLmSession* session,
-                                              const LiteRtLmInputData* inputs,
-                                              size_t num_inputs,
-                                              LiteRtLmStreamCallback callback,
-                                              void* callback_data) {
+int litert_lm_session_generate_content_stream(
+    LiteRtLmSession* session, const LiteRtLmInputData* const* inputs,
+    size_t num_inputs, LiteRtLmStreamCallback callback, void* callback_data) {
   if (!session || !session->session) {
     return -1;
   }
   auto engine_inputs = ToEngineInputData(inputs, num_inputs);
+  if (!engine_inputs.ok()) {
+    ABSL_LOG(ERROR) << "Failed to copy inputs: " << engine_inputs.status();
+    return -1;
+  }
 
   absl::Status status = session->session->GenerateContentStream(
-      std::move(engine_inputs), CreateCallback(callback, callback_data));
+      std::move(*engine_inputs), CreateCallback(callback, callback_data));
 
   if (!status.ok()) {
     ABSL_LOG(ERROR) << "Failed to start content stream: " << status;
