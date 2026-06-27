@@ -7,9 +7,9 @@ LITERT_REF = "c6de9753d8e03384d390a0f27c37e0537df0b955"
 
 LITERT_SHA256 = "d799c4abc9f0d6d2ec7db1b756985e47654ee326c1056fe8c1686b2a0d7354a1"
 
-TENSORFLOW_REF = "228ee1c9263961e8e21e3e30a5132405a7c84cf0"
+TENSORFLOW_REF = "a112d5a76ca7d692ee57e7a72ce76557764b7ba1"
 
-TENSORFLOW_SHA256 = "aac20f117086432d57d06e5ba427a7109aff290965cbc2c5ce85f1c827727ee4"
+TENSORFLOW_SHA256 = "97c7688a146eddf03f5b8331cd33bdb0a9b1b29dca6d95ff2cdc9a4edaee76b7"
 
 # buildifier: disable=load-on-top
 
@@ -77,6 +77,19 @@ http_archive(
     sha256 = "c26b4e69cf02fea24511a108d158188b9d8174426311aac59ce803a78d107648",
     strip_prefix = "bazel_features-1.43.0",
     url = "https://github.com/bazel-contrib/bazel_features/releases/download/v1.43.0/bazel_features-v1.43.0.tar.gz",
+)
+
+# Same version that tensorflow uses, but with patches to fix build errors.
+http_archive(
+    name = "com_google_absl",
+    patch_cmds = [
+        # Replace @googletest with @com_google_googletest.
+        "sed -i -e 's|@googletest|@com_google_googletest|g' absl/*/BUILD* absl/*/*/BUILD* absl/*/*/*/BUILD*",
+    ],
+    patches = ["@//:PATCH.abseil"],
+    sha256 = "6e1aee535473414164bf83e4ebc40240dec71a4701f8a642d906e95bea1aea0c",
+    strip_prefix = "abseil-cpp-20260526.0",
+    url = "https://github.com/abseil/abseil-cpp/archive/20260526.0.tar.gz",
 )
 
 # TensorFlow
