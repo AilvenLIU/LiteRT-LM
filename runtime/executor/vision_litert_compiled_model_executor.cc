@@ -61,7 +61,6 @@
 #include "runtime/executor/llm_executor_io_types.h"
 #include "runtime/executor/vision_executor_settings.h"
 #include "runtime/util/convert_tensor_buffer.h"
-#include "runtime/util/file_util.h"
 #include "runtime/util/status_macros.h"  // NOLINT
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"  // from @litert
 
@@ -119,7 +118,8 @@ absl::Status SetCpuOptions(const VisionExecutorSettings& executor_settings,
   auto default_xnn_options = TfLiteXNNPackDelegateOptionsDefault();
   cpu_options.SetXNNPackFlags(
       default_xnn_options.flags |
-      TFLITE_XNNPACK_DELEGATE_FLAG_DYNAMIC_FULLY_CONNECTED);
+      TFLITE_XNNPACK_DELEGATE_FLAG_DYNAMIC_FULLY_CONNECTED |
+      TFLITE_XNNPACK_DELEGATE_FLAG_ENABLE_LATEST_OPERATORS);
   return absl::OkStatus();
 }
 

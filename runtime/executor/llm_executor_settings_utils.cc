@@ -170,7 +170,11 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
           // GPU Sampler requires logits to be external tensors (PHWC4 format).
           gpu_compilation_options.AddExternalTensorPattern("logits");
         }
+        gpu_compilation_options.AddExternalTensorPattern("w_prime");
+        gpu_compilation_options.AddExternalTensorPattern("lora_");
       }
+      gpu_compilation_options.AddBufferStorageTensorPattern("w_prime");
+      gpu_compilation_options.AddBufferStorageTensorPattern("lora_");
       // Prefill and decode are always fully delegated to single delegate.
       gpu_compilation_options.SetHintFullyDelegatedToSingleDelegate(true);
 
@@ -258,9 +262,19 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
         ABSL_LOG(WARNING) << "Can't use cache: " << weight_cache_file.status();
       }
       auto default_xnn_options = TfLiteXNNPackDelegateOptionsDefault();
+      // Set XNNPACK flags for CPU execution (`Backend::kCpu`):
+      // - TFLITE_XNNPACK_DELEGATE_FLAG_DYNAMIC_FULLY_CONNECTED: Enables dynamic
+      //   fully connected layers for efficient LLM weight handling.
+      // - TFLITE_XNNPACK_DELEGATE_FLAG_ENABLE_LATEST_OPERATORS: Enables the
+      //   latest experimental/new XNNPACK operators (e.g., newer SDPA variants
+      //   and dynamic shape features) required by converted LiteRT-LM models
+      //   (such as Gemma 4 AST audio/text models evaluated during CPU vs. GPU
+      //   LoRA and AST comparison testing) that are not yet enabled in the
+      //   default XNNPACK delegate options.
       cpu_compilation_options.SetXNNPackFlags(
           default_xnn_options.flags |
-          TFLITE_XNNPACK_DELEGATE_FLAG_DYNAMIC_FULLY_CONNECTED);
+          TFLITE_XNNPACK_DELEGATE_FLAG_DYNAMIC_FULLY_CONNECTED |
+          TFLITE_XNNPACK_DELEGATE_FLAG_ENABLE_LATEST_OPERATORS);
       LITERT_ASSIGN_OR_RETURN(auto& runtime_options,
                               compilation_options.GetRuntimeOptions());
       runtime_options.SetCompressQuantizationZeroPoints(true);

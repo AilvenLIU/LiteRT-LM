@@ -33,7 +33,9 @@ namespace {
 
 constexpr LazyRE2 kLoRAInputNamePattern = {
     "^(?:(?:query|key|value|post)_w_prime_(?:left|right)|"
-    "lora_atten_(?:q|k|v|o)_(?:a|b)_prime_weight)_\\d+$"};
+    "lora_atten_(?:q|k|v|o)_(?:a|b)_prime_weight)_\\d+$|"
+    "^transformer\\.layer_\\d+\\.attn\\."
+    "(?:q|k|v|attn_vec_einsum)\\.w_prime_(?:left|right)$"};
 
 uint64_t AlignByN(uint64_t number, uint64_t n) {
   const uint64_t q = number / n;

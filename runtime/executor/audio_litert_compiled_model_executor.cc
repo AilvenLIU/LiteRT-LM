@@ -106,6 +106,10 @@ absl::Status SetGpuOptions(const AudioExecutorSettings& executor_settings,
   gpu_options.EnableInfiniteFloatCapping(true);
   gpu_options.SetNumStepsOfCommandBufferPreparations(2);
   gpu_options.EnableExternalTensorsMode(false);
+  gpu_options.AddExternalTensorPattern("w_prime");
+  gpu_options.AddBufferStorageTensorPattern("w_prime");
+  gpu_options.AddExternalTensorPattern("lora_");
+  gpu_options.AddBufferStorageTensorPattern("lora_");
   gpu_options.SetNumThreadsToUpload(2);
   gpu_options.SetNumThreadsToCompile(1);
   gpu_options.EnableAllowSrcQuantizedFcConvOps(false);
@@ -119,7 +123,8 @@ absl::Status SetCpuOptions(const AudioExecutorSettings& executor_settings,
   auto default_xnn_options = TfLiteXNNPackDelegateOptionsDefault();
   cpu_options.SetXNNPackFlags(
       default_xnn_options.flags |
-      TFLITE_XNNPACK_DELEGATE_FLAG_DYNAMIC_FULLY_CONNECTED);
+      TFLITE_XNNPACK_DELEGATE_FLAG_DYNAMIC_FULLY_CONNECTED |
+      TFLITE_XNNPACK_DELEGATE_FLAG_ENABLE_LATEST_OPERATORS);
   return absl::OkStatus();
 }
 
@@ -213,7 +218,8 @@ absl::StatusOr<std::unique_ptr<AudioContext>> AudioStreamingContext::Clone()
     LITERT_ASSIGN_OR_RETURN(auto new_buffer, buffer.Duplicate());
     new_state_buffers[name] = std::move(new_buffer);
   }
-  auto context = std::make_unique<AudioStreamingContext>(std::move(new_state_buffers));
+  auto context = std::make_unique<AudioStreamingContext>(
+      std::move(new_state_buffers));
   context->buffered_spectrogram() = buffered_spectrogram_;
   return context;
 }

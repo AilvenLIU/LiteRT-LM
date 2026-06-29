@@ -389,9 +389,11 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::CreatePrefillInputBuffers(
   // the prefill length.
   if (!signatures_.input_tokens.empty()) {
     ABSL_RETURN_IF_ERROR(dyn_shape_resolver(signatures_.input_tokens));
-    auto tokens_buffer = compiled_model_->CreateInputBuffer(
-        prefill_signature, signatures_.input_tokens);
-    prefill_input_buffers[signatures_.input_tokens] = std::move(*tokens_buffer);
+    LITERT_ASSIGN_OR_RETURN(
+        auto tokens_buffer,
+        compiled_model_->CreateInputBuffer(prefill_signature,
+                                           signatures_.input_tokens));
+    prefill_input_buffers[signatures_.input_tokens] = std::move(tokens_buffer);
   } else {
     // If input_tokens is empty, we must have input_embeddings.
     if (!signatures_.input_embeddings.has_value()) {
@@ -405,10 +407,12 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::CreatePrefillInputBuffers(
     }
     ABSL_RETURN_IF_ERROR(
         dyn_shape_resolver(signatures_.input_embeddings.value()));
-    auto embeddings_buffer = compiled_model_->CreateInputBuffer(
-        prefill_signature, signatures_.input_embeddings.value());
+    LITERT_ASSIGN_OR_RETURN(
+        auto embeddings_buffer,
+        compiled_model_->CreateInputBuffer(
+            prefill_signature, signatures_.input_embeddings.value()));
     prefill_input_buffers[signatures_.input_embeddings.value()] =
-        std::move(*embeddings_buffer);
+        std::move(embeddings_buffer);
 
     // We may have per layer embedding as well.
     if (signatures_.input_per_layer_embeddings.has_value()) {
@@ -419,17 +423,22 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::CreatePrefillInputBuffers(
       }
       ABSL_RETURN_IF_ERROR(
           dyn_shape_resolver(signatures_.input_per_layer_embeddings.value()));
-      auto per_layer_embeddings_buffer = compiled_model_->CreateInputBuffer(
-          prefill_signature, signatures_.input_per_layer_embeddings.value());
+      LITERT_ASSIGN_OR_RETURN(
+          auto per_layer_embeddings_buffer,
+          compiled_model_->CreateInputBuffer(
+              prefill_signature,
+              signatures_.input_per_layer_embeddings.value()));
       prefill_input_buffers[signatures_.input_per_layer_embeddings.value()] =
-          std::move(*per_layer_embeddings_buffer);
+          std::move(per_layer_embeddings_buffer);
     }
   }
   ABSL_RETURN_IF_ERROR(dyn_shape_resolver(signatures_.input_positions));
-  auto positions_buffer = compiled_model_->CreateInputBuffer(
-      prefill_signature, signatures_.input_positions);
+  LITERT_ASSIGN_OR_RETURN(
+      auto positions_buffer,
+      compiled_model_->CreateInputBuffer(prefill_signature,
+                                         signatures_.input_positions));
   prefill_input_buffers[signatures_.input_positions] =
-      std::move(*positions_buffer);
+      std::move(positions_buffer);
 
   if (signatures_.input_attn_mask.has_value()) {
     ABSL_ASSIGN_OR_RETURN(bool is_attn_dyn,
@@ -441,17 +450,21 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::CreatePrefillInputBuffers(
           prefill_signature, signatures_.input_attn_mask.value(), new_shape));
     }
 
-    auto attn_mask_buffer = compiled_model_->CreateInputBuffer(
-        prefill_signature, signatures_.input_attn_mask.value());
+    LITERT_ASSIGN_OR_RETURN(
+        auto attn_mask_buffer,
+        compiled_model_->CreateInputBuffer(
+            prefill_signature, signatures_.input_attn_mask.value()));
     prefill_input_buffers[signatures_.input_attn_mask.value()] =
-        std::move(*attn_mask_buffer);
+        std::move(attn_mask_buffer);
   }
   if (signatures_.input_int32_param.has_value()) {
     gpu_optimized_single_buffer_cache_ = true;
-    auto param_tensor_buffer = compiled_model_->CreateInputBuffer(
-        prefill_signature, signatures_.input_int32_param.value());
+    LITERT_ASSIGN_OR_RETURN(
+        auto param_tensor_buffer,
+        compiled_model_->CreateInputBuffer(
+            prefill_signature, signatures_.input_int32_param.value()));
     prefill_input_buffers[signatures_.input_int32_param.value()] =
-        std::move(*param_tensor_buffer);
+        std::move(param_tensor_buffer);
   }
   return absl::OkStatus();
 }
@@ -671,6 +684,11 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::PrefillInternal(
         // If not using token as lookup, we must have input_embeddings. There is
         // no need to create input_embeddings_ptr because TensorBuffer locking
         // and filling is handled by the embedding lookup.
+        if (embedding_lookup_ == nullptr) {
+          return absl::FailedPreconditionError(
+              "Prefill requires embedding_lookup_ when use_token_as_lookup is "
+              "false, but embedding_lookup_ is null.");
+        }
         TensorBuffer* prefill_input_embeddings_buffer =
             &(prefill_input_buffers[signatures_.input_embeddings.value()]);
         ABSL_RETURN_IF_ERROR(embedding_lookup_->LookupPrefill(
@@ -679,6 +697,12 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::PrefillInternal(
 
         // We may have per layer embedding as well.
         if (signatures_.input_per_layer_embeddings) {
+          if (per_layer_embedding_lookup_ == nullptr) {
+            return absl::FailedPreconditionError(
+                "Prefill requires per_layer_embedding_lookup_ when signature "
+                "has input_per_layer_embeddings, but per_layer_embedding_"
+                "lookup_ is null.");
+          }
           TensorBuffer* prefill_input_per_layer_embeddings_buffer =
               &(prefill_input_buffers[signatures_.input_per_layer_embeddings
                                           .value()]);
@@ -708,9 +732,20 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::PrefillInternal(
       // Look up the embeddings for the last token so they can be used in the
       // next prefill or decode. This has to be done now in the case of
       // multi-modal prefill so the embeddings are used in the correct order.
+      if (embedding_lookup_ == nullptr) {
+        return absl::FailedPreconditionError(
+            "Prefill requires embedding_lookup_ for the last pending token "
+            "when use_token_as_lookup is false, but embedding_lookup_ is "
+            "null.");
+      }
       ABSL_RETURN_IF_ERROR(embedding_lookup_->LookupPrefill(
           last_input_token->id(), last_input_token->mutable_embedding()));
       if (use_per_layer_embedding) {
+        if (per_layer_embedding_lookup_ == nullptr) {
+          return absl::FailedPreconditionError(
+              "Prefill requires per_layer_embedding_lookup_ for the last "
+              "pending token, but per_layer_embedding_lookup_ is null.");
+        }
         ABSL_RETURN_IF_ERROR(per_layer_embedding_lookup_->LookupPrefill(
             last_input_token->id(),
             last_input_token->mutable_per_layer_embedding()));
@@ -813,9 +848,19 @@ LlmLiteRtCompiledModelExecutorBase::GetTokenToDecode(
     // sampling.
     if (signatures_.input_embeddings.has_value() &&
         token->mutable_embedding().empty()) {
+      if (embedding_lookup_ == nullptr) {
+        return absl::FailedPreconditionError(
+            "Decode requires embedding_lookup_ when input_embeddings are used, "
+            "but embedding_lookup_ is null.");
+      }
       ABSL_RETURN_IF_ERROR(embedding_lookup_->LookupDecode(
           token->id(), token->mutable_embedding()));
       if (signatures_.input_per_layer_embeddings.has_value()) {
+        if (per_layer_embedding_lookup_ == nullptr) {
+          return absl::FailedPreconditionError(
+              "Decode requires per_layer_embedding_lookup_ when required by "
+              "signature, but per_layer_embedding_lookup_ is null.");
+        }
         ABSL_RETURN_IF_ERROR(per_layer_embedding_lookup_->LookupDecode(
             token->id(), token->mutable_per_layer_embedding()));
       }
