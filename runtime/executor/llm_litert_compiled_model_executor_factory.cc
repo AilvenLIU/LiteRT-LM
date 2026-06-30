@@ -133,20 +133,21 @@ absl::StatusOr<std::unique_ptr<LlmExecutor>>
 CreateCpuOrGpuLlmLiteRtCompiledModelExecutor(
     LlmExecutorSettings executor_settings, Environment& lrt_env,
     ModelResources& resources) {
-  ABSL_ASSIGN_OR_RETURN(
+  std::unique_ptr<LlmExecutor> executor;
+
+  LITERT_ASSIGN_OR_RETURN(
       const litert::Model* litert_model,
       resources.GetTFLiteModel(ModelType::kTfLitePrefillDecode));
 
-  std::unique_ptr<LlmExecutor> executor;
-  ABSL_ASSIGN_OR_RETURN(bool is_dynamic_model, IsDynamicModel(*litert_model));
+  LITERT_ASSIGN_OR_RETURN(bool is_dynamic_model, IsDynamicModel(*litert_model));
   if (is_dynamic_model) {
-    ABSL_ASSIGN_OR_RETURN(executor,
-                          LlmLiteRtCompiledModelExecutorDynamic::Create(
-                              executor_settings, lrt_env, resources));
+    LITERT_ASSIGN_OR_RETURN(executor,
+                            LlmLiteRtCompiledModelExecutorDynamic::Create(
+                                executor_settings, lrt_env, resources));
   } else {
-    ABSL_ASSIGN_OR_RETURN(executor,
-                          LlmLiteRtCompiledModelExecutorStatic::Create(
-                              executor_settings, lrt_env, resources));
+    LITERT_ASSIGN_OR_RETURN(executor,
+                            LlmLiteRtCompiledModelExecutorStatic::Create(
+                                executor_settings, lrt_env, resources));
   }
 
   return executor;

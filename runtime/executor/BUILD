@@ -394,6 +394,7 @@ cc_test(
         ":llm_executor_settings",
         ":llm_litert_compiled_model_executor_factory",
         "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
