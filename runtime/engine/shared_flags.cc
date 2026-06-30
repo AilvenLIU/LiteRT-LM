@@ -149,6 +149,21 @@ ABSL_FLAG(bool, cache_compiled_shaders_only, false,
           "If true, only the compiled shaders will be cached. If false, gpu "
           "graph info including work group sizes (and all compiled shaders "
           "depending on backend) will be cached.");
+ABSL_FLAG(double, repetition_penalty, 1.0,
+          "Multiplicative penalty for any token already generated. "
+          "Values >= 1.0 (e.g., 1.0 = no penalty, 1.2 = moderate penalty). "
+          "Positive logits are divided by this penalty, and negative logits "
+          "are multiplied.");
+ABSL_FLAG(double, presence_penalty, 0.0,
+          "Scalar subtracted globally from a logit if a token has appeared at "
+          "least once within the currently generated sequence.");
+ABSL_FLAG(
+    double, frequency_penalty, 0.0,
+    "Scalar subtracted from a token's logit, scaled linearly by the number "
+    "of times that token has previously appeared.");
+ABSL_FLAG(int, repetition_window_size, 0,
+          "The maximum number of recent tokens to consider for penalization. "
+          "Tokens older than this are forgotten. 0 means track all history.");
 ABSL_FLAG(std::string, suppress_tokens, "",
           "A comma-separated list of tokens to suppress.");
 ABSL_FLAG(std::string, constraint_regex, "",

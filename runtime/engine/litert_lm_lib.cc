@@ -309,6 +309,7 @@ absl::Status RunSingleTurnSession(const std::string& input_prompt,
     decode_config.SetMaxOutputTokens(settings.max_output_tokens);
   }
 
+  decode_config.SetRepetitionPenaltyConfig(settings.repetition_penalty_config);
   decode_config.SetSuppressTokensConfig(settings.suppress_tokens_config);
 
   std::unique_ptr<Constraint> constraint;
@@ -802,6 +803,7 @@ absl::Status RunLiteRtLm(const LiteRtLmSettings& settings,
           auto conversation_config,
           ConversationConfig::Builder()
               .SetSessionConfig(session_config)
+              .SetRepetitionPenaltyConfig(settings.repetition_penalty_config)
               .SetSuppressTokensConfig(settings.suppress_tokens_config)
               .Build(*engine));
       ASSIGN_OR_RETURN(conversation,

@@ -34,6 +34,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "nlohmann/json.hpp"  // from @nlohmann_json
+#include "runtime/components/logits_processor/repetition_penalty_config.h"
 #include "runtime/components/logits_processor/suppress_tokens_config.h"
 #include "runtime/engine/engine.h"
 #include "runtime/engine/engine_settings.h"
@@ -125,6 +126,8 @@ struct LiteRtLmSettings {
   bool sampler_handles_input = true;
   ConvType conv_type = ConvType::kAuto;
   bool cache_compiled_shaders_only = false;
+  RepetitionPenaltyConfig repetition_penalty_config =
+      RepetitionPenaltyConfig::Default();
   SuppressTokensConfig suppress_tokens_config = SuppressTokensConfig::Default();
   std::string constraint_regex = "";
   bool use_submodel = false;
