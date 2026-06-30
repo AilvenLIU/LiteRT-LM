@@ -417,16 +417,25 @@ void LogBenchmarkInfo(const litert::lm::BenchmarkInfo& benchmark_info,
   if (!settings.log_sink_file.has_value()) {
     ABSL_LOG(INFO) << benchmark_info;
   } else {
-    std::string model_name_flag = "";
+    std::string extra_flags = "";
     if (settings.model_name.has_value() && !settings.model_name->empty()) {
-      model_name_flag = absl::StrFormat(",model_name=%s", *settings.model_name);
+      absl::StrAppend(&extra_flags, ",model_name=", *settings.model_name);
+    }
+    if (settings.vision_backend.has_value() &&
+        !settings.vision_backend->empty()) {
+      absl::StrAppend(&extra_flags,
+                      ",vision_backend=", *settings.vision_backend);
+    }
+    if (settings.audio_backend.has_value() &&
+        !settings.audio_backend->empty()) {
+      absl::StrAppend(&extra_flags, ",audio_backend=", *settings.audio_backend);
     }
     ABSL_LOG(INFO) << absl::StrFormat(
         "Benchmark flags: "
         "benchmark_prefill_tokens=%d,benchmark_decode_tokens=%d,backend=%s%s",
         benchmark_info.GetBenchmarkParams().num_prefill_tokens(),
         benchmark_info.GetBenchmarkParams().num_decode_tokens(),
-        settings.backend, model_name_flag);
+        settings.backend, extra_flags);
     for (const auto& phase : benchmark_info.GetInitPhases()) {
       ABSL_LOG(INFO) << absl::StrFormat(
           "%s: %.2f ms", phase.first, absl::ToDoubleMilliseconds(phase.second));
