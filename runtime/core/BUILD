@@ -109,9 +109,7 @@ cc_library(
 cc_library(
     name = "engine_advanced_impl_cpu_only",
     srcs = ["engine_advanced_impl.cc"],
-    deps = ENGINE_IMPL_COMMON_DEPS + select({
-        "//conditions:default": [],
-    }),
+    deps = ENGINE_IMPL_COMMON_DEPS,
     alwayslink = 1,
 )
 
