@@ -15,6 +15,7 @@
 #include "runtime/executor/fake_llm_executor.h"
 
 #include <algorithm>
+#include <atomic>
 #include <iterator>
 #include <limits>
 #include <optional>
@@ -296,6 +297,40 @@ absl::Status FakeLlmExecutor::Reset() {
   prefill_tokens_total_ = 0;
   last_op_ = LastOp::kNone;
   return absl::OkStatus();
+}
+
+absl::StatusOr<std::vector<std::vector<int>>>
+DiffusionLlmFakeLlmExecutor::Decode(const ExecutorDecodeParams& decode_params) {
+  // Signal to the test thread that we have entered the Decode method.
+  decode_started_.store(true);
+
+  // Retrieve the cancellation token pointer passed from the tasks layer.
+  const std::atomic<bool>* cancelled = decode_params.GetCancelled();
+
+  // Safeguard: If the token is null, it means the tasks layer failed to
+  // propagate the cancellation token. Fail the test immediately.
+  if (cancelled == nullptr) {
+    return absl::InternalError("Cancellation token was not propagated!");
+  }
+
+  // If a mock execution delay was configured, simulate a long-running process.
+  if (mock_decode_delay_ > absl::ZeroDuration()) {
+    absl::Time start = absl::Now();
+    // Instead of sleeping for the entire duration at once, sleep in 10ms
+    // intervals so we can periodically poll the cancellation token.
+    while (absl::Now() - start < mock_decode_delay_) {
+      // Check if the cancellation flag has been set to true by the test thread.
+      if (cancelled->load()) {
+        // Abort early and return a cancelled error, simulating early stop.
+        return absl::CancelledError("Fake executor cancelled during delay");
+      }
+      absl::SleepFor(absl::Milliseconds(10));
+    }
+  }
+
+  // If not cancelled, proceed to call the base class implementation to generate
+  // tokens.
+  return FakeLlmExecutor::Decode(decode_params);
 }
 
 }  // namespace litert::lm

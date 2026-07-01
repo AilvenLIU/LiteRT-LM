@@ -222,6 +222,65 @@ TEST_F(TasksTest, DecodeSucceed) {
               testing::ElementsAre(224, 24, 8, 66, 246, 18, 2295));
 }
 
+TEST_F(TasksTest, DecodeWithCancellation) {
+  std::optional<BenchmarkInfo> benchmark_info;
+
+  // Create local CancelableFakeLlmExecutor
+  std::vector<std::vector<int>> prefill_tokens = {
+      {2, 90, 547, 58, 735, 210, 466, 2294}};
+  std::vector<std::vector<int>> decode_tokens = {{224}, {24}, {8},    {66},
+                                                 {246}, {18}, {2295}, {2294}};
+  DiffusionLlmFakeLlmExecutor executor(tokenizer_->GetVocabSize(),
+                                       prefill_tokens, decode_tokens);
+
+  // Run prefill first.
+  std::vector<int> prefill_token_ids = {2, 90, 547, 58, 735, 210, 466, 2294};
+  ASSERT_OK_AND_ASSIGN(auto token_ids_buffer,
+                       tokenizer_->TokenIdsToTensorBuffer(prefill_token_ids));
+  ExecutorTextData text_data(std::move(token_ids_buffer));
+  ExecutorInputs inputs(std::move(text_data), std::nullopt, std::nullopt);
+  auto prefill_responses = Tasks::Prefill(
+      executor, inputs, /*wait_for_completion=*/true, benchmark_info);
+  EXPECT_OK(prefill_responses);
+
+  // Set the delay on the cancelable executor
+  executor.SetMockDecodeDelay(absl::Milliseconds(1000));
+
+  constexpr int kNumOutputCandidates = 1;
+  StopTokenDetector stop_token_detector(kNumOutputCandidates);
+  EXPECT_OK(stop_token_detector.AddStopTokenSequence({2294}));
+  absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback = nullptr;
+
+  std::atomic<bool> cancelled = false;
+
+  ThreadPool pool("test_pool", 1);
+  absl::StatusOr<Responses> task_responses;
+
+  ASSERT_OK(pool.Schedule([&]() {
+    task_responses = Tasks::Decode(
+        executor, *tokenizer_, stop_token_detector, kNumOutputCandidates,
+        benchmark_info,
+        /*sampler=*/std::nullopt, RepetitionPenaltyConfig::Default(),
+        NoRepeatNgramConfig::Default(), SuppressTokensConfig::Default(),
+        /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
+        /*callback=*/callback, &cancelled);
+  }));
+
+  // Wait until the executor actually enters the Decode method
+  while (!executor.HasDecodeStarted()) {
+    absl::SleepFor(absl::Milliseconds(1));
+  }
+
+  // Cancel the decoding process.
+  cancelled = true;
+
+  EXPECT_OK(pool.WaitUntilDone(absl::Seconds(5)));
+  EXPECT_THAT(task_responses,
+              testing::status::StatusIs(
+                  absl::StatusCode::kCancelled,
+                  testing::HasSubstr("Fake executor cancelled during delay")));
+}
+
 TEST_F(TasksTest, DecodeWithTwoStopTokens) {
   std::optional<BenchmarkInfo> benchmark_info;
 
