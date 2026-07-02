@@ -16,6 +16,17 @@
 
 import {z} from 'zod';
 
+/** Schema for custom model stored in the file system. */
+export const CustomModelSchema = z.object({
+  name: z.string(),
+  filename: z.string(),
+  path: z.string(),
+  size: z.string(),
+});
+
+/** Type for custom model stored in the file system. */
+export type CustomModel = z.infer<typeof CustomModelSchema>;
+
 /** Schema for inference configuration settings. */
 export const SettingsSchema = z.object({
   selectedModelPath: z.string(),
@@ -26,6 +37,8 @@ export const SettingsSchema = z.object({
   topP: z.number().min(0).max(1),
   topK: z.number().int().nonnegative(),
   enableThinking: z.boolean(),
+  customModels: z.array(CustomModelSchema).default([]),
+  localDirModels: z.array(CustomModelSchema).default([]),
 });
 
 /** Schema for partial settings, used for parsing saved settings. */
@@ -64,6 +77,8 @@ export class SettingsStore implements Settings {
   topP = 0.95;
   topK = 64;
   enableThinking = true;
+  customModels: CustomModel[] = [];
+  localDirModels: CustomModel[] = [];
 
   private readonly SETTINGS_KEY = 'litertlm-chat-settings';
 
@@ -89,6 +104,8 @@ export class SettingsStore implements Settings {
           this.topP = validated.topP ?? this.topP;
           this.topK = validated.topK ?? this.topK;
           this.enableThinking = validated.enableThinking ?? this.enableThinking;
+          this.customModels = validated.customModels ?? [];
+          this.localDirModels = validated.localDirModels ?? [];
         } else {
           console.warn(
               '[LiteRT-LM] Invalid settings in LocalStorage, using defaults:',
@@ -111,6 +128,8 @@ export class SettingsStore implements Settings {
         topP: this.topP,
         topK: this.topK,
         enableThinking: this.enableThinking,
+        customModels: this.customModels,
+        localDirModels: this.localDirModels,
       };
       window.localStorage.setItem(this.SETTINGS_KEY, JSON.stringify(payload));
       this.updateCallback();

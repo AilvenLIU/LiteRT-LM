@@ -45,7 +45,7 @@ describe('ChatSessionStore', () => {
     const fakeLoadWasm = async () => {};
 
     modelLoader = new ModelLoaderService(
-        () => {}, settingsStore, () => {}, fakeEngineCreate,
+        () => {}, settingsStore, () => {}, undefined, fakeEngineCreate,
         fakeLoadWasm as unknown as typeof getOrLoadGlobalLiteRtLm);
 
     modelLoader.engine = fakeEngine as unknown as Engine;

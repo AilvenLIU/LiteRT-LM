@@ -19,6 +19,7 @@ import './sidebar_drawer';
 import {LlmChatStateController} from '../state_controller.js';
 import {ChatSessionStore} from '../stores/chat_session_store.js';
 import {ModelLoaderService} from '../stores/model_loader_service.js';
+import {LocalDirectoryService} from '../stores/local_directory_service.js';
 import {MODELS, SettingsStore} from '../stores/settings_store.js';
 import {LitertSidebar} from './sidebar_drawer.js';
 
@@ -28,6 +29,7 @@ describe('litert-sidebar', () => {
   let mockChatSession: jasmine.SpyObj<ChatSessionStore>;
   let mockSettings: jasmine.SpyObj<SettingsStore>;
   let mockModelLoader: jasmine.SpyObj<ModelLoaderService>;
+  let mockLocalDirService: jasmine.SpyObj<LocalDirectoryService>;
   let cachedModelsMap: Map<string, number>;
   let downloadProgressMap: Map<string, number>;
   let downloadSpeedsMap: Map<string, string>;
@@ -57,6 +59,16 @@ describe('litert-sidebar', () => {
     mockSettings.topK = 40;
     mockSettings.samplerType = 'top_k';
     mockSettings.enableThinking = false;
+    mockSettings.customModels = [];
+    mockSettings.localDirModels = [];
+
+    mockLocalDirService = jasmine.createSpyObj('LocalDirectoryService', [
+      'mountDirectory',
+      'scanDirectory',
+      'getFile',
+    ]);
+    mockLocalDirService.isAuthorized = false;
+    (mockLocalDirService as any).isSupported = false;
 
     cachedModelsMap = new Map<string, number>();
     downloadProgressMap = new Map<string, number>();
@@ -80,6 +92,7 @@ describe('litert-sidebar', () => {
       chatSession: mockChatSession,
       settings: mockSettings,
       modelLoader: mockModelLoader,
+      localDirService: mockLocalDirService,
       statusText: 'Ready',
       addHost: jasmine.createSpy('addHost'),
       removeHost: jasmine.createSpy('removeHost'),
@@ -101,7 +114,7 @@ describe('litert-sidebar', () => {
     expect(dropdown).toBeTruthy();
 
     const items = element.shadowRoot!.querySelectorAll('.dropdown-item');
-    expect(items.length).toBe(MODELS.length);
+    expect(items.length).toBe(MODELS.length + 1);
     expect(items[0]!.querySelector('.model-name')!.textContent!.trim()).toBe(MODELS[0]!.name);
   });
 
@@ -223,5 +236,45 @@ describe('litert-sidebar', () => {
 
     cancelBtn.click();
     expect(mockModelLoader.cancelDownload).toHaveBeenCalled();
+  });
+
+  it('triggers mountDirectory when select-dir is chosen (isSupported=true)', async () => {
+    (mockLocalDirService as any).isSupported = true;
+    element.requestUpdate();
+    await element.updateComplete;
+
+    const dropdown = element.shadowRoot!.querySelector('custom-dropdown') as HTMLElement;
+    dropdown.dispatchEvent(new CustomEvent('change', {
+      detail: 'select-dir',
+    }));
+    await element.updateComplete;
+
+    expect(mockLocalDirService.mountDirectory).toHaveBeenCalled();
+  });
+
+  it('renders upload option when isSupported is false', async () => {
+    (mockLocalDirService as any).isSupported = false;
+    element.requestUpdate();
+    await element.updateComplete;
+
+    const dropdown = element.shadowRoot!.querySelector('custom-dropdown') as HTMLElement;
+    const uploadItem = dropdown.querySelector('[data-value="upload"]');
+    const selectDirItem = dropdown.querySelector('[data-value="select-dir"]');
+
+    expect(uploadItem).toBeTruthy();
+    expect(selectDirItem).toBeFalsy();
+  });
+
+  it('renders select-dir option when isSupported is true', async () => {
+    (mockLocalDirService as any).isSupported = true;
+    element.requestUpdate();
+    await element.updateComplete;
+
+    const dropdown = element.shadowRoot!.querySelector('custom-dropdown') as HTMLElement;
+    const uploadItem = dropdown.querySelector('[data-value="upload"]');
+    const selectDirItem = dropdown.querySelector('[data-value="select-dir"]');
+
+    expect(uploadItem).toBeFalsy();
+    expect(selectDirItem).toBeTruthy();
   });
 });
