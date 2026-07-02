@@ -40,6 +40,7 @@
 #include "runtime/components/logits_processor/constrained_decoding/constraint_provider.h"
 #include "runtime/components/logits_processor/constrained_decoding/constraint_provider_config.h"
 #include "runtime/components/logits_processor/constrained_decoding/constraint_provider_factory.h"
+#include "runtime/components/logits_processor/no_repeat_ngram_config.h"
 #include "runtime/components/logits_processor/repetition_penalty_config.h"
 #include "runtime/components/logits_processor/suppress_tokens_config.h"
 #include "runtime/components/prompt_template.h"
@@ -313,6 +314,7 @@ absl::StatusOr<std::string> Conversation::GetSingleTurnText(
 
 absl::StatusOr<DecodeConfig> Conversation::CreateDecodeConfig(
     std::optional<RepetitionPenaltyConfig> repetition_penalty_config,
+    std::optional<NoRepeatNgramConfig> no_repeat_ngram_config,
     std::optional<SuppressTokensConfig> suppress_tokens_config,
     std::optional<ConstraintArg> decoding_constraint,
     std::optional<int> max_output_tokens,
@@ -322,6 +324,10 @@ absl::StatusOr<DecodeConfig> Conversation::CreateDecodeConfig(
   if (repetition_penalty_config.has_value()) {
     decode_config.SetRepetitionPenaltyConfig(
         *std::move(repetition_penalty_config));
+  }
+
+  if (no_repeat_ngram_config.has_value()) {
+    decode_config.SetNoRepeatNgramConfig(*std::move(no_repeat_ngram_config));
   }
 
   if (suppress_tokens_config.has_value()) {
@@ -649,6 +655,7 @@ absl::Status Conversation::SendMessageAsync(
   ABSL_ASSIGN_OR_RETURN(
       auto decode_config,
       CreateDecodeConfig(std::move(optional_args.repetition_penalty_config),
+                         std::move(optional_args.no_repeat_ngram_config),
                          std::move(optional_args.suppress_tokens_config),
                          std::move(optional_args.decoding_constraint),
                          optional_args.max_output_tokens,

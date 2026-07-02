@@ -43,6 +43,7 @@
 #include "support/tokenizer/sentencepiece_tokenizer.h"  // from @litert
 #include "support/tokenizer/tokenizer.h"  // from @litert
 #include "runtime/components/logits_processor/constrained_decoding/fake_constraint.h"
+#include "runtime/components/logits_processor/no_repeat_ngram_config.h"
 #include "runtime/components/logits_processor/repetition_penalty_config.h"
 #include "runtime/components/logits_processor/suppress_tokens_config.h"
 #include "runtime/components/model_resources.h"
@@ -941,6 +942,54 @@ TEST_F(SessionAdvancedTest, RunDecodeWithRepetitionPenaltyConfig) {
   // because the repetition penalty is applied.
   EXPECT_EQ(responses.GetTexts().size(), 1);
   EXPECT_EQ(responses.GetTexts()[0], " How's it go");
+  ASSERT_OK_AND_ASSIGN(auto text_from_ids,
+                       tokenizer_->TokenIdsToText(responses.GetTokenIds()[0]));
+  EXPECT_EQ(text_from_ids, responses.GetTexts()[0]);
+}
+
+TEST_F(SessionAdvancedTest, RunDecodeWithNoRepeatNgramConfig) {
+  const std::vector<std::vector<int>> stop_token_ids = {{2294}};
+  SessionConfig session_config = SessionConfig::CreateDefault();
+  session_config.GetMutableSamplerParams() = sampler_params_;
+  session_config.GetMutableStopTokenIds() = stop_token_ids;
+  session_config.SetStartTokenId(2);
+  auto executor = CreateFakeLlmExecutor(
+      // "Hello World!"
+      /*prefill_tokens=*/{{2, 90, 547, 58, 735, 210, 466, 2294}},
+      // "How's it going going"
+      /*decode_tokens=*/{
+          {224}, {24}, {8}, {66}, {246}, {18}, {246}, {18}, {2294}});
+  executor->SetDecodeLogitsOptions(
+      FakeLlmExecutor::DecodeLogitsOptions{.match_value = 10.0f,
+                                           .mismatch_value = -10.0f,
+                                           .end_token_id = 2294,
+                                           .mismatch_end_token_value = 0.0f});
+  ASSERT_OK_AND_ASSIGN(
+      std::shared_ptr<ExecutionManager> execution_manager,
+      ThreadedExecutionManager::Create(tokenizer_.get(), model_resources_.get(),
+                                       std::move(executor),
+                                       /*vision_executor_settings=*/nullptr,
+                                       /*audio_executor_settings=*/nullptr,
+                                       /*litert_env=*/nullptr));
+
+  ASSERT_OK_AND_ASSIGN(
+      auto session,
+      SessionAdvanced::Create(execution_manager, tokenizer_.get(),
+                              session_config, /*benchmark_info=*/std::nullopt));
+  std::vector<InputData> inputs;
+  inputs.emplace_back(InputText("Hello World!"));
+  EXPECT_OK(session->RunPrefill(inputs));
+
+  // Create a config with penalties strong enough to suppress the repetition.
+  NoRepeatNgramConfig config(/*no_repeat_ngram_size=*/2, /*window_size=*/5);
+
+  auto decode_config = DecodeConfig::CreateDefault();
+  decode_config.SetNoRepeatNgramConfig(std::move(config));
+  ASSERT_OK_AND_ASSIGN(auto responses, session->RunDecode(decode_config));
+  // Expect the output to be " How's it going go" instead of " How's it going
+  // going" because the second "going" is banned.
+  EXPECT_EQ(responses.GetTexts().size(), 1);
+  EXPECT_EQ(responses.GetTexts()[0], " How's it going go");
   ASSERT_OK_AND_ASSIGN(auto text_from_ids,
                        tokenizer_->TokenIdsToText(responses.GetTokenIds()[0]));
   EXPECT_EQ(text_from_ids, responses.GetTexts()[0]);

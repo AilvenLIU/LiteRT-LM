@@ -42,6 +42,7 @@
 #include "runtime/components/logits_processor/constrained_decoding/bitmap.h"
 #include "runtime/components/logits_processor/constrained_decoding/constraint.h"
 #include "runtime/components/logits_processor/constrained_decoding/external_constraint_config.h"
+#include "runtime/components/logits_processor/no_repeat_ngram_config.h"
 #include "runtime/components/logits_processor/repetition_penalty_config.h"
 #include "runtime/components/logits_processor/suppress_tokens_config.h"
 #include "runtime/components/prompt_template.h"
@@ -3070,6 +3071,61 @@ TEST_P(ConversationTest, SendMessageWithRepetitionPenalty) {
       const Message response,
       conversation->SendMessage(user_message, {.repetition_penalty_config =
                                                    repetition_penalty_config}));
+}
+
+TEST_P(ConversationTest, SendMessageWithNoRepeatNgramConfig) {
+  // Set up mock Session.
+  auto mock_session = CreateMockSession();
+  MockSession* mock_session_ptr = mock_session.get();
+  auto mock_engine = CreateMockEngine(std::move(mock_session));
+
+  NoRepeatNgramConfig no_repeat_ngram_config(
+      /*no_repeat_ngram_size=*/3, /*window_size=*/10);
+
+  // Create Conversation with NoRepeatNgramConfig.
+  ASSERT_OK_AND_ASSIGN(
+      auto conversation_config,
+      ConversationConfig::Builder()
+          .SetSessionConfig(session_config_)
+          .SetOverwritePromptTemplate(PromptTemplate(kTestJinjaPromptTemplate))
+          .Build(*mock_engine));
+  ASSERT_OK_AND_ASSIGN(auto conversation,
+                       Conversation::Create(*mock_engine, conversation_config));
+
+  // Send a message.
+  Message user_message = {{"role", "user"}, {"content", "How are you?"}};
+
+  EXPECT_CALL(*mock_session_ptr, RunPrefillAsync(testing::_, testing::_))
+      .WillOnce([](const std::vector<InputData>& contents,
+                   absl::AnyInvocable<void(absl::StatusOr<Responses>)>
+                       user_callback) {
+        user_callback(Responses(TaskState::kDone));
+        return nullptr;
+      });
+
+  // Verify that the no repeat ngram config is passed to RunDecode.
+  EXPECT_CALL(
+      *mock_session_ptr,
+      RunDecodeAsync(
+          testing::_,
+          testing::Property(
+              &DecodeConfig::GetNoRepeatNgramConfig,
+              testing::AllOf(
+                  testing::Property(&NoRepeatNgramConfig::no_repeat_ngram_size,
+                                    3),
+                  testing::Property(&NoRepeatNgramConfig::window_size, 10)))))
+      .WillOnce(
+          [](absl::AnyInvocable<void(absl::StatusOr<Responses>)> user_callback,
+             const DecodeConfig& decode_config) {
+            user_callback(Responses(TaskState::kProcessing, {"I am good."}));
+            user_callback(Responses(TaskState::kDone));
+            return nullptr;
+          });
+
+  ASSERT_OK_AND_ASSIGN(
+      const Message response,
+      conversation->SendMessage(
+          user_message, {.no_repeat_ngram_config = no_repeat_ngram_config}));
 }
 
 TEST_P(ConversationTest, SendMessageWithSuppressTokens) {

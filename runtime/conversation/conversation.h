@@ -34,6 +34,7 @@
 #include "runtime/components/logits_processor/constrained_decoding/constraint.h"
 #include "runtime/components/logits_processor/constrained_decoding/constraint_provider.h"
 #include "runtime/components/logits_processor/constrained_decoding/constraint_provider_config.h"
+#include "runtime/components/logits_processor/no_repeat_ngram_config.h"
 #include "runtime/components/logits_processor/repetition_penalty_config.h"
 #include "runtime/components/logits_processor/suppress_tokens_config.h"
 #include "runtime/components/prompt_template.h"
@@ -415,6 +416,9 @@ struct OptionalArgs {
   std::optional<RepetitionPenaltyConfig> repetition_penalty_config =
       std::nullopt;
 
+  // The no repeat ngram config to be used during decode.
+  std::optional<NoRepeatNgramConfig> no_repeat_ngram_config = std::nullopt;
+
   // The suppress tokens config to be used during decode. This overrides the
   // suppress tokens config in the ConversationConfig.
   std::optional<SuppressTokensConfig> suppress_tokens_config = std::nullopt;
@@ -668,6 +672,7 @@ class Conversation {
   absl::StatusOr<DecodeConfig> CreateDecodeConfig(
       std::optional<RepetitionPenaltyConfig> repetition_penalty_config =
           std::nullopt,
+      std::optional<NoRepeatNgramConfig> no_repeat_ngram_config = std::nullopt,
       std::optional<SuppressTokensConfig> suppress_tokens_config = std::nullopt,
       std::optional<ConstraintArg> decoding_constraint = std::nullopt,
       std::optional<int> max_output_tokens = std::nullopt,
