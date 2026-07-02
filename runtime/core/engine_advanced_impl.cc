@@ -51,6 +51,10 @@
 #include "runtime/util/logging.h"
 #include "runtime/util/status_macros.h"  // NOLINT
 
+#if defined(AI_EDGE_DEBUGGER_ENABLED)
+#include "runtime/util/runtime_debugger.h"
+#endif  // defined(AI_EDGE_DEBUGGER_ENABLED)
+
 namespace litert::lm {
 
 class EngineAdvancedImpl : public Engine {
@@ -75,18 +79,21 @@ class EngineAdvancedImpl : public Engine {
   static absl::StatusOr<std::unique_ptr<Engine>> Create(
       EngineSettings engine_settings, absl::string_view input_prompt_as_hint);
 
-  EngineAdvancedImpl(EngineSettings engine_settings,
-                     std::unique_ptr<ModelResources> litert_model_resources,
-                     std::unique_ptr<OwnedEnvironment> owned_env,
-                     std::unique_ptr<Tokenizer> tokenizer,
-                     std::unique_ptr<ExecutionManager> execution_manager,
-                     std::optional<BenchmarkInfo> benchmark_info)
+  EngineAdvancedImpl(
+      EngineSettings engine_settings,
+      std::unique_ptr<ModelResources> litert_model_resources,
+      std::unique_ptr<OwnedEnvironment> owned_env,
+      std::unique_ptr<Tokenizer> tokenizer,
+      std::unique_ptr<ExecutionManager> execution_manager,
+      std::optional<BenchmarkInfo> benchmark_info,
+      std::shared_ptr<RuntimeDebugger> runtime_debugger = nullptr)
       : engine_settings_(std::move(engine_settings)),
         litert_model_resources_(std::move(litert_model_resources)),
         owned_env_(std::move(owned_env)),
         tokenizer_(std::move(tokenizer)),
         execution_manager_(std::move(execution_manager)),
-        benchmark_info_(std::move(benchmark_info)) {}
+        benchmark_info_(std::move(benchmark_info)),
+        runtime_debugger_(std::move(runtime_debugger)) {}
 
   // Method to create the Session.
   absl::StatusOr<std::unique_ptr<Session>> CreateSession(
@@ -114,7 +121,7 @@ class EngineAdvancedImpl : public Engine {
         auto session,
         SessionAdvanced::Create(execution_manager_, tokenizer_.get(), config,
                                 std::move(session_benchmark_info),
-                                &living_sessions_));
+                                &living_sessions_, runtime_debugger_));
 
     if (benchmark_info_.has_value()) {
       auto session_benchmark_info_or = session->GetMutableBenchmarkInfo();
@@ -171,6 +178,8 @@ class EngineAdvancedImpl : public Engine {
 
   // Benchmark info for the engine.
   std::optional<BenchmarkInfo> benchmark_info_;
+
+  std::shared_ptr<RuntimeDebugger> runtime_debugger_;
 };
 
 // Method to create Engine.
@@ -301,11 +310,32 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedImpl::Create(
 
   std::unique_ptr<LlmExecutor> executor;
 
+  std::shared_ptr<RuntimeDebugger> runtime_debugger = nullptr;
+#if defined(AI_EDGE_DEBUGGER_ENABLED)
+  runtime_debugger =
+      RuntimeDebugger::Create(main_executor_settings.GetCacheDir());
+#endif  // defined(AI_EDGE_DEBUGGER_ENABLED)
+
   switch (main_executor_settings.GetBackend()) {
     default: {
       ABSL_ASSIGN_OR_RETURN(executor, CreateLlmLiteRtCompiledModelExecutor(
                                           main_executor_settings,
                                           owned_env->env, *model_resources));
+#if defined(AI_EDGE_DEBUGGER_ENABLED)
+      if (main_executor_settings.GetBackend() == Backend::CPU ||
+          main_executor_settings.GetBackend() == Backend::GPU) {
+        if (auto* litert_executor =
+                dynamic_cast<LlmLiteRtCompiledModelExecutorBase*>(
+                    executor.get())) {
+          if (runtime_debugger != nullptr) {
+            litert_executor->UpdatePreGraphRunCallback(
+                runtime_debugger->CreatePreGraphRunCallback(executor.get()));
+            litert_executor->UpdatePostGraphRunCallback(
+                runtime_debugger->CreatePostGraphRunCallback(executor.get()));
+          }
+        }
+      }
+#endif  // defined(AI_EDGE_DEBUGGER_ENABLED)
     }
   };
 
@@ -382,7 +412,7 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedImpl::Create(
   auto llm_impl = std::make_unique<EngineAdvancedImpl>(
       std::move(engine_settings), std::move(model_resources),
       std::move(owned_env), std::move(tokenizer), std::move(execution_manager),
-      std::move(benchmark_info));
+      std::move(benchmark_info), std::move(runtime_debugger));
 
   return llm_impl;
 };

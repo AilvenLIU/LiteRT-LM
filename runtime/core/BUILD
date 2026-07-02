@@ -43,6 +43,11 @@ package_group(
     ],
 )
 
+config_setting(
+    name = "ai_edge_debugger_enabled",
+    define_values = {"AI_EDGE_DEBUGGER_ENABLED": "1"},
+)
+
 ENGINE_IMPL_COMMON_DEPS = [
     ":session_advanced",
     ":cached_session",
@@ -99,11 +104,19 @@ cc_library(
     srcs = ["engine_advanced_impl.cc"],
     local_defines = select({
         "//conditions:default": [],
+    }) + select({
+        ":ai_edge_debugger_enabled": ["AI_EDGE_DEBUGGER_ENABLED"],
+        "//conditions:default": [],
     }),
     deps = ENGINE_IMPL_COMMON_DEPS + [
         "//runtime/components:default_static_gpu_samplers",
         "//runtime/executor:default_static_gpu_accelerator",
     ] + select({
+        "//conditions:default": [],
+    }) + select({
+        ":ai_edge_debugger_enabled": [
+            "//runtime/util:runtime_debugger",
+        ],
         "//conditions:default": [],
     }),
     alwayslink = 1,
@@ -112,7 +125,18 @@ cc_library(
 cc_library(
     name = "engine_advanced_impl_cpu_only",
     srcs = ["engine_advanced_impl.cc"],
-    deps = ENGINE_IMPL_COMMON_DEPS,
+    local_defines = select({
+        ":ai_edge_debugger_enabled": ["AI_EDGE_DEBUGGER_ENABLED"],
+        "//conditions:default": [],
+    }),
+    deps = ENGINE_IMPL_COMMON_DEPS + select({
+        "//conditions:default": [],
+    }) + select({
+        ":ai_edge_debugger_enabled": [
+            "//runtime/util:runtime_debugger",
+        ],
+        "//conditions:default": [],
+    }),
     alwayslink = 1,
 )
 
@@ -222,6 +246,10 @@ cc_library(
     name = "session_advanced",
     srcs = ["session_advanced.cc"],
     hdrs = ["session_advanced.h"],
+    local_defines = select({
+        ":ai_edge_debugger_enabled": ["AI_EDGE_DEBUGGER_ENABLED=1"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":session_utils",
         "@com_google_absl//absl/base:core_headers",
@@ -246,7 +274,12 @@ cc_library(
         "//runtime/proto:sampler_params_cc_proto",
         "//runtime/util:litert_status_util",
         "//support/tokenizer",
-    ],
+    ] + select({
+        ":ai_edge_debugger_enabled": [
+            "//runtime/util:runtime_debugger",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_test(
@@ -256,6 +289,10 @@ cc_test(
         "//runtime/components/testdata",
         "//runtime/testdata",
     ],
+    local_defines = select({
+        ":ai_edge_debugger_enabled": ["AI_EDGE_DEBUGGER_ENABLED=1"],
+        "//conditions:default": [],
+    }),
     tags = ["requires-mac-inputs:hard"],  # Required for running on Forge on Mac.
     deps = [
         ":session_advanced",

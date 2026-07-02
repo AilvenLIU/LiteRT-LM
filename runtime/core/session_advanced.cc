@@ -44,6 +44,10 @@
 #include "runtime/util/status_macros.h"  // IWYU pragma: keep
 #include "support/tokenizer/tokenizer.h"
 
+#if defined(AI_EDGE_DEBUGGER_ENABLED)
+#include "runtime/util/runtime_debugger.h"
+#endif  // defined(AI_EDGE_DEBUGGER_ENABLED)
+
 namespace litert::lm {
 namespace {
 
@@ -57,7 +61,8 @@ absl::StatusOr<std::unique_ptr<SessionAdvanced>> SessionAdvanced::Create(
     support::Tokenizer* absl_nonnull tokenizer,
     const SessionConfig& session_config,
     std::optional<BenchmarkInfo> benchmark_info,
-    std::atomic<int>* living_sessions_count) {
+    std::atomic<int>* living_sessions_count,
+    std::shared_ptr<RuntimeDebugger> runtime_debugger) {
   auto execution_manager_lock = execution_manager.lock();
   if (execution_manager_lock == nullptr) {
     return absl::FailedPreconditionError("Execution manager is not available.");
@@ -67,10 +72,16 @@ absl::StatusOr<std::unique_ptr<SessionAdvanced>> SessionAdvanced::Create(
                             session_config, benchmark_info));
   ABSL_ASSIGN_OR_RETURN(auto session_info_,
                         execution_manager_lock->GetSessionInfo(session_id));
+#if defined(AI_EDGE_DEBUGGER_ENABLED)
+  if (runtime_debugger != nullptr) {
+    runtime_debugger->CreateSessionHandler(session_id);
+  }
+#endif  // defined(AI_EDGE_DEBUGGER_ENABLED)
   return absl::WrapUnique(new SessionAdvanced(
       session_id, execution_manager, tokenizer, session_info_,
       /*session_state=*/SessionState::kFresh,
-      /*last_task_ids=*/{}, living_sessions_count));
+      /*last_task_ids=*/{}, living_sessions_count,
+      std::move(runtime_debugger)));
 }
 
 absl::Status SessionAdvanced::RunPrefill(
@@ -128,6 +139,11 @@ SessionAdvanced::RunPrefillAsync(
                            *tokenizer_, session_info_->benchmark_info));
   }
   ABSL_ASSIGN_OR_RETURN(auto task_id, execution_manager_lock->GetNewTaskId());
+#if defined(AI_EDGE_DEBUGGER_ENABLED)
+  if (runtime_debugger_ != nullptr) {
+    runtime_debugger_->SwitchCurHandler(session_id_);
+  }
+#endif
   ABSL_RETURN_IF_ERROR(execution_manager_lock->AddPrefillTask(
       session_id_, task_id, std::move(preprocessed_contents), last_task_ids_,
       cancelled, std::move(callback)));
@@ -150,6 +166,11 @@ SessionAdvanced::PrefillPreprocessedContents(
   }
 
   ABSL_ASSIGN_OR_RETURN(auto task_id, execution_manager_lock->GetNewTaskId());
+#if defined(AI_EDGE_DEBUGGER_ENABLED)
+  if (runtime_debugger_ != nullptr) {
+    runtime_debugger_->SwitchCurHandler(session_id_);
+  }
+#endif
   ABSL_RETURN_IF_ERROR(execution_manager_lock->AddPrefillTask(
       session_id_, task_id, std::move(preprocessed_contents), last_task_ids_,
       cancelled, std::move(callback)));
@@ -289,6 +310,19 @@ absl::StatusOr<std::unique_ptr<TaskController>> SessionAdvanced::RunDecodeAsync(
 
   ABSL_ASSIGN_OR_RETURN(auto task_id, execution_manager_lock->GetNewTaskId());
 
+#if defined(AI_EDGE_DEBUGGER_ENABLED)
+  if (runtime_debugger_ != nullptr) {
+    runtime_debugger_->SwitchCurHandler(session_id_);
+  }
+  callback = [this, cb = std::move(callback)](
+                 absl::StatusOr<Responses> responses) mutable {
+    if (responses.ok() && runtime_debugger_ != nullptr) {
+      runtime_debugger_->ObserveTokens(session_id_, *responses);
+    }
+    cb(std::move(responses));
+  };
+#endif  // defined(AI_EDGE_DEBUGGER_ENABLED)
+
   ABSL_RETURN_IF_ERROR(execution_manager_lock->AddDecodeTask(
       session_id_, task_id, last_task_ids_,
       decode_config.GetRepetitionPenaltyConfig(),
@@ -350,6 +384,11 @@ SessionAdvanced::RunTextScoringAsync(
 
   auto cancelled = std::make_shared<std::atomic<bool>>(false);
   ABSL_ASSIGN_OR_RETURN(auto task_id, execution_manager_lock->GetNewTaskId());
+#if defined(AI_EDGE_DEBUGGER_ENABLED)
+  if (runtime_debugger_ != nullptr) {
+    runtime_debugger_->SwitchCurHandler(session_id_);
+  }
+#endif
   ABSL_RETURN_IF_ERROR(execution_manager_lock->AddTextScoringTask(
       session_id_, task_id, last_task_ids_, target_text, store_token_lengths,
       cancelled, std::move(callback)));
@@ -471,6 +510,11 @@ SessionAdvanced::CloneAsyncLocked(
 }
 
 SessionAdvanced::~SessionAdvanced() {
+#if defined(AI_EDGE_DEBUGGER_ENABLED)
+  if (runtime_debugger_ != nullptr) {
+    runtime_debugger_->UnregisterSessionHandler(session_id_);
+  }
+#endif  // defined(AI_EDGE_DEBUGGER_ENABLED)
   WaitUntilDone().IgnoreError();
   auto execution_manager_lock = execution_manager_.lock();
   if (execution_manager_lock == nullptr) {

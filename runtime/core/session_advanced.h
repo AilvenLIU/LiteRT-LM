@@ -42,6 +42,8 @@
 
 namespace litert::lm {
 
+class RuntimeDebugger;
+
 // SessionAdvanced is an implementation of SessionInterface. The
 // underlying prefill/decode use the LLM Execution Manager's advanced resource
 // management to support efficient multi-sessions and session cloning features.
@@ -87,7 +89,8 @@ class SessionAdvanced : public SessionInterface {
       support::Tokenizer* absl_nonnull tokenizer,
       const SessionConfig& session_config,
       std::optional<BenchmarkInfo> benchmark_info,
-      std::atomic<int>* living_sessions_count = nullptr);
+      std::atomic<int>* living_sessions_count = nullptr,
+      std::shared_ptr<RuntimeDebugger> runtime_debugger = nullptr);
 
   // Destroys the SessionAdvanced object. It will wait for all tasks to be
   // done and release the session from the execution manager.
@@ -236,20 +239,22 @@ class SessionAdvanced : public SessionInterface {
   // `RunPrefill` or `RunDecode` is called multiple times.
   enum class SessionState : int { kFresh, kPrefilled, kDecoded };
 
-  explicit SessionAdvanced(SessionId session_id,
-                           std::weak_ptr<ExecutionManager> execution_manager,
-                           support::Tokenizer* absl_nonnull tokenizer,
-                           std::shared_ptr<const SessionInfo> session_info,
-                           SessionState session_state = SessionState::kFresh,
-                           absl::flat_hash_set<TaskId> last_task_ids = {},
-                           std::atomic<int>* living_sessions_count = nullptr)
+  explicit SessionAdvanced(
+      SessionId session_id, std::weak_ptr<ExecutionManager> execution_manager,
+      support::Tokenizer* absl_nonnull tokenizer,
+      std::shared_ptr<const SessionInfo> session_info,
+      SessionState session_state = SessionState::kFresh,
+      absl::flat_hash_set<TaskId> last_task_ids = {},
+      std::atomic<int>* living_sessions_count = nullptr,
+      std::shared_ptr<RuntimeDebugger> runtime_debugger = nullptr)
       : session_id_(session_id),
         execution_manager_(execution_manager),
         tokenizer_(tokenizer),
         session_info_(session_info),
         session_state_(session_state),
         last_task_ids_(last_task_ids),
-        living_sessions_count_(living_sessions_count) {
+        living_sessions_count_(living_sessions_count),
+        runtime_debugger_(std::move(runtime_debugger)) {
     if (living_sessions_count_) {
       (*living_sessions_count_)++;
     }
@@ -293,6 +298,8 @@ class SessionAdvanced : public SessionInterface {
 
   // Pointer to the counter of living sessions in Engine.
   std::atomic<int>* living_sessions_count_;
+
+  std::shared_ptr<RuntimeDebugger> runtime_debugger_;
 };
 
 }  // namespace litert::lm
