@@ -35,6 +35,7 @@
 #include "support/tokenizer/sentencepiece_tokenizer.h"  // from @litert
 #include "support/tokenizer/tokenizer.h"  // from @litert
 #include "runtime/components/logits_processor/constrained_decoding/fake_constraint.h"
+#include "runtime/components/logits_processor/no_repeat_ngram_config.h"
 #include "runtime/components/logits_processor/repetition_penalty_config.h"
 #include "runtime/components/logits_processor/suppress_tokens_config.h"
 #include "runtime/components/stop_token_detector.h"
@@ -203,13 +204,13 @@ TEST_F(TasksTest, DecodeSucceed) {
 
   ASSERT_OK_AND_ASSIGN(
       auto task_responses,
-      Tasks::Decode(*executor_, *tokenizer_, stop_token_detector,
-                    kNumOutputCandidates, benchmark_info,
-                    /*sampler=*/std::nullopt,
-                    RepetitionPenaltyConfig::Default(),
-                    SuppressTokensConfig::Default(),
-                    /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
-                    /*callback=*/callback, /*cancelled=*/nullptr));
+      Tasks::Decode(
+          *executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
+          benchmark_info,
+          /*sampler=*/std::nullopt, RepetitionPenaltyConfig::Default(),
+          NoRepeatNgramConfig::Default(), SuppressTokensConfig::Default(),
+          /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
+          /*callback=*/callback, /*cancelled=*/nullptr));
 
   EXPECT_EQ(task_responses.GetTaskState(), TaskState::kDone);
   // The response is " How's it going?" since "!" is the stop token which is
@@ -242,7 +243,8 @@ TEST_F(TasksTest, DecodeWithTwoStopTokens) {
   auto responses = Tasks::Decode(
       *executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
       benchmark_info, /*sampler=*/std::nullopt,
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(),
       /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
       /*callback=*/callback, /*cancelled=*/nullptr);
   EXPECT_OK(responses);
@@ -275,7 +277,8 @@ TEST_F(TasksTest, DecodeReachMaxNumTokens) {
   auto task_responses = Tasks::Decode(
       *executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
       benchmark_info, /*sampler=*/std::nullopt,
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(),
       /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
       /*callback=*/callback, /*cancelled=*/nullptr);
 
@@ -318,7 +321,8 @@ TEST_F(TasksTest, DecodeWithMultipleOutputCandidates) {
   auto task_responses = Tasks::Decode(
       *executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
       benchmark_info, /*sampler=*/std::nullopt,
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(),
       /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
       /*callback=*/callback, /*cancelled=*/nullptr);
 
@@ -340,7 +344,8 @@ TEST_F(TasksTest, DecodeWithoutPrefillFailed) {
   auto task_responses = Tasks::Decode(
       *executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
       benchmark_info, /*sampler=*/std::nullopt,
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(),
       /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
       /*callback=*/callback, /*cancelled=*/nullptr);
 
@@ -386,7 +391,8 @@ TEST_F(TasksTest, DecodeWithRepetitionPenaltyConfig) {
     auto responses = Tasks::Decode(
         *executor, *tokenizer_, stop_token_detector, kNumOutputCandidates,
         benchmark_info, /*sampler=*/std::nullopt,
-        RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
+        RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+        SuppressTokensConfig::Default(),
         /*constraint=*/nullptr,
         /*decoded_ids=*/std::nullopt, /*callback=*/callback,
         /*cancelled=*/nullptr);
@@ -426,12 +432,100 @@ TEST_F(TasksTest, DecodeWithRepetitionPenaltyConfig) {
     auto responses = Tasks::Decode(
         *executor, *tokenizer_, stop_token_detector, kNumOutputCandidates,
         benchmark_info, /*sampler=*/std::nullopt, config,
-        SuppressTokensConfig::Default(),
+        NoRepeatNgramConfig::Default(), SuppressTokensConfig::Default(),
         /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
         /*callback=*/callback, /*cancelled=*/nullptr);
     ASSERT_OK(responses);
     EXPECT_EQ(responses->GetTexts().size(), 1);
     EXPECT_EQ(responses->GetTexts()[0], " How's it go");
+  }
+}
+
+TEST_F(TasksTest, DecodeWithNoRepeatNgramConfig) {
+  std::optional<BenchmarkInfo> benchmark_info;
+
+  // Simply pass the `BOS` token as the prefill tokens.
+  std::vector<std::vector<int>> prefill_tokens = {{2}};
+  // The decode tokens are set up with repeating sequences:
+  // " go" (246), " go" (246), " go" (246)
+  std::vector<std::vector<int>> decode_tokens = {{224}, {24},  {8},   {66},
+                                                 {246}, {246}, {246}, {2294}};
+
+  constexpr int kNumOutputCandidates = 1;
+  StopTokenDetector stop_token_detector(kNumOutputCandidates);
+  EXPECT_OK(stop_token_detector.AddStopTokenSequence({2294}));
+  absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback = nullptr;
+
+  // 1. Original decoding without no repeat ngram config.
+  // The output should contain the repeating tokens.
+  {
+    auto executor = std::make_unique<FakeLlmExecutor>(
+        tokenizer_->GetVocabSize(), prefill_tokens, decode_tokens,
+        /*batch_size=*/1, /*audio_embedding=*/std::nullopt);
+    executor->SetDecodeLogitsOptions(
+        FakeLlmExecutor::DecodeLogitsOptions{.match_value = 10.0f,
+                                             .mismatch_value = -10.0f,
+                                             .end_token_id = 2294,
+                                             .mismatch_end_token_value = 0.0f});
+
+    // Run prefill first.
+    std::vector<int> prefill_token_ids = {2};
+    ASSERT_OK_AND_ASSIGN(auto token_ids_buffer,
+                         tokenizer_->TokenIdsToTensorBuffer(prefill_token_ids));
+    ExecutorTextData text_data(std::move(token_ids_buffer));
+    ExecutorInputs inputs(std::move(text_data), std::nullopt, std::nullopt);
+    auto prefill_responses = Tasks::Prefill(
+        *executor, inputs, /*wait_for_completion=*/true, benchmark_info);
+    EXPECT_OK(prefill_responses);
+
+    auto responses = Tasks::Decode(
+        *executor, *tokenizer_, stop_token_detector, kNumOutputCandidates,
+        benchmark_info, /*sampler=*/std::nullopt,
+        RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+        SuppressTokensConfig::Default(),
+        /*constraint=*/nullptr,
+        /*decoded_ids=*/std::nullopt, /*callback=*/callback,
+        /*cancelled=*/nullptr);
+    ASSERT_OK(responses);
+    EXPECT_EQ(responses->GetTexts().size(), 1);
+    EXPECT_EQ(responses->GetTexts()[0], " How's it go go go");
+  }
+
+  // 2. Decoding with no repeat ngram config (ngram size = 2, i.e. the third
+  // "go" should be banned).
+  {
+    auto executor = std::make_unique<FakeLlmExecutor>(
+        tokenizer_->GetVocabSize(), prefill_tokens, decode_tokens,
+        /*batch_size=*/1, /*audio_embedding=*/std::nullopt);
+    executor->SetDecodeLogitsOptions(
+        FakeLlmExecutor::DecodeLogitsOptions{.match_value = 10.0f,
+                                             .mismatch_value = -10.0f,
+                                             .end_token_id = 2294,
+                                             .mismatch_end_token_value = 0.0f});
+
+    // Run prefill first.
+    std::vector<int> prefill_token_ids = {2};
+    ASSERT_OK_AND_ASSIGN(auto token_ids_buffer,
+                         tokenizer_->TokenIdsToTensorBuffer(prefill_token_ids));
+    ExecutorTextData text_data(std::move(token_ids_buffer));
+    ExecutorInputs inputs(std::move(text_data), std::nullopt, std::nullopt);
+    auto prefill_responses = Tasks::Prefill(
+        *executor, inputs, /*wait_for_completion=*/true, benchmark_info);
+    EXPECT_OK(prefill_responses);
+
+    // Create a config that bans the repetition of bigrams.
+    NoRepeatNgramConfig config(/*no_repeat_ngram_size=*/2, /*window_size=*/5);
+
+    auto responses = Tasks::Decode(
+        *executor, *tokenizer_, stop_token_detector, kNumOutputCandidates,
+        benchmark_info, /*sampler=*/std::nullopt,
+        RepetitionPenaltyConfig::Default(), config,
+        SuppressTokensConfig::Default(),
+        /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
+        /*callback=*/callback, /*cancelled=*/nullptr);
+    ASSERT_OK(responses);
+    EXPECT_EQ(responses->GetTexts().size(), 1);
+    EXPECT_EQ(responses->GetTexts()[0], " How's it go go");
   }
 }
 
@@ -459,6 +553,7 @@ TEST_F(TasksTest, DecodeWithSuppressTokensConfig) {
                     kNumOutputCandidates, benchmark_info,
                     /*sampler=*/std::nullopt,
                     RepetitionPenaltyConfig::Default(),
+                    NoRepeatNgramConfig::Default(),
                     SuppressTokensConfig(/*suppress_tokens=*/{
                         18,
                         2295,
@@ -510,8 +605,8 @@ TEST_F(TasksTest, DecodeWithConstrainedDecoding) {
   auto task_responses = Tasks::Decode(
       *executor, *tokenizer_, stop_token_detector, kNumOutputCandidates,
       benchmark_info, /*sampler=*/std::nullopt,
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
-      constraint.get(),
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(), constraint.get(),
       /*decoded_ids=*/std::nullopt, /*callback=*/callback,
       /*cancelled=*/nullptr);
 
@@ -547,7 +642,7 @@ TEST_F(TasksTest, DecodeStreaming) {
       *executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
       benchmark_info,
       /*sampler=*/std::nullopt, RepetitionPenaltyConfig::Default(),
-      SuppressTokensConfig::Default(),
+      NoRepeatNgramConfig::Default(), SuppressTokensConfig::Default(),
       /*constraint=*/nullptr,
       /*decoded_ids=*/std::nullopt, callback, /*cancelled=*/nullptr);
   callback(task_status);
@@ -590,7 +685,7 @@ TEST_F(TasksTest, DecodeStreamingReachMaxNumTokens) {
       *executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
       benchmark_info,
       /*sampler=*/std::nullopt, RepetitionPenaltyConfig::Default(),
-      SuppressTokensConfig::Default(),
+      NoRepeatNgramConfig::Default(), SuppressTokensConfig::Default(),
       /*constraint=*/nullptr,
       /*decoded_ids=*/std::nullopt, callback, /*cancelled=*/nullptr);
   callback(task_status);
@@ -643,7 +738,7 @@ TEST_F(TasksTest, DecodeStreamingWithConstrainedDecoding) {
       *executor, *tokenizer_, stop_token_detector, kNumOutputCandidates,
       benchmark_info,
       /*sampler=*/std::nullopt, RepetitionPenaltyConfig::Default(),
-      SuppressTokensConfig::Default(),
+      NoRepeatNgramConfig::Default(), SuppressTokensConfig::Default(),
       /*constraint=*/constraint.get(),
       /*decoded_ids=*/std::nullopt, callback, /*cancelled=*/nullptr);
   callback(task_status);
@@ -701,7 +796,8 @@ TEST_F(TasksTest, DecodeBytePairEncodingTokens) {
   auto task_responses = Tasks::Decode(
       *executor_, *tokenizer, stop_token_detector, kNumOutputCandidates,
       benchmark_info, /*sampler=*/std::nullopt,
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(),
       /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
       /*callback=*/callback, /*cancelled=*/nullptr);
 
@@ -746,7 +842,8 @@ TEST_F(TasksTest, DecodeStopTokenIsPartialBytePairEncodingTokens) {
   auto task_responses = Tasks::Decode(
       *executor_, *tokenizer, stop_token_detector, kNumOutputCandidates,
       benchmark_info, /*sampler=*/std::nullopt,
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(),
       /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
       /*callback=*/callback, /*cancelled=*/nullptr);
 
@@ -797,7 +894,8 @@ TEST_F(TasksTest, DecodeConsecutiveByteTokens) {
   auto task_responses = Tasks::Decode(
       *executor, *gemma3_tokenizer_, stop_token_detector, kNumOutputCandidates,
       benchmark_info, /*sampler=*/std::nullopt,
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(),
       /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
       /*callback=*/callback, /*cancelled=*/nullptr);
 
@@ -849,7 +947,8 @@ TEST_F(TasksTest, DecodeConsecutiveByteTokensWithNonByteTokens) {
   auto task_responses = Tasks::Decode(
       *executor, *gemma3_tokenizer_, stop_token_detector, kNumOutputCandidates,
       benchmark_info, /*sampler=*/std::nullopt,
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(),
       /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
       /*callback=*/callback, /*cancelled=*/nullptr);
 
@@ -906,7 +1005,8 @@ TEST_F(TasksTest, DecodeConsecutiveByteTokensWithPartialBpeIgnored) {
   auto task_responses = Tasks::Decode(
       *executor, *gemma3_tokenizer_, stop_token_detector, kNumOutputCandidates,
       benchmark_info, /*sampler=*/std::nullopt,
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(),
       /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
       /*callback=*/callback, /*cancelled=*/nullptr);
 
@@ -1079,7 +1179,8 @@ TEST_F(TasksCustomSamplingTest, DecodeCustomSampling) {
   auto task_responses = Tasks::Decode(
       executor, *tokenizer_, stop_token_detector,
       /*num_output_candidates=*/2, benchmark_info, sampler.get(),
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(),
       /*constraint=*/nullptr, std::move(decoded_ids.Value()),
       /*callback=*/callback,
       /*cancelled=*/nullptr);
@@ -1152,8 +1253,9 @@ TEST_F(TasksCustomSamplingTest, DecodeCustomSamplingWithConstrainedDecoding) {
   auto task_responses = Tasks::Decode(
       executor, *tokenizer_, stop_token_detector,
       /*num_output_candidates=*/2, benchmark_info, sampler.get(),
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
-      constraint.get(), std::move(decoded_ids.Value()), /*callback=*/callback,
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(), constraint.get(),
+      std::move(decoded_ids.Value()), /*callback=*/callback,
       /*cancelled=*/nullptr);
 
   EXPECT_OK(task_responses);
@@ -1209,6 +1311,7 @@ TEST_F(TasksCustomSamplingTest,
       Tasks::Decode(executor, *gemma3_tokenizer_, stop_token_detector,
                     /*num_output_candidates=*/2, benchmark_info, sampler.get(),
                     RepetitionPenaltyConfig::Default(),
+                    NoRepeatNgramConfig::Default(),
                     SuppressTokensConfig::Default(),
                     /*constraint=*/nullptr, std::move(decoded_ids.Value()),
                     /*callback=*/callback,
@@ -1405,7 +1508,8 @@ TEST_F(TasksCustomSamplingTest, DecodeCustomSamplingReachMaxNumTokens) {
   auto task_responses = Tasks::Decode(
       executor, *tokenizer_, stop_token_detector,
       /*num_output_candidates=*/2, benchmark_info, sampler.get(),
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(),
       /*constraint=*/nullptr, std::move(decoded_ids.Value()),
       /*callback=*/callback,
       /*cancelled=*/nullptr);
@@ -1472,7 +1576,8 @@ TEST_F(TasksCustomSamplingTest, DecodeCustomSamplingStreaming) {
   absl::StatusOr<Responses> task_responses = Tasks::Decode(
       executor, *tokenizer_, stop_token_detector,
       /*num_output_candidates=*/2, benchmark_info, sampler.get(),
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(),
       /*constraint=*/nullptr, std::move(decoded_ids.Value()),
       /*callback=*/callback,
       /*cancelled=*/nullptr);
@@ -1537,7 +1642,8 @@ TEST_F(TasksCustomSamplingTest,
   absl::StatusOr<Responses> task_responses = Tasks::Decode(
       executor, *tokenizer_, stop_token_detector,
       /*num_output_candidates=*/2, benchmark_info, sampler.get(),
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(),
       /*constraint=*/nullptr, std::move(decoded_ids.Value()),
       /*callback=*/callback,
       /*cancelled=*/nullptr);
@@ -1604,7 +1710,8 @@ TEST_F(TasksCustomSamplingTest, DecodeComplexStopTokenDetector) {
   auto task_responses = Tasks::Decode(
       executor, *tokenizer_, stop_token_detector,
       /*num_output_candidates=*/2, benchmark_info, sampler.get(),
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(),
       /*constraint=*/nullptr, std::move(decoded_ids.Value()),
       /*callback=*/callback,
       /*cancelled=*/nullptr);
@@ -1687,7 +1794,8 @@ TEST_F(TasksCustomSamplingTest, DecodeCustomSamplingStreamingWithCancellation) {
         delayed_executor, *tokenizer_, stop_token_detector,
 
         /*num_output_candidates=*/2, benchmark_info, sampler.get(),
-        RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
+        RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+        SuppressTokensConfig::Default(),
         /*constraint=*/nullptr, std::move(decoded_ids.Value()),
         /*callback=*/callback, &cancelled);
     callback(task_responses);
@@ -1759,7 +1867,8 @@ TEST_F(TasksCustomSamplingTest,
   absl::StatusOr<Responses> task_responses = Tasks::Decode(
       executor, *tokenizer_, stop_token_detector,
       /*num_output_candidates=*/2, benchmark_info, sampler.get(),
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(),
       /*constraint=*/constraint.get(), std::move(decoded_ids.Value()),
       /*callback=*/callback,
       /*cancelled=*/nullptr);
@@ -1846,6 +1955,7 @@ TEST_F(TasksCustomSamplingTest, DecodeStopTokenAndBPEDetector) {
       Tasks::Decode(executor, *tokenizer, stop_token_detector,
                     /*num_output_candidates=*/2, benchmark_info, sampler.get(),
                     RepetitionPenaltyConfig::Default(),
+                    NoRepeatNgramConfig::Default(),
                     SuppressTokensConfig::Default(), /*constraint=*/nullptr,
                     std::move(decoded_ids.Value()), /*callback=*/callback,
                     /*cancelled=*/nullptr));
@@ -1885,6 +1995,7 @@ TEST_F(TasksCallbackTest, DecodeStreaming_SuccessfulCompletion) {
                     kNumOutputCandidates, benchmark_info,
                     /*sampler=*/std::nullopt,
                     RepetitionPenaltyConfig::Default(),
+                    NoRepeatNgramConfig::Default(),
                     SuppressTokensConfig::Default(), /*constraint=*/nullptr,
                     /*decoded_ids=*/std::nullopt, /*callback=*/callback,
                     /*cancelled=*/nullptr));
@@ -1927,6 +2038,7 @@ TEST_F(TasksCallbackTest, DecodeStreaming_ErrorCompletion) {
                     kNumOutputCandidates, benchmark_info,
                     /*sampler=*/std::nullopt,
                     RepetitionPenaltyConfig::Default(),
+                    NoRepeatNgramConfig::Default(),
                     SuppressTokensConfig::Default(), /*constraint=*/nullptr,
                     /*decoded_ids=*/std::nullopt, /*callback=*/callback,
                     /*cancelled=*/nullptr));
@@ -1977,6 +2089,7 @@ TEST_F(TasksCallbackTest,
                     kNumOutputCandidates, benchmark_info,
                     /*sampler=*/std::nullopt,
                     RepetitionPenaltyConfig::Default(),
+                    NoRepeatNgramConfig::Default(),
                     SuppressTokensConfig::Default(), /*constraint=*/nullptr,
                     /*decoded_ids=*/std::nullopt, /*callback=*/callback,
                     /*cancelled=*/nullptr));
@@ -2024,6 +2137,7 @@ TEST_F(TasksTest, DecodeWithThinkingTokenBudget) {
                     kNumOutputCandidates, benchmark_info,
                     /*sampler=*/std::nullopt,
                     RepetitionPenaltyConfig::Default(),
+                    NoRepeatNgramConfig::Default(),
                     SuppressTokensConfig::Default(), /*constraint=*/nullptr,
                     /*decoded_ids=*/std::nullopt, /*callback=*/callback,
                     /*cancelled=*/nullptr,
@@ -2063,6 +2177,7 @@ TEST_F(TasksTest, DecodeWithThinkingTokenBudgetNotReached) {
                     kNumOutputCandidates, benchmark_info,
                     /*sampler=*/std::nullopt,
                     RepetitionPenaltyConfig::Default(),
+                    NoRepeatNgramConfig::Default(),
                     SuppressTokensConfig::Default(), /*constraint=*/nullptr,
                     /*decoded_ids=*/std::nullopt, /*callback=*/callback,
                     /*cancelled=*/nullptr,
@@ -2099,6 +2214,7 @@ TEST_F(TasksTest, DecodeWithThinkingTokenBudgetUnlimited) {
                     kNumOutputCandidates, benchmark_info,
                     /*sampler=*/std::nullopt,
                     RepetitionPenaltyConfig::Default(),
+                    NoRepeatNgramConfig::Default(),
                     SuppressTokensConfig::Default(), /*constraint=*/nullptr,
                     /*decoded_ids=*/std::nullopt, /*callback=*/callback,
                     /*cancelled=*/nullptr,
@@ -2142,8 +2258,9 @@ TEST_F(TasksTest, DecodeWithThinkingTokenBudgetAndUserConstraint) {
   auto task_responses = Tasks::Decode(
       *executor, *tokenizer_, stop_token_detector, kNumOutputCandidates,
       benchmark_info, /*sampler=*/std::nullopt,
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
-      user_constraint.get(), /*decoded_ids=*/std::nullopt,
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(), user_constraint.get(),
+      /*decoded_ids=*/std::nullopt,
       /*callback=*/callback, /*cancelled=*/nullptr,
       /*max_output_tokens=*/std::numeric_limits<int>::max(),
       /*thinking_token_budget=*/3,
@@ -2184,8 +2301,9 @@ TEST_F(TasksTest, DecodeWithThinkingTokenBudgetUnlimitedAndUserConstraint) {
   auto task_responses = Tasks::Decode(
       *executor, *tokenizer_, stop_token_detector, kNumOutputCandidates,
       benchmark_info, /*sampler=*/std::nullopt,
-      RepetitionPenaltyConfig::Default(), SuppressTokensConfig::Default(),
-      user_constraint.get(), /*decoded_ids=*/std::nullopt,
+      RepetitionPenaltyConfig::Default(), NoRepeatNgramConfig::Default(),
+      SuppressTokensConfig::Default(), user_constraint.get(),
+      /*decoded_ids=*/std::nullopt,
       /*callback=*/callback, /*cancelled=*/nullptr,
       /*max_output_tokens=*/std::numeric_limits<int>::max(),
       /*thinking_token_budget=*/-1,
@@ -2238,6 +2356,7 @@ TEST_F(TasksTest, DecodeWithThinkingTokenBudgetAndStartTokens) {
                     kNumOutputCandidates, benchmark_info,
                     /*sampler=*/std::nullopt,
                     RepetitionPenaltyConfig::Default(),
+                    NoRepeatNgramConfig::Default(),
                     SuppressTokensConfig::Default(), /*constraint=*/nullptr,
                     /*decoded_ids=*/std::nullopt, /*callback=*/callback,
                     /*cancelled=*/nullptr,
