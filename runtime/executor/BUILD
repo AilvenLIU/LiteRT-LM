@@ -277,6 +277,7 @@ cc_library(
         "@litert//litert/cc:litert_tensor_buffer",
         "@litert//litert/cc:litert_tensor_buffer_types",
         "@litert//litert/cc/internal:litert_handle",  # buildcleaner: keep
+        "//runtime/components:lora_manager",
         "//runtime/components:model_resources",
         "//runtime/components:sampler",
         "//runtime/components:sampler_factory",

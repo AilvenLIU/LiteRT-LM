@@ -431,6 +431,7 @@ TEST(LiteRtLmLibTest, CreateEngineSettings_AdvancedSettings) {
   settings.num_output_candidates = 4;
   settings.conv_type = ConvType::kInt8;
   settings.prefill_batch_sizes = {1, 4, 16};
+  settings.enable_profiling = true;
 
   auto engine_settings_or = CreateEngineSettings(settings);
   ASSERT_OK(engine_settings_or.status());
@@ -440,6 +441,7 @@ TEST(LiteRtLmLibTest, CreateEngineSettings_AdvancedSettings) {
   EXPECT_EQ(advanced->num_output_candidates, 4);
   EXPECT_THAT(advanced->prefill_batch_sizes, ::testing::ElementsAre(1, 4, 16));
   EXPECT_TRUE(advanced->allow_src_quantized_fc_conv_ops.value_or(false));
+  EXPECT_TRUE(advanced->enable_profiling);
 }
 
 TEST(LiteRtLmLibTest, CreateEngineSettings_BenchmarkParams) {

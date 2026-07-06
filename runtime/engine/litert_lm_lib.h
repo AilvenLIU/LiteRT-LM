@@ -88,6 +88,7 @@ struct LiteRtLmSettings {
   std::set<int> prefill_batch_sizes;
   int num_output_candidates = 1;
   bool benchmark = false;
+  bool enable_profiling = false;
   int benchmark_prefill_tokens = 0;
   int benchmark_decode_tokens = 0;
   bool async = true;

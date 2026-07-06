@@ -200,6 +200,9 @@ struct AdvancedSettings {
   // If true, the executor is running a benchmark.
   bool is_benchmark = false;
 
+  // If true, the executor enables per-op profiling.
+  bool enable_profiling = false;
+
   // Preferred WebGPU device name substring, case-insensitive.
   // If not empty, the adapter which the device name contains the substring will
   // be chosen.
@@ -297,6 +300,7 @@ struct AdvancedSettings {
            gpu_enable_metal_residency_set ==
                other.gpu_enable_metal_residency_set &&
            is_benchmark == other.is_benchmark &&
+           enable_profiling == other.enable_profiling &&
            preferred_device_substr == other.preferred_device_substr &&
            num_threads_to_upload == other.num_threads_to_upload &&
            num_threads_to_compile == other.num_threads_to_compile &&

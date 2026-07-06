@@ -275,6 +275,7 @@ TEST(LlmExecutorConfigTest, LlmExecutorSettingsWithAdvancedSettings) {
       .gpu_madvise_original_shared_tensors = true,
       .gpu_enable_metal_residency_set = false,
       .is_benchmark = true,
+      .enable_profiling = true,
       .preferred_device_substr = "nvidia",
       .num_threads_to_upload = 4,
       .num_threads_to_compile = 2,
@@ -330,6 +331,7 @@ num_logits_to_print_after_decode: 10
 gpu_madvise_original_shared_tensors: 1
 gpu_enable_metal_residency_set: 0
 is_benchmark: 1
+enable_profiling: 1
 preferred_device_substr: nvidia
 num_threads_to_upload: 4
 num_threads_to_compile: 2
@@ -392,6 +394,28 @@ TEST(LlmExecutorConfigTest, AdvancedSettingsWithHintKernelBatchSize) {
   oss.str("");
   oss << settings;
   EXPECT_THAT(oss.str(), ::testing::HasSubstr("hint_kernel_batch_size: -1"));
+}
+
+TEST(LlmExecutorConfigTest, AdvancedSettingsWithEnableProfiling) {
+  auto model_assets = ModelAssets::Create(kPathToModel1);
+  ASSERT_OK(model_assets);
+  ASSERT_OK_AND_ASSIGN(auto settings,
+                       LlmExecutorSettings::CreateDefault(
+                           *std::move(model_assets), Backend::GPU_ARTISAN));
+  settings.SetAdvancedSettings(AdvancedSettings{
+      .enable_profiling = true,
+  });
+
+  std::stringstream oss;
+  oss << settings;
+  EXPECT_THAT(oss.str(), ::testing::HasSubstr("enable_profiling: 1"));
+
+  settings.SetAdvancedSettings(AdvancedSettings{
+      .enable_profiling = false,
+  });
+  oss.str("");
+  oss << settings;
+  EXPECT_THAT(oss.str(), ::testing::HasSubstr("enable_profiling: 0"));
 }
 
 TEST(GetWeightCacheFileTest, CacheDirAndModelPath) {

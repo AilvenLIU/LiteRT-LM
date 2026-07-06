@@ -342,6 +342,13 @@ double BenchmarkInfo::GetTimeToFirstToken() const {
   return first_decode_token_seconds + first_prefill_token_seconds;
 }
 
+const std::string& BenchmarkInfo::GetProfileSummary() const {
+  return profile_summary_;
+}
+void BenchmarkInfo::SetProfileSummary(absl::string_view profile_summary) {
+  profile_summary_ = profile_summary;
+}
+
 std::ostream& operator<<(std::ostream& os, const BenchmarkTurnData& data) {
   os << "Processed " << data.num_tokens << " tokens in " << data.duration
      << " duration." << std::endl;
@@ -435,6 +442,11 @@ std::ostream& operator<<(std::ostream& os, const BenchmarkInfo& info) {
     for (const auto& [mark_name, duration] : info.GetMarkDurations()) {
       os << "    - " << mark_name << ": " << duration << std::endl;
     }
+  }
+  if (!info.GetProfileSummary().empty()) {
+    os << "--------------------------------------------------" << std::endl;
+    os << "  Profile Summary:" << std::endl;
+    os << info.GetProfileSummary() << std::endl;
   }
   os << "--------------------------------------------------" << std::endl;
   return os;

@@ -271,6 +271,7 @@ absl::Status MainHelper(int argc, char** argv) {
   settings.prefill_chunk_size = absl::GetFlag(FLAGS_prefill_chunk_size);
   settings.num_output_candidates = absl::GetFlag(FLAGS_num_output_candidates);
   settings.benchmark = absl::GetFlag(FLAGS_benchmark);
+  settings.enable_profiling = absl::GetFlag(FLAGS_enable_profiling);
   settings.benchmark_prefill_tokens =
       absl::GetFlag(FLAGS_benchmark_prefill_tokens);
   settings.benchmark_decode_tokens =

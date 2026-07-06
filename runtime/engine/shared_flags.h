@@ -36,6 +36,7 @@ ABSL_DECLARE_FLAG(int, max_num_images);
 ABSL_DECLARE_FLAG(std::vector<std::string>, prefill_batch_sizes);
 ABSL_DECLARE_FLAG(int, num_output_candidates);
 ABSL_DECLARE_FLAG(bool, benchmark);
+ABSL_DECLARE_FLAG(bool, enable_profiling);
 ABSL_DECLARE_FLAG(int, benchmark_prefill_tokens);
 ABSL_DECLARE_FLAG(int, benchmark_decode_tokens);
 ABSL_DECLARE_FLAG(bool, async);

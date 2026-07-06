@@ -265,6 +265,16 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
           "Unsupported backend: ", executor_settings.GetBackend()));
   }
 
+  AdvancedSettings advanced_settings;
+  if (executor_settings.GetAdvancedSettings()) {
+    advanced_settings = *executor_settings.GetAdvancedSettings();
+  }
+  if (advanced_settings.enable_profiling) {
+    LITERT_ASSIGN_OR_RETURN(auto& runtime_options,
+                            compilation_options.GetRuntimeOptions());
+    runtime_options.SetEnableProfiling(/*enabled=*/true);
+  }
+
   return compilation_options;
 }
 

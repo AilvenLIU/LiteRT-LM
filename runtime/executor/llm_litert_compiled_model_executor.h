@@ -34,6 +34,7 @@
 #include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_model.h"  // from @litert
 #include "litert/cc/litert_options.h"  // from @litert
+#include "litert/cc/litert_profiler.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "runtime/components/embedding_lookup/embedding_lookup_manager.h"
 #include "runtime/components/model_resources.h"
@@ -161,6 +162,11 @@ class LlmLiteRtCompiledModelExecutorBase : public LlmExecutor {
   // uses the internally stored `logits_data_type_`.
   absl::Status InitializeSampler(
       std::optional<ActivationDataType> logits_data_type = std::nullopt);
+
+  // Profiling APIs.
+  absl::Status StartProfiling() override;
+  absl::Status StopProfiling() override;
+  absl::StatusOr<std::string> GetProfileSummary() override;
 
   using LogitsDataType = ActivationDataType;
 
@@ -310,6 +316,8 @@ class LlmLiteRtCompiledModelExecutorBase : public LlmExecutor {
 
   // Gets the prefill signature key from the compiled model.
   absl::StatusOr<std::string> GetPrefillSignatureKey() const;
+
+  absl::StatusOr<litert::Profiler> GetProfiler() const;
 
   // Clones the KV cache buffers from the compiled model.
   absl::StatusOr<absl::flat_hash_map<absl::string_view, TensorBuffer>>

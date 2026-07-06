@@ -420,6 +420,10 @@ class LockedLlmExecutor : public LlmExecutor {
     return llm_executor_->GetProcessedTokens();
   }
 
+  absl::StatusOr<std::string> GetProfileSummary() override {
+    return llm_executor_->GetProfileSummary();
+  }
+
   absl::Status Reset() override { return llm_executor_->Reset(); }
 
   absl::StatusOr<int> GetVocabSize() override {

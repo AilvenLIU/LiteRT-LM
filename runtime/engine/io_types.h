@@ -285,6 +285,10 @@ class BenchmarkInfo {
   // the time spent for decoding the first token.
   double GetTimeToFirstToken() const;
 
+  // --- Profile summary for per-op profiling ---
+  const std::string& GetProfileSummary() const;
+  void SetProfileSummary(absl::string_view profile_summary);
+
  private:
   proto::BenchmarkParams benchmark_params_;
 
@@ -301,6 +305,7 @@ class BenchmarkInfo {
   std::vector<BenchmarkTurnData> prefill_turns_;
   std::vector<BenchmarkTurnData> decode_turns_;
   std::vector<BenchmarkTurnData> text_to_token_ids_turns_;
+  std::string profile_summary_;
 };
 std::ostream& operator<<(std::ostream& os, const BenchmarkInfo& info);
 

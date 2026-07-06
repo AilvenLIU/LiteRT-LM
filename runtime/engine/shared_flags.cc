@@ -56,6 +56,7 @@ ABSL_FLAG(int, num_output_candidates, 1,
           "The number of candidates generated for the given prompt, or the "
           "batch size of the decode signature.");
 ABSL_FLAG(bool, benchmark, false, "Benchmark the LLM execution.");
+ABSL_FLAG(bool, enable_profiling, false, "Enable per-op profiling.");
 ABSL_FLAG(int, benchmark_prefill_tokens, 0,
           "If benchmark is true and the value is larger than 0, the benchmark "
           "will use this number to set the number of prefill tokens "

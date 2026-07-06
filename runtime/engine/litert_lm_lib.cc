@@ -608,6 +608,7 @@ absl::StatusOr<EngineSettings> CreateEngineSettings(
           settings.gpu_madvise_original_shared_tensors,
       .gpu_enable_metal_residency_set = settings.gpu_enable_metal_residency_set,
       .is_benchmark = settings.benchmark,
+      .enable_profiling = settings.enable_profiling,
       .preferred_device_substr = settings.preferred_device_substr,
       .num_threads_to_upload = settings.num_threads_to_upload,
       .num_threads_to_compile = settings.num_threads_to_compile,

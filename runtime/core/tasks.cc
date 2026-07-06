@@ -479,6 +479,15 @@ absl::StatusOr<Responses> Prefill(
   if (benchmark_info.has_value()) {
     ABSL_RETURN_IF_ERROR(
         benchmark_info->TimePrefillTurnEnd(ids_buffer_span.size()));
+    absl::StatusOr<std::string> profile_summary = executor.GetProfileSummary();
+    if (!profile_summary.ok()) {
+      ABSL_LOG(WARNING) << "Failed to get prefill profile summary: "
+                        << profile_summary.status();
+    } else if (profile_summary->empty()) {
+      ABSL_LOG(WARNING) << "Prefill profile summary is empty!";
+    } else {
+      benchmark_info->SetProfileSummary(*profile_summary);
+    }
   }
   return Responses(TaskState::kDone);
 }
@@ -560,6 +569,10 @@ absl::StatusOr<Responses> Decode(
         // If the process is cancelled, we need to end this benchmark phase.
         ABSL_RETURN_IF_ERROR(benchmark_info->TimeDecodeTurnEnd(
             num_decode_steps * num_output_candidates));
+        auto profile_summary = executor.GetProfileSummary();
+        if (profile_summary.ok() && !profile_summary->empty()) {
+          benchmark_info->SetProfileSummary(*profile_summary);
+        }
       }
       if (is_custom_sampling) {
         // For external sampling, the sampled tokens are provided by the
@@ -648,6 +661,15 @@ absl::StatusOr<Responses> Decode(
   if (benchmark_info.has_value()) {
     ABSL_RETURN_IF_ERROR(benchmark_info->TimeDecodeTurnEnd(
         num_decode_steps * num_output_candidates));
+    absl::StatusOr<std::string> profile_summary = executor.GetProfileSummary();
+    if (!profile_summary.ok()) {
+      ABSL_LOG(WARNING) << "Failed to get decode profile summary: "
+                        << profile_summary.status();
+    } else if (profile_summary->empty()) {
+      ABSL_LOG(WARNING) << "Decode profile summary is empty!";
+    } else {
+      benchmark_info->SetProfileSummary(*profile_summary);
+    }
   }
 
   if (is_custom_sampling) {

@@ -38,6 +38,8 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"  // from @litert
+#include "litert/cc/internal/litert_handle.h"  // from @litert
 #include "litert/cc/litert_compiled_model.h"  // from @litert
 #include "litert/cc/litert_element_type.h"  // from @litert
 #include "litert/cc/litert_environment.h"  // from @litert
@@ -47,6 +49,7 @@
 #include "litert/cc/litert_model.h"  // from @litert
 #include "litert/cc/litert_model_types.h"  // from @litert
 #include "litert/cc/litert_options.h"  // from @litert
+#include "litert/cc/litert_profiler.h"  // from @litert
 #include "litert/cc/litert_ranked_tensor_type.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer_types.h"  // from @litert
@@ -1613,6 +1616,45 @@ absl::StatusOr<int> LlmLiteRtCompiledModelExecutorBase::GetVocabSize() {
   return logits_tensor_type.Layout().Dimensions()[2];
 }
 
+absl::StatusOr<litert::Profiler>
+LlmLiteRtCompiledModelExecutorBase::GetProfiler() const {
+  if (compiled_model_ == nullptr) {
+    return absl::FailedPreconditionError("Compiled model is null.");
+  }
+  auto holder = env_.GetHolder();
+  if (holder.runtime == nullptr) {
+    return absl::FailedPreconditionError(
+        "LiteRT runtime proxy is null in environment.");
+  }
+  if (holder.handle == nullptr) {
+    return absl::FailedPreconditionError("LiteRT environment handle is null.");
+  }
+  LiteRtProfiler profiler = nullptr;
+  LITERT_RETURN_IF_ERROR(holder.runtime->CompiledModelGetProfiler(
+      compiled_model_->Get(), &profiler));
+  return litert::Profiler(profiler, litert::OwnHandle::kNo);
+}
+
+absl::Status LlmLiteRtCompiledModelExecutorBase::StartProfiling() {
+  ABSL_ASSIGN_OR_RETURN(auto profiler, GetProfiler());
+  LITERT_RETURN_IF_ERROR(profiler.StartProfiling());
+  return absl::OkStatus();
+}
+
+absl::Status LlmLiteRtCompiledModelExecutorBase::StopProfiling() {
+  ABSL_ASSIGN_OR_RETURN(auto profiler, GetProfiler());
+  LITERT_RETURN_IF_ERROR(profiler.StopProfiling());
+  return absl::OkStatus();
+}
+
+absl::StatusOr<std::string>
+LlmLiteRtCompiledModelExecutorBase::GetProfileSummary() {
+  ABSL_ASSIGN_OR_RETURN(auto profiler, GetProfiler());
+  LITERT_ASSIGN_OR_RETURN(auto summary,
+                          profiler.GetProfileSummary(compiled_model_->Get()));
+  return summary;
+}
+
 /* ===========================================================================*/
 /* LlmLiteRtCompiledModelExecutorStatic */
 /* ===========================================================================*/
@@ -1940,7 +1982,10 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
     }
   }
 
-  return absl::WrapUnique(new LlmLiteRtCompiledModelExecutorStatic(
+  bool enable_profiling =
+      executor_settings.GetAdvancedSettings() &&
+      executor_settings.GetAdvancedSettings()->enable_profiling;
+  auto executor = absl::WrapUnique(new LlmLiteRtCompiledModelExecutorStatic(
       std::move(executor_settings), lrt_env, litert_model,
       std::move(compiled_model), std::move(decode_input_buffers),
       std::move(decode_output_buffers), std::move(input_kv_cache_buffers),
@@ -1950,6 +1995,13 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
       signatures, batch_size, std::move(cache_path),
       std::move(embedding_lookup), std::move(per_layer_embedding_lookup),
       use_fp16_precision, activation_data_type, std::move(mtp_drafter)));
+  if (enable_profiling) {
+    auto status = executor->StartProfiling();
+    if (!status.ok()) {
+      ABSL_LOG(WARNING) << "Failed to start profiling: " << status;
+    }
+  }
+  return executor;
 }
 
 /* ===========================================================================*/
@@ -2266,7 +2318,10 @@ LlmLiteRtCompiledModelExecutorDynamic::Create(
   std::unique_ptr<EmbeddingLookupManager> per_layer_embedding_lookup;
   ABSL_RETURN_IF_ERROR(InitializeEmbeddingLookups(
       lrt_env, resources, embedding_lookup, per_layer_embedding_lookup));
-  return absl::WrapUnique(new LlmLiteRtCompiledModelExecutorDynamic(
+  bool enable_profiling =
+      executor_settings.GetAdvancedSettings() &&
+      executor_settings.GetAdvancedSettings()->enable_profiling;
+  auto executor = absl::WrapUnique(new LlmLiteRtCompiledModelExecutorDynamic(
       std::move(executor_settings), lrt_env, litert_model,
       std::move(compiled_model), std::move(decode_input_buffers),
       std::move(decode_output_buffers), prefill_chunk_size, k_dynamic_dim,
@@ -2275,6 +2330,13 @@ LlmLiteRtCompiledModelExecutorDynamic::Create(
       std::move(weight_cache_path), std::move(embedding_lookup),
       std::move(per_layer_embedding_lookup), /*use_fp16_precision=*/false,
       /*logits_data_type=*/LogitsDataType::FLOAT32));
+  if (enable_profiling) {
+    auto status = executor->StartProfiling();
+    if (!status.ok()) {
+      ABSL_LOG(WARNING) << "Failed to start profiling: " << status;
+    }
+  }
+  return executor;
 }
 
 }  // namespace litert::lm
