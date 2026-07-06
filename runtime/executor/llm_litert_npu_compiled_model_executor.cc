@@ -187,6 +187,7 @@ struct CacheUpdateSignatures {
   static constexpr absl::string_view kDecodeCacheUpdate = "decode_cache_update";
   static constexpr absl::string_view kVerifyCacheUpdate = "verify_cache_update";
   static constexpr absl::string_view kInputPos = "input_pos";
+  static constexpr absl::string_view kInputValidMask = "valid_mask";
 };
 
 struct MtpSignatures {
@@ -1162,7 +1163,10 @@ LlmLiteRtNpuCompiledModelExecutor::
             verify_output_kv_cache_slice_buffers,
         ::litert::TensorBuffer prefill_input_pos,
         ::litert::TensorBuffer decode_input_pos,
-        ::litert::TensorBuffer verify_input_pos)
+        ::litert::TensorBuffer verify_input_pos,
+        ::litert::TensorBuffer prefill_valid_mask,
+        ::litert::TensorBuffer decode_valid_mask,
+        ::litert::TensorBuffer verify_valid_mask)
 
 {
   absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>
@@ -1176,6 +1180,10 @@ LlmLiteRtNpuCompiledModelExecutor::
     }
     prefill_input_buffers[CacheUpdateSignatures::kInputPos] =
         std::move(prefill_input_pos);
+    if (prefill_valid_mask) {
+      prefill_input_buffers[CacheUpdateSignatures::kInputValidMask] =
+          std::move(prefill_valid_mask);
+    }
   }
   absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>
       prefill_output_buffers;
@@ -1196,6 +1204,10 @@ LlmLiteRtNpuCompiledModelExecutor::
     }
     decode_input_buffers[CacheUpdateSignatures::kInputPos] =
         std::move(decode_input_pos);
+    if (decode_valid_mask) {
+      decode_input_buffers[CacheUpdateSignatures::kInputValidMask] =
+          std::move(decode_valid_mask);
+    }
   }
   absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>
       decode_output_buffers;
@@ -1216,6 +1228,10 @@ LlmLiteRtNpuCompiledModelExecutor::
     }
     verify_input_buffers[CacheUpdateSignatures::kInputPos] =
         std::move(verify_input_pos);
+    if (verify_valid_mask) {
+      verify_input_buffers[CacheUpdateSignatures::kInputValidMask] =
+          std::move(verify_valid_mask);
+    }
   }
   absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>
       verify_output_buffers;
@@ -3487,13 +3503,39 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
             .Duplicate());
   }
 
+  ::litert::TensorBuffer prefill_valid_mask;
+  auto prefill_valid_mask_it = mask_context.prefill_input_buffers.find(
+      MaskSignatures::kMaskInputValidMask);
+  if (prefill_valid_mask_it != mask_context.prefill_input_buffers.end()) {
+    LITERT_ASSIGN_OR_RETURN(prefill_valid_mask,
+                            prefill_valid_mask_it->second.Duplicate());
+  }
+
+  ::litert::TensorBuffer decode_valid_mask;
+  auto decode_valid_mask_it = mask_context.decode_input_buffers.find(
+      MaskSignatures::kMaskInputValidMask);
+  if (decode_valid_mask_it != mask_context.decode_input_buffers.end()) {
+    LITERT_ASSIGN_OR_RETURN(decode_valid_mask,
+                            decode_valid_mask_it->second.Duplicate());
+  }
+
+  ::litert::TensorBuffer verify_valid_mask;
+  auto verify_valid_mask_it = mask_context.verify_input_buffers.find(
+      MaskSignatures::kMaskInputValidMask);
+  if (verify_valid_mask_it != mask_context.verify_input_buffers.end()) {
+    LITERT_ASSIGN_OR_RETURN(verify_valid_mask,
+                            verify_valid_mask_it->second.Duplicate());
+  }
+
   LITERT_ASSIGN_OR_RETURN(
       auto cache_update_inference_context,
       CreateCacheUpdateInferenceContextWithBufferSharing(
           input_kv_cache_buffers, prefill_output_kv_cache_slice_buffers,
           decode_output_kv_cache_slice_buffers,
           verify_output_kv_cache_slice_buffers, std::move(prefill_input_pos),
-          std::move(decode_input_pos), std::move(verify_input_pos)));
+          std::move(decode_input_pos), std::move(verify_input_pos),
+          std::move(prefill_valid_mask), std::move(decode_valid_mask),
+          std::move(verify_valid_mask)));
 
   ABSL_RETURN_IF_ERROR(WarmupInference(
       llm_compiled_model, llm_inference_context,
@@ -3848,13 +3890,39 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelWithoutPerLayerEmbedding(
       ::litert::TensorBuffer decode_input_pos,
       rope_context.decode_input_buffers[RopeSignatures::kInputPos].Duplicate());
   ::litert::TensorBuffer verify_input_pos;
+  ::litert::TensorBuffer prefill_valid_mask;
+  auto prefill_valid_mask_it = mask_context.prefill_input_buffers.find(
+      MaskSignatures::kMaskInputValidMask);
+  if (prefill_valid_mask_it != mask_context.prefill_input_buffers.end()) {
+    LITERT_ASSIGN_OR_RETURN(prefill_valid_mask,
+                            prefill_valid_mask_it->second.Duplicate());
+  }
+
+  ::litert::TensorBuffer decode_valid_mask;
+  auto decode_valid_mask_it = mask_context.decode_input_buffers.find(
+      MaskSignatures::kMaskInputValidMask);
+  if (decode_valid_mask_it != mask_context.decode_input_buffers.end()) {
+    LITERT_ASSIGN_OR_RETURN(decode_valid_mask,
+                            decode_valid_mask_it->second.Duplicate());
+  }
+
+  ::litert::TensorBuffer verify_valid_mask;
+  auto verify_valid_mask_it = mask_context.verify_input_buffers.find(
+      MaskSignatures::kMaskInputValidMask);
+  if (verify_valid_mask_it != mask_context.verify_input_buffers.end()) {
+    LITERT_ASSIGN_OR_RETURN(verify_valid_mask,
+                            verify_valid_mask_it->second.Duplicate());
+  }
+
   LITERT_ASSIGN_OR_RETURN(
       auto cache_update_inference_context,
       CreateCacheUpdateInferenceContextWithBufferSharing(
           input_kv_cache_buffers, prefill_output_kv_cache_slice_buffers,
           decode_output_kv_cache_slice_buffers,
           verify_output_kv_cache_slice_buffers, std::move(prefill_input_pos),
-          std::move(decode_input_pos), std::move(verify_input_pos)));
+          std::move(decode_input_pos), std::move(verify_input_pos),
+          std::move(prefill_valid_mask), std::move(decode_valid_mask),
+          std::move(verify_valid_mask)));
 
   ABSL_RETURN_IF_ERROR(WarmupInference(
       llm_compiled_model, llm_inference_context,

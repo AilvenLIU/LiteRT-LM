@@ -579,7 +579,10 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
           verify_output_kv_cache_slice_buffers,
       ::litert::TensorBuffer prefill_input_pos,
       ::litert::TensorBuffer decode_input_pos,
-      ::litert::TensorBuffer verify_input_pos);
+      ::litert::TensorBuffer verify_input_pos,
+      ::litert::TensorBuffer prefill_valid_mask,
+      ::litert::TensorBuffer decode_valid_mask,
+      ::litert::TensorBuffer verify_valid_mask);
   // Run a 'warmup' inference on every model (prefill and decode).  This is
   // intended to be called before the first actual inference.
   static absl::Status WarmupInference(
