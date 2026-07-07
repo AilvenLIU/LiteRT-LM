@@ -123,9 +123,7 @@ absl::StatusOr<ConversationConfig> ConversationConfig::CreateInternal(
     bool filter_channel_content_from_kv_cache,
     bool return_error_on_parse_failure, bool return_error_on_max_tokens_reached,
     std::optional<ThinkingConfig> thinking_config, bool stream_tool_calls,
-    const std::string& stream_tool_calls_channel_name,
-    RepetitionPenaltyConfig repetition_penalty_config,
-    SuppressTokensConfig suppress_tokens_config) {
+    const std::string& stream_tool_calls_channel_name) {
   if (preface.has_value() && !std::holds_alternative<JsonPreface>(*preface)) {
     return absl::InvalidArgumentError("Only JsonPreface is supported for now.");
   }
@@ -176,15 +174,6 @@ absl::StatusOr<ConversationConfig> ConversationConfig::CreateInternal(
     }
   }
 
-  // Only update the suppress tokens config if there is a suppress tokens list
-  // in the metadata and the suppress tokens config is not already set.
-  if (metadata.has_value() && !metadata->suppress_tokens().ids().empty() &&
-      !suppress_tokens_config.enabled()) {
-    suppress_tokens_config = SuppressTokensConfig(
-        absl::flat_hash_set<int>(metadata->suppress_tokens().ids().cbegin(),
-                                 metadata->suppress_tokens().ids().cend()));
-  }
-
   DataProcessorConfig processor_config;
   if (overwrite_processor_config.has_value()) {
     // Use the overwrite processor config if provided.
@@ -202,8 +191,7 @@ absl::StatusOr<ConversationConfig> ConversationConfig::CreateInternal(
       std::move(constraint_provider_config), std::move(channels),
       filter_channel_content_from_kv_cache, return_error_on_parse_failure,
       return_error_on_max_tokens_reached, thinking_config, stream_tool_calls,
-      stream_tool_calls_channel_name, std::move(repetition_penalty_config),
-      std::move(suppress_tokens_config));
+      stream_tool_calls_channel_name);
 }
 
 absl::StatusOr<std::string>
@@ -324,13 +312,21 @@ absl::StatusOr<std::string> Conversation::GetSingleTurnText(
 }
 
 absl::StatusOr<DecodeConfig> Conversation::CreateDecodeConfig(
+    std::optional<RepetitionPenaltyConfig> repetition_penalty_config,
+    std::optional<SuppressTokensConfig> suppress_tokens_config,
     std::optional<ConstraintArg> decoding_constraint,
     std::optional<int> max_output_tokens,
     std::optional<ThinkingConfig> thinking_config) {
   auto decode_config = DecodeConfig::CreateDefault();
 
-  decode_config.SetRepetitionPenaltyConfig(config_.repetition_penalty_config());
-  decode_config.SetSuppressTokensConfig(config_.suppress_tokens_config());
+  if (repetition_penalty_config.has_value()) {
+    decode_config.SetRepetitionPenaltyConfig(
+        *std::move(repetition_penalty_config));
+  }
+
+  if (suppress_tokens_config.has_value()) {
+    decode_config.SetSuppressTokensConfig(*std::move(suppress_tokens_config));
+  }
 
   if (max_output_tokens.has_value()) {
     decode_config.SetMaxOutputTokens(max_output_tokens.value());
@@ -652,7 +648,9 @@ absl::Status Conversation::SendMessageAsync(
 
   ABSL_ASSIGN_OR_RETURN(
       auto decode_config,
-      CreateDecodeConfig(std::move(optional_args.decoding_constraint),
+      CreateDecodeConfig(std::move(optional_args.repetition_penalty_config),
+                         std::move(optional_args.suppress_tokens_config),
+                         std::move(optional_args.decoding_constraint),
                          optional_args.max_output_tokens,
                          ResolveThinkingConfig(config_, optional_args)));
 

@@ -28,6 +28,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
@@ -138,17 +139,17 @@ litert::lm::RepetitionPenaltyConfig GetRepetitionPenaltyConfig() {
 
 ::litert::lm::SuppressTokensConfig GetSuppressTokensConfig(
     absl::string_view input) {
-  absl::flat_hash_set<int> result;
+  absl::flat_hash_set<int> suppress_tokens;
 
   for (absl::string_view s :
        absl::StrSplit(input, ',', absl::SkipWhitespace())) {
     int val;
     if (absl::SimpleAtoi(s, &val)) {
-      result.insert(val);
+      suppress_tokens.insert(val);
     }
   }
 
-  return ::litert::lm::SuppressTokensConfig(result);
+  return ::litert::lm::SuppressTokensConfig(std::move(suppress_tokens));
 }
 
 // Writes the metrics to the given file path in protobuf format. Only used in
