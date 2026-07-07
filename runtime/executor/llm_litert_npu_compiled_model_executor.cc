@@ -2319,6 +2319,12 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::PrefillInternalFromEmbeddings(
         llm_inference_context_.prefill_input_buffers[kPerLayerEmbedderTensor];
 
     std::vector<float> default_ple_emb;
+    if (per_layer_embedding_lookup_manager_ == nullptr &&
+        embedder_per_layer_model_ != nullptr) {
+      LITERT_ASSIGN_OR_RETURN(per_layer_embedding_lookup_manager_,
+                              EmbeddingLookupManager::Create(
+                                  env_, embedder_per_layer_model_, false));
+    }
     if (per_layer_embedding_lookup_manager_ != nullptr) {
       auto* ple_lookup =
           per_layer_embedding_lookup_manager_->GetTextEmbeddingLookup();
@@ -3701,11 +3707,6 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
     }
   }
 
-  LITERT_ASSIGN_OR_RETURN(
-      std::unique_ptr<EmbeddingLookupManager>
-          per_layer_embedding_lookup_manager,
-      EmbeddingLookupManager::Create(env, embedder_per_layer_model, false));
-
   auto executor = absl::WrapUnique(new LlmLiteRtNpuCompiledModelExecutor(
       executor_settings, env, std::move(embedder_context),
       std::move(npu_auxiliary_context), std::move(mask_context),
@@ -3713,13 +3714,14 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
       std::move(llm_inference_context),
       std::move(cache_update_inference_context), std::move(prefill_runner_set),
       std::move(embedding_lookup_manager),
-      std::move(per_layer_embedding_lookup_manager),
+      /*per_layer_embedding_lookup_manager=*/nullptr,
       std::move(embedder_per_layer_context), quantization_params,
       std::move(ple_table_ptrs), std::move(ple_quant_params),
       std::move(ple_per_tensor_scales), table_count, ple_embedding_dim_val,
       output_type, ple_table_element_type, mul_scale, output_scale,
       final_zero_point, std::move(kv_quant_params), speculative_decoding_type,
-      std::move(drafter_context), std::move(drafter_aux_context)));
+      std::move(drafter_context), std::move(drafter_aux_context),
+      embedder_per_layer_model));
   return executor;
 }
 
