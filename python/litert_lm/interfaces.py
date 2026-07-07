@@ -76,7 +76,9 @@ class NPU(Backend):
     """Initializes the NPU backend.
 
     Raises:
-      RuntimeError: If the NPU backend is not supported on the current platform.
+      RuntimeError: If the NPU backend is not supported on the current platform,
+        if the 'openvino' package fails to import, or if no NPU device is
+        detected.
     """
     if self.litert_dispatch_lib_dir == "":  # pylint: disable=g-explicit-bool-comparison
       logging.warning(
@@ -87,33 +89,46 @@ class NPU(Backend):
       object.__setattr__(self, "litert_dispatch_lib_dir", "")
       return
     elif self.litert_dispatch_lib_dir is None:
-      object.__setattr__(self, "litert_dispatch_lib_dir", "")
+      if sys.platform != "win32":
+        raise RuntimeError(
+            "NPU is supported only for Intel OpenVINO on Windows. Current"
+            f" platform is '{sys.platform}'."
+        )
 
-      if sys.platform == "win32":
-        try:
-          import openvino as ov  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
+      try:
+        import openvino as ov  # pylint: disable=g-import-not-at-top  # pytype: disable=import-error
+      except ImportError as e:
+        raise RuntimeError(
+            "NPU is supported only for Intel OpenVINO on Windows. Failed to"
+            " import the 'openvino' package. Please ensure 'openvino' is"
+            " installed."
+        ) from e
 
-          if "NPU" in ov.Core().available_devices:
-            litert_dispatch_lib_dir = str(
-                resources.files(__package__)
-                / "vendors/intel_openvino/dispatch/"
-            )
-            object.__setattr__(
-                self, "litert_dispatch_lib_dir", litert_dispatch_lib_dir
-            )
+      available_devices = ov.Core().available_devices
+      if "NPU" not in available_devices:
+        raise RuntimeError(
+            "NPU is supported only for Intel OpenVINO on Windows. No NPU"
+            " device detected by OpenVINO (available devices:"
+            f" {available_devices})."
+        )
 
-            # openvino package place the NPU libs in "libs".
-            # Includes to PATH so Windows can load it.
-            libs_dir = os.path.join(os.path.dirname(ov.__file__), "libs")
-            os.environ["PATH"] = os.environ["PATH"] + ";" + libs_dir
-        except ImportError:
-          pass
+      litert_dispatch_lib_dir = str(
+          resources.files(__package__) / "vendors/intel_openvino/dispatch/"
+      )
+      object.__setattr__(
+          self, "litert_dispatch_lib_dir", litert_dispatch_lib_dir
+      )
+
+      # openvino package place the NPU libs in "libs".
+      # Includes to PATH so Windows can load it.
+      libs_dir = os.path.join(os.path.dirname(ov.__file__), "libs")
+      os.environ["PATH"] = os.environ["PATH"] + ";" + libs_dir
 
     if not self.litert_dispatch_lib_dir:
       raise RuntimeError(
-          "NPU is supported only for Intel OpenVINO on Windows. It is"
-          " expected to install the 'openvino' package and have an NPU"
-          " available."
+          "NPU backend could not be initialized because an invalid or"
+          f" empty litert_dispatch_lib_dir ({self.litert_dispatch_lib_dir!r})"
+          " was provided."
       )
 
   def __eq__(self, other: Any) -> bool:
@@ -255,6 +270,7 @@ class AbstractEngine(abc.ABC):
       lora_rank_config: Configuration for LoRA ranks.
       bos_token_id: The BOS token id for the model if one is configured.
       eos_token_ids: Stop token sequences configured for the model.
+      activation_data_type: Activation data type used by the model/engine.
   """
 
   model_path: str
@@ -537,9 +553,9 @@ class AbstractBenchmark(abc.ABC):
       bos_token_id: The BOS token id for the model if one is configured.
       eos_token_ids: Stop token sequences configured for the model.
       prompt: The custom prompt string to tokenize and run. If the tokenized
-        prompt is shorter than `prefill_tokens`, the remaining tokens are
-        padded with zero. If it is longer, the prompt is truncated to
-        `prefill_tokens`.
+        prompt is shorter than `prefill_tokens`, the remaining tokens are padded
+        with zero. If it is longer, the prompt is truncated to `prefill_tokens`.
+      activation_data_type: Activation data type used by the model/engine.
   """
 
   model_path: str

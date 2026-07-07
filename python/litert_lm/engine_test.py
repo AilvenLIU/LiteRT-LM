@@ -153,7 +153,9 @@ class EngineTest(LiteRtLmTestBase):
   @mock.patch("sys.platform", "linux")
   def test_npu_backend_non_windows(self):
     with self.assertRaisesRegex(
-        RuntimeError, "NPU is supported only for Intel OpenVINO on Windows"
+        RuntimeError,
+        "NPU is supported only for Intel OpenVINO on Windows. Current"
+        " platform is 'linux'.",
     ):
       litert_lm.Backend.NPU()
 
@@ -161,7 +163,10 @@ class EngineTest(LiteRtLmTestBase):
   def test_npu_backend_windows_no_openvino(self):
     with mock.patch.dict("sys.modules", {"openvino": None}):
       with self.assertRaisesRegex(
-          RuntimeError, "NPU is supported only for Intel OpenVINO on Windows"
+          RuntimeError,
+          "NPU is supported only for Intel OpenVINO on Windows. Failed to"
+          " import the 'openvino' package. Please ensure 'openvino' is"
+          " installed.",
       ):
         litert_lm.Backend.NPU()
 
@@ -171,7 +176,10 @@ class EngineTest(LiteRtLmTestBase):
     mock_ov.Core.return_value.available_devices = ["CPU", "GPU"]
     with mock.patch.dict("sys.modules", {"openvino": mock_ov}):
       with self.assertRaisesRegex(
-          RuntimeError, "NPU is supported only for Intel OpenVINO on Windows"
+          RuntimeError,
+          "NPU is supported only for Intel OpenVINO on Windows. No NPU"
+          r" device detected by OpenVINO \(available devices: \['CPU',"
+          r" 'GPU'\]\).",
       ):
         litert_lm.Backend.NPU()
 
