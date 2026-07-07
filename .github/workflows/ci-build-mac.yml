@@ -83,6 +83,7 @@ jobs:
             ~/.cache/bazel-macos
             ~/.cache/bazel-macos-dylib
             ~/.cache/bazel-ios
+            ~/.cache/bazel-repo
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
           restore-keys: |
             ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_HEAD }}
@@ -121,6 +122,7 @@ jobs:
       - name: Run bazel build on MacOS with dynamic linking.
         run: |
           bazel build --disk_cache=~/.cache/bazel-macos-dylib \
+            --repository_cache=~/.cache/bazel-repo \
             --config=macos_arm64 \
             --define=litert_link_capi_so=true \
             --define=litert_runtime_link_mode=dynamic \
@@ -130,6 +132,7 @@ jobs:
       - name: Run bazel test on MacOS.
         run: |
           bazel test --disk_cache=~/.cache/bazel-macos-dylib \
+            --repository_cache=~/.cache/bazel-repo \
             --config=macos_arm64 \
             --define=litert_link_capi_so=true \
             --define=litert_runtime_link_mode=dynamic \
@@ -157,6 +160,7 @@ jobs:
       #   run: |
 
       #     bazel build --disk_cache=~/.cache/bazel-ios \
+      #       --repository_cache=~/.cache/bazel-repo \
       #       --build_tag_filters=-requires-mac-inputs:hard,-no_mac \
       #       --config=ios_arm64 \
       #       --apple_platform_type=ios \
@@ -188,4 +192,5 @@ jobs:
             ~/.cache/bazel-macos
             ~/.cache/bazel-macos-dylib
             ~/.cache/bazel-ios
+            ~/.cache/bazel-repo
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
