@@ -806,6 +806,7 @@ TEST_F(CachedSessionTest, MultimodalPartialMatchWithMultipleMedia) {
       TensorBuffer::CreateManaged(*env_, TensorBufferType::kHostMemory,
                                   audio_tensor_type, 12 * sizeof(float));
   ASSERT_TRUE(audio_buffer.HasValue());
+  LITERT_ASSERT_OK(audio_buffer->Clear());
   LiteRtTensorBuffer original_audio_handle = audio_buffer->Get();
 
   std::vector<InputData> contents2;
