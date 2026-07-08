@@ -184,7 +184,7 @@ def run_interactive(
     max_num_tokens: int | None = None,
     max_num_images: int | None = None,
     filter_channel_content_from_kv_cache: bool = False,
-    enable_thinking: bool | None = None,
+    thinking: bool | None = None,
     thinking_budget: int | None = None,
     vision_backend: str | None = None,
     audio_backend: str | None = None,
@@ -287,16 +287,16 @@ def run_interactive(
 
         handler = LoggingToolEventHandler(state) if tools else None
 
-        if enable_thinking is None and thinking_budget is None:
+        if thinking is None and thinking_budget is None:
           thinking_config = None
         else:
-          if enable_thinking is None:
-            enable_thinking = thinking_budget != 0
+          if thinking is None:
+            thinking = thinking_budget != 0
           if thinking_budget is None:
-            thinking_budget = -1 if enable_thinking else 0
+            thinking_budget = -1 if thinking else 0
 
           thinking_config = litert_lm.ThinkingConfig(
-              enable_thinking=enable_thinking,
+              enable_thinking=thinking,
               thinking_token_budget=thinking_budget,
           )
 
@@ -430,7 +430,7 @@ def run_interactive(
     help="Whether to filter channel content from the KV cache.",
 )
 @click.option(
-    "--enable-thinking/--no-enable-thinking",
+    "--thinking/--no-thinking",
     is_flag=True,
     default=None,
     help=(
@@ -445,7 +445,7 @@ def run_interactive(
     default=None,
     help=(
         "Budget for reasoning tokens. 0 disables thinking. -1 enables unlimited"
-        " thinking. If set without specifying --enable-thinking, thinking is"
+        " thinking. If set without specifying --thinking, thinking is"
         " automatically enabled if budget != 0."
     ),
 )
@@ -526,7 +526,7 @@ def run(
     huggingface_token: str | None = None,
     max_num_tokens: int | None = None,
     filter_channel_content_from_kv_cache: bool = False,
-    enable_thinking: bool | None = None,
+    thinking: bool | None = None,
     thinking_budget: int | None = None,
     vision_backend: str | None = None,
     audio_backend: str | None = None,
@@ -560,7 +560,7 @@ def run(
     max_num_tokens: Maximum number of tokens for the KV cache.
     filter_channel_content_from_kv_cache: Whether to filter channel content from
       the KV cache.
-    enable_thinking: Whether to enable thinking/reasoning generation.
+    thinking: Whether to enable thinking/reasoning generation.
     thinking_budget: Budget for reasoning tokens (0 disables thinking, -1
       enables unlimited thinking).
     vision_backend: The backend to use for vision tasks.
@@ -667,7 +667,7 @@ def run(
       max_num_tokens=max_num_tokens,
       max_num_images=max_num_images,
       filter_channel_content_from_kv_cache=filter_channel_content_from_kv_cache,
-      enable_thinking=enable_thinking,
+      thinking=thinking,
       thinking_budget=thinking_budget,
       vision_backend=vision_backend,
       audio_backend=audio_backend,
