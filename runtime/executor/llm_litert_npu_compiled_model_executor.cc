@@ -2930,42 +2930,11 @@ LlmLiteRtNpuCompiledModelExecutor::RunDrafterLoop(int start_step,
 }
 
 namespace {
-// Helper to sample from a batch of logits at a specific index.
-absl::StatusOr<int> GetLogitsAtBatchIndex(const TensorBuffer& logits_buffer,
-                                          int batch_idx,
-                                          bool enable_neon_sampling) {
-  LITERT_ASSIGN_OR_RETURN(RankedTensorType tensor_type,
-                          logits_buffer.TensorType());
-  LITERT_ASSIGN_OR_RETURN(
-      auto lock_and_addr,
-      ::litert::TensorBufferScopedLock::Create(
-          logits_buffer, ::litert::TensorBuffer::LockMode::kRead));
-
-  if (tensor_type.Layout().Dimensions().size() < 3) {
-    return absl::InvalidArgumentError(
-        "Logits tensor must have at least 3 dimensions.");
-  }
-  const int vocab_size = tensor_type.Layout().Dimensions()[2];
-  if (vocab_size == 0) {
-    return absl::InvalidArgumentError("Vocab size cannot be 0.");
-  }
-  size_t element_size = 0;
-  switch (tensor_type.ElementType()) {
-    case ::litert::ElementType::Float32:
-      element_size = sizeof(float);
-      break;
-    case ::litert::ElementType::Int16:
-      element_size = sizeof(int16_t);
-      break;
-    case ::litert::ElementType::Int8:
-      element_size = sizeof(int8_t);
-      break;
-    default:
-      return absl::UnimplementedError(
-          "Unsupported logit type for element size.");
-  }
-
-  const uint8_t* base_ptr = static_cast<const uint8_t*>(lock_and_addr.second);
+// Helper to sample from a slice of logits pointer directly without
+// acquiring/releasing locks.
+absl::StatusOr<int> SampleLogitsSliceFromLockedPtr(
+    ::litert::ElementType element_type, const uint8_t* base_ptr, int batch_idx,
+    int vocab_size, size_t element_size, bool enable_neon_sampling) {
   const uint8_t* logits_ptr =
       base_ptr + (batch_idx * vocab_size * element_size);
 
@@ -2981,7 +2950,7 @@ absl::StatusOr<int> GetLogitsAtBatchIndex(const TensorBuffer& logits_buffer,
     return max_idx;
   };
 
-  if (tensor_type.ElementType() == ::litert::ElementType::Float32) {
+  if (element_type == ::litert::ElementType::Float32) {
 #if defined(__ANDROID__) && defined(__ARM_NEON)
     if (enable_neon_sampling) {
       return FindMaxIndexFloatNeon(reinterpret_cast<const float*>(logits_ptr),
@@ -2995,7 +2964,7 @@ absl::StatusOr<int> GetLogitsAtBatchIndex(const TensorBuffer& logits_buffer,
     }
 #endif
     return find_max_index_plain(reinterpret_cast<const float*>(logits_ptr));
-  } else if (tensor_type.ElementType() == ::litert::ElementType::Int16) {
+  } else if (element_type == ::litert::ElementType::Int16) {
 #if defined(__ANDROID__) && defined(__ARM_NEON)
     if (enable_neon_sampling) {
       return FindMaxIndexInt16Neon(reinterpret_cast<const int16_t*>(logits_ptr),
@@ -3009,7 +2978,7 @@ absl::StatusOr<int> GetLogitsAtBatchIndex(const TensorBuffer& logits_buffer,
     }
 #endif
     return find_max_index_plain(reinterpret_cast<const int16_t*>(logits_ptr));
-  } else if (tensor_type.ElementType() == ::litert::ElementType::Int8) {
+  } else if (element_type == ::litert::ElementType::Int8) {
 #if defined(__ANDROID__) && defined(__ARM_NEON)
     if (enable_neon_sampling) {
       return FindMaxIndexInt8Neon(reinterpret_cast<const int8_t*>(logits_ptr),
@@ -3178,13 +3147,47 @@ LlmLiteRtNpuCompiledModelExecutor::PerformRejectionSampling(
   int num_accepted = 0;
   int bonus_token_id = kInvalidTokenId;
 
+  LITERT_ASSIGN_OR_RETURN(RankedTensorType tensor_type,
+                          verifier_logits_buffer.TensorType());
+  if (tensor_type.Layout().Dimensions().size() < 3) {
+    return absl::InvalidArgumentError(
+        "Logits tensor must have at least 3 dimensions.");
+  }
+  const int vocab_size = tensor_type.Layout().Dimensions()[2];
+  if (vocab_size == 0) {
+    return absl::InvalidArgumentError("Vocab size cannot be 0.");
+  }
+  size_t element_size = 0;
+  switch (tensor_type.ElementType()) {
+    case ::litert::ElementType::Float32:
+      element_size = sizeof(float);
+      break;
+    case ::litert::ElementType::Int16:
+      element_size = sizeof(int16_t);
+      break;
+    case ::litert::ElementType::Int8:
+      element_size = sizeof(int8_t);
+      break;
+    default:
+      return absl::UnimplementedError(
+          "Unsupported logit type for element size.");
+  }
+
+  LITERT_ASSIGN_OR_RETURN(
+      auto lock_and_addr,
+      ::litert::TensorBufferScopedLock::Create(
+          verifier_logits_buffer, ::litert::TensorBuffer::LockMode::kRead));
+  const uint8_t* base_ptr = static_cast<const uint8_t*>(lock_and_addr.second);
+
   // Log all sampled tokens from the verifier for transparency.
   std::vector<int> all_verifier_sampled;
+  all_verifier_sampled.reserve(draft_tokens.size() + 1);
   for (int i = 0; i < draft_tokens.size() + 1; ++i) {
     LITERT_ASSIGN_OR_RETURN(
         int sampled_token,
-        GetLogitsAtBatchIndex(verifier_logits_buffer, i,
-                              npu_config_.enable_neon_for_npu_greedy_sampling));
+        SampleLogitsSliceFromLockedPtr(
+            tensor_type.ElementType(), base_ptr, i, vocab_size, element_size,
+            npu_config_.enable_neon_for_npu_greedy_sampling));
     all_verifier_sampled.push_back(sampled_token);
   }
   NPU_EXECUTOR_LOG(INFO) << "    [RS] Verifier Sampled Tokens: ["
@@ -3206,10 +3209,7 @@ LlmLiteRtNpuCompiledModelExecutor::PerformRejectionSampling(
   }
 
   if (num_accepted == draft_tokens.size()) {
-    LITERT_ASSIGN_OR_RETURN(
-        bonus_token_id,
-        GetLogitsAtBatchIndex(verifier_logits_buffer, num_accepted,
-                              npu_config_.enable_neon_for_npu_greedy_sampling));
+    bonus_token_id = all_verifier_sampled[num_accepted];
   }
   latency_stats_.mtp_num_draft_tokens += draft_tokens.size();
   latency_stats_.mtp_num_accepted_tokens += num_accepted;
