@@ -87,12 +87,17 @@ class Conversation(
    *
    * @param message The message to send to the model.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param maxOutputToken Optional override for the maximum number of output tokens per decode step.
    * @return The model's response message.
    * @throws IllegalStateException if the conversation is not alive, if the native layer returns an
    *   invalid response, or if the tool call limit is exceeded.
    * @throws LiteRtLmJniException if an error occurs during the native call.
    */
-  fun sendMessage(message: Message, extraContext: Map<String, Any> = emptyMap()): Message {
+  fun sendMessage(
+    message: Message,
+    extraContext: Map<String, Any> = emptyMap(),
+    maxOutputToken: Int? = null,
+  ): Message {
     checkIsAlive()
 
     var currentMessageJson = message.toJson()
@@ -106,6 +111,7 @@ class Conversation(
           currentMessageJson.toString(),
           extraContextJsonString,
           visualTokenBudget,
+          maxOutputToken ?: -1,
         )
       val responseJsonObject = JsonParser.parseString(responseJsonString).asJsonObject
 
@@ -134,13 +140,18 @@ class Conversation(
    *
    * @param contents The list of contents to send to the model.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param maxOutputToken Optional override for the maximum number of output tokens per decode step.
    * @return The model's response message.
    * @throws IllegalStateException if the conversation is not alive, if the native layer returns an
    *   invalid response, or if the tool call limit is exceeded.
    * @throws LiteRtLmJniException if an error occurs during the native call.
    */
-  fun sendMessage(contents: Contents, extraContext: Map<String, Any> = emptyMap()): Message {
-    return sendMessage(Message.user(contents), extraContext)
+  fun sendMessage(
+    contents: Contents,
+    extraContext: Map<String, Any> = emptyMap(),
+    maxOutputToken: Int? = null,
+  ): Message {
+    return sendMessage(Message.user(contents), extraContext, maxOutputToken)
   }
 
   /**
@@ -153,13 +164,17 @@ class Conversation(
    *
    * @param text The text to send to the model.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param maxOutputToken Optional override for the maximum number of output tokens per decode step.
    * @return The model's response message.
    * @throws IllegalStateException if the conversation is not alive, if the native layer returns an
    *   invalid response, or if the tool call limit is exceeded.
    * @throws LiteRtLmJniException if an error occurs during the native call.
    */
-  fun sendMessage(text: String, extraContext: Map<String, Any> = emptyMap()): Message =
-    sendMessage(Contents.of(text), extraContext)
+  fun sendMessage(
+    text: String,
+    extraContext: Map<String, Any> = emptyMap(),
+    maxOutputToken: Int? = null,
+  ): Message = sendMessage(Contents.of(text), extraContext, maxOutputToken)
 
   /**
    * Send a message to the model and returns the response async with a callback.
@@ -172,6 +187,7 @@ class Conversation(
    * @param message The message to send to the model.
    * @param callback The callback to receive the streaming responses.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param maxOutputToken Optional override for the maximum number of output tokens per decode step.
    * @throws IllegalStateException if the conversation has already been closed or the content is
    *   empty.
    */
@@ -179,19 +195,21 @@ class Conversation(
     message: Message,
     callback: MessageCallback,
     extraContext: Map<String, Any> = emptyMap(),
+    maxOutputToken: Int? = null,
   ) {
     checkIsAlive()
 
     val extraContextJsonString = extraContext.toJsonObject().toString()
     val visualTokenBudget = @OptIn(ExperimentalApi::class) ExperimentalFlags.visualTokenBudget
 
-    val jniCallback = JniMessageCallbackImpl(callback)
+    val jniCallback = JniMessageCallbackImpl(callback, maxOutputToken)
     LiteRtLmJni.nativeSendMessageAsync(
       handle,
       message.toJson().toString(),
       extraContextJsonString,
       jniCallback,
       visualTokenBudget,
+      maxOutputToken ?: -1,
     )
   }
 
@@ -206,6 +224,7 @@ class Conversation(
    * @param contents The list of contents to send to the model.
    * @param callback The callback to receive the streaming responses.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param maxOutputToken Optional override for the maximum number of output tokens per decode step.
    * @throws IllegalStateException if the conversation has already been closed or the content is
    *   empty.
    */
@@ -213,7 +232,8 @@ class Conversation(
     contents: Contents,
     callback: MessageCallback,
     extraContext: Map<String, Any> = emptyMap(),
-  ) = sendMessageAsync(Message.user(contents), callback, extraContext)
+    maxOutputToken: Int? = null,
+  ) = sendMessageAsync(Message.user(contents), callback, extraContext, maxOutputToken)
 
   /**
    * Send a text to the model and returns the response async with a callback.
@@ -226,6 +246,7 @@ class Conversation(
    * @param text The text to send to the model.
    * @param callback The callback to receive the streaming responses.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param maxOutputToken Optional override for the maximum number of output tokens per decode step.
    * @throws IllegalStateException if the conversation has already been closed or the content is
    *   empty.
    */
@@ -233,7 +254,8 @@ class Conversation(
     text: String,
     callback: MessageCallback,
     extraContext: Map<String, Any> = emptyMap(),
-  ) = sendMessageAsync(Contents.of(text), callback, extraContext)
+    maxOutputToken: Int? = null,
+  ) = sendMessageAsync(Contents.of(text), callback, extraContext, maxOutputToken)
 
   /**
    * Sends a message to the model and returns the response async as a [Flow].
@@ -245,6 +267,7 @@ class Conversation(
    *
    * @param message The message to send to the model.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param maxOutputToken Optional override for the maximum number of output tokens per decode step.
    * @return A Flow of messages representing the model's response.
    * @throws IllegalStateException if the conversation has already been closed or the content is
    *   empty.
@@ -252,6 +275,7 @@ class Conversation(
   fun sendMessageAsync(
     message: Message,
     extraContext: Map<String, Any> = emptyMap(),
+    maxOutputToken: Int? = null,
   ): Flow<Message> = callbackFlow {
     sendMessageAsync(
       message,
@@ -269,6 +293,7 @@ class Conversation(
         }
       },
       extraContext,
+      maxOutputToken,
     )
     awaitClose {}
   }
@@ -283,6 +308,7 @@ class Conversation(
    *
    * @param contents The list of contents to send to the model.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param maxOutputToken Optional override for the maximum number of output tokens per decode step.
    * @return A Flow of messages representing the model's response.
    * @throws IllegalStateException if the conversation has already been closed or the content is
    *   empty.
@@ -290,7 +316,8 @@ class Conversation(
   fun sendMessageAsync(
     contents: Contents,
     extraContext: Map<String, Any> = emptyMap(),
-  ): Flow<Message> = sendMessageAsync(Message.user(contents), extraContext)
+    maxOutputToken: Int? = null,
+  ): Flow<Message> = sendMessageAsync(Message.user(contents), extraContext, maxOutputToken)
 
   /**
    * Sends a text to the model and returns the response async as a [Flow].
@@ -302,12 +329,16 @@ class Conversation(
    *
    * @param text The text to send to the model.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param maxOutputToken Optional override for the maximum number of output tokens per decode step.
    * @return A Flow of messages representing the model's response.
    * @throws IllegalStateException if the conversation has already been closed or the content is
    *   empty.
    */
-  fun sendMessageAsync(text: String, extraContext: Map<String, Any> = emptyMap()): Flow<Message> =
-    sendMessageAsync(Contents.of(text), extraContext)
+  fun sendMessageAsync(
+    text: String,
+    extraContext: Map<String, Any> = emptyMap(),
+    maxOutputToken: Int? = null,
+  ): Flow<Message> = sendMessageAsync(Contents.of(text), extraContext, maxOutputToken)
 
   private fun handleToolCalls(toolCallsJsonObject: JsonObject): JsonObject {
     val toolCallsJSONArray = toolCallsJsonObject.getAsJsonArray("tool_calls")
@@ -337,8 +368,10 @@ class Conversation(
     }
   }
 
-  private inner class JniMessageCallbackImpl(private val callback: MessageCallback) :
-    LiteRtLmJni.JniMessageCallback {
+  private inner class JniMessageCallbackImpl(
+    private val callback: MessageCallback,
+    private val maxOutputToken: Int? = null,
+  ) : LiteRtLmJni.JniMessageCallback {
 
     /** The tool response to be returned back */
     private var pendingToolResponseJSONMessage: JsonObject? = null
@@ -377,6 +410,7 @@ class Conversation(
           "{}",
           this@JniMessageCallbackImpl,
           @OptIn(ExperimentalApi::class) ExperimentalFlags.visualTokenBudget,
+          maxOutputToken ?: -1,
         )
         pendingToolResponseJSONMessage = null // Clear after sending
       } else {

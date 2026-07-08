@@ -206,6 +206,7 @@ internal object LiteRtLmJni {
    *   decoding.
    * @param filterChannelContentFromKvCache Whether to filter channel content from the KV cache.
    * @param prefillPrefaceOnInit Whether to prefill the preface when initializing the conversation.
+   * @param maxOutputToken The maximum number of output tokens. When non-positive, use the default.
    * @return A pointer to the native conversation instance.
    */
   external fun nativeCreateConversation(
@@ -221,6 +222,7 @@ internal object LiteRtLmJni {
     loraPath: String?,
     audioLoraPath: String?,
     prefillPrefaceOnInit: Boolean,
+    maxOutputToken: Int,
   ): Long
 
   /**
@@ -242,6 +244,7 @@ internal object LiteRtLmJni {
    * @param callback The callback to receive the streaming responses.
    * @param visualTokenBudget The visual token budget. Only supported by Gemma4 currently. Null for
    *   default.
+   * @param maxOutputToken The maximum number of output tokens. When non-positive, use the default.
    */
   external fun nativeSendMessageAsync(
     conversationPointer: Long,
@@ -249,6 +252,7 @@ internal object LiteRtLmJni {
     extraContextJsonString: String,
     callback: JniMessageCallback,
     visualTokenBudget: Int?,
+    maxOutputToken: Int,
   )
 
   /**
@@ -260,6 +264,7 @@ internal object LiteRtLmJni {
    *   format.
    * @param visualTokenBudget The visual token budget. Only supported by Gemma4 currently. Null for
    *   default.
+   * @param maxOutputToken The maximum number of output tokens. When non-positive, use the default.
    * @return The response message in JSON string format.
    */
   external fun nativeSendMessage(
@@ -267,6 +272,7 @@ internal object LiteRtLmJni {
     messageJsonString: String,
     extraContextJsonString: String,
     visualTokenBudget: Int?,
+    maxOutputToken: Int,
   ): String
 
   /**
