@@ -236,6 +236,39 @@ class SamplerConfig:
 
 
 @dataclasses.dataclass
+class RepetitionPenaltyConfig:
+  """Configuration for penalizing repetitive tokens during generation.
+
+  Attributes:
+      repetition_penalty: A multiplicative penalty for any token already
+        generated (e.g., 1.0 = no penalty, 1.2 = moderate penalty). Positive
+        logits are divided by this penalty, and negative logits are multiplied.
+      presence_penalty: A scalar subtracted from a logit if a token has appeared
+        at least once.
+      frequency_penalty: A scalar subtracted from a logit, scaled linearly by
+        the number of times that token has previously appeared.
+      window_size: The maximum number of recent tokens to consider. A value of 0
+        means track all infinite history.
+  """
+
+  repetition_penalty: float | None = None
+  presence_penalty: float | None = None
+  frequency_penalty: float | None = None
+  window_size: int | None = None
+
+  def __post_init__(self):
+    if self.repetition_penalty is not None and self.repetition_penalty < 1.0:
+      raise ValueError(
+          "repetition_penalty should be >= 1.0, but got"
+          f" {self.repetition_penalty}."
+      )
+    if self.window_size is not None and self.window_size < 0:
+      raise ValueError(
+          f"window_size should be >= 0, but got {self.window_size}."
+      )
+
+
+@dataclasses.dataclass
 class LoraRankConfig:
   """Configuration for LoRA ranks.
 
@@ -461,6 +494,7 @@ class AbstractConversation(abc.ABC):
       self,
       message: str | Contents | Message | collections.abc.Mapping[str, Any],
       *,
+      repetition_penalty_config: RepetitionPenaltyConfig | None = None,
       max_output_tokens: int | None = None,
       thinking_config: ThinkingConfig | None = None,
   ) -> collections.abc.Mapping[str, Any]:
@@ -473,6 +507,8 @@ class AbstractConversation(abc.ABC):
           a user message), `Message` (full message object, useful when automatic
           tool calling is disabled and a tool response is required), or
           `collections.abc.Mapping` (super flexible raw dictionary format).
+        repetition_penalty_config: Configuration for penalizing repetitive
+          tokens.
         max_output_tokens: The maximum number of output tokens.
         thinking_config: Configuration for thinking/reasoning generation.
 
@@ -486,6 +522,7 @@ class AbstractConversation(abc.ABC):
       self,
       message: str | Contents | Message | collections.abc.Mapping[str, Any],
       *,
+      repetition_penalty_config: RepetitionPenaltyConfig | None = None,
       max_output_tokens: int | None = None,
       thinking_config: ThinkingConfig | None = None,
   ) -> collections.abc.Iterator[collections.abc.Mapping[str, Any]]:
@@ -498,6 +535,8 @@ class AbstractConversation(abc.ABC):
           a user message), `Message` (full message object, useful when automatic
           tool calling is disabled and a tool response is required), or
           `collections.abc.Mapping` (super flexible raw dictionary format).
+        repetition_penalty_config: Configuration for penalizing repetitive
+          tokens.
         max_output_tokens: The maximum number of output tokens.
         thinking_config: Configuration for thinking/reasoning generation.
 

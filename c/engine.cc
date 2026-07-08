@@ -34,6 +34,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "nlohmann/json.hpp"  // from @nlohmann_json
+#include "runtime/components/logits_processor/repetition_penalty_config.h"
 #include "runtime/conversation/conversation.h"
 #include "runtime/conversation/io_types.h"
 #include "runtime/conversation/model_data_processor/config_registry.h"
@@ -68,6 +69,17 @@ struct LiteRtLmStreamChunk {
   const char* text = nullptr;
   bool is_final = false;
   const char* error_msg = nullptr;
+};
+
+struct LiteRtLmRepetitionPenaltyConfig {
+  litert::lm::RepetitionPenaltyConfig repetition_penalty_config;
+};
+
+struct LiteRtLmConversationOptionalArgs {
+  std::optional<litert::lm::RepetitionPenaltyConfig> repetition_penalty_config;
+  std::optional<int> visual_token_budget;
+  std::optional<int> max_output_tokens;
+  std::optional<litert::lm::ThinkingConfig> thinking_config;
 };
 
 namespace {
@@ -161,9 +173,7 @@ std::optional<litert::lm::DataProcessorArguments> GetDataProcessorArguments(
 
 litert::lm::OptionalArgs CreateOptionalArgs(
     const litert::lm::Conversation* conversation, const char* extra_context,
-    std::optional<int> visual_token_budget,
-    std::optional<int> max_output_tokens,
-    std::optional<litert::lm::ThinkingConfig> thinking_config) {
+    const LiteRtLmConversationOptionalArgs* optional_args) {
   litert::lm::OptionalArgs litert_lm_optional_args;
   if (extra_context) {
     auto extra_context_json =
@@ -172,15 +182,22 @@ litert::lm::OptionalArgs CreateOptionalArgs(
       litert_lm_optional_args.extra_context = extra_context_json;
     }
   }
-  if (visual_token_budget.has_value()) {
-    litert_lm_optional_args.args =
-        GetDataProcessorArguments(conversation, *visual_token_budget);
-  }
-  if (max_output_tokens.has_value()) {
-    litert_lm_optional_args.max_output_tokens = max_output_tokens;
-  }
-  if (thinking_config.has_value()) {
-    litert_lm_optional_args.thinking_config = *thinking_config;
+  if (optional_args) {
+    if (optional_args->repetition_penalty_config.has_value()) {
+      litert_lm_optional_args.repetition_penalty_config =
+          optional_args->repetition_penalty_config;
+    }
+    if (optional_args->visual_token_budget.has_value()) {
+      litert_lm_optional_args.args = GetDataProcessorArguments(
+          conversation, *optional_args->visual_token_budget);
+    }
+    if (optional_args->max_output_tokens.has_value()) {
+      litert_lm_optional_args.max_output_tokens =
+          optional_args->max_output_tokens;
+    }
+    if (optional_args->thinking_config.has_value()) {
+      litert_lm_optional_args.thinking_config = *optional_args->thinking_config;
+    }
   }
   return litert_lm_optional_args;
 }
@@ -208,12 +225,11 @@ using ::litert::lm::ConversationConfig;
 using ::litert::lm::Engine;
 using ::litert::lm::EngineFactory;
 using ::litert::lm::EngineSettings;
-using ::litert::lm::OptionalArgs;
-
-using ::litert::lm::ScopedFile;
 using ::litert::lm::Message;
 using ::litert::lm::ModelAssets;
+using ::litert::lm::OptionalArgs;
 using ::litert::lm::Responses;
+using ::litert::lm::ScopedFile;
 using ::litert::lm::SessionConfig;
 using ::litert::lm::proto::SamplerParameters;
 
@@ -349,11 +365,6 @@ struct LiteRtLmConversationConfig {
   std::optional<litert::lm::ThinkingConfig> thinking_config;
 };
 
-struct LiteRtLmConversationOptionalArgs {
-  std::optional<int> visual_token_budget;
-  std::optional<int> max_output_tokens;
-  std::optional<litert::lm::ThinkingConfig> thinking_config;
-};
 struct LiteRtLmDetokenizeResult {
   std::string text;
 };
@@ -620,9 +631,86 @@ void litert_lm_conversation_config_delete(LiteRtLmConversationConfig* config) {
   delete config;
 }
 
+LiteRtLmRepetitionPenaltyConfig* litert_lm_repetition_penalty_config_create() {
+  return new LiteRtLmRepetitionPenaltyConfig{
+      .repetition_penalty_config =
+          litert::lm::RepetitionPenaltyConfig::Default(),
+  };
+}
+
+void litert_lm_repetition_penalty_config_delete(
+    LiteRtLmRepetitionPenaltyConfig* config) {
+  delete config;
+}
+
+void litert_lm_repetition_penalty_config_set_repetition_penalty(
+    LiteRtLmRepetitionPenaltyConfig* config, float repetition_penalty) {
+  if (!config) {
+    return;
+  }
+
+  config->repetition_penalty_config = litert::lm::RepetitionPenaltyConfig(
+      repetition_penalty, config->repetition_penalty_config.presence_penalty(),
+      config->repetition_penalty_config.frequency_penalty(),
+      config->repetition_penalty_config.window_size());
+}
+
+void litert_lm_repetition_penalty_config_set_presence_penalty(
+    LiteRtLmRepetitionPenaltyConfig* config, float presence_penalty) {
+  if (!config) {
+    return;
+  }
+
+  config->repetition_penalty_config = litert::lm::RepetitionPenaltyConfig(
+      config->repetition_penalty_config.repetition_penalty(), presence_penalty,
+      config->repetition_penalty_config.frequency_penalty(),
+      config->repetition_penalty_config.window_size());
+}
+
+void litert_lm_repetition_penalty_config_set_frequency_penalty(
+    LiteRtLmRepetitionPenaltyConfig* config, float frequency_penalty) {
+  if (!config) {
+    return;
+  }
+
+  config->repetition_penalty_config = litert::lm::RepetitionPenaltyConfig(
+      config->repetition_penalty_config.repetition_penalty(),
+      config->repetition_penalty_config.presence_penalty(), frequency_penalty,
+      config->repetition_penalty_config.window_size());
+}
+
+void litert_lm_repetition_penalty_config_set_window_size(
+    LiteRtLmRepetitionPenaltyConfig* config, int window_size) {
+  if (!config) {
+    return;
+  }
+
+  config->repetition_penalty_config = litert::lm::RepetitionPenaltyConfig(
+      config->repetition_penalty_config.repetition_penalty(),
+      config->repetition_penalty_config.presence_penalty(),
+      config->repetition_penalty_config.frequency_penalty(), window_size);
+}
+
 LiteRtLmConversationOptionalArgs*
 litert_lm_conversation_optional_args_create() {
   return new LiteRtLmConversationOptionalArgs;
+}
+
+void litert_lm_conversation_optional_args_set_repetition_penalty_config(
+    LiteRtLmConversationOptionalArgs* args,
+    const LiteRtLmRepetitionPenaltyConfig* repetition_penalty_config) {
+  if (!args) {
+    return;
+  }
+
+  if (!repetition_penalty_config ||
+      !repetition_penalty_config->repetition_penalty_config.enabled()) {
+    args->repetition_penalty_config = std::nullopt;
+    return;
+  }
+
+  args->repetition_penalty_config =
+      repetition_penalty_config->repetition_penalty_config;
 }
 
 void litert_lm_conversation_optional_args_set_visual_token_budget(
@@ -1402,10 +1490,7 @@ LiteRtLmJsonResponse* litert_lm_conversation_send_message(
   }
 
   OptionalArgs litert_lm_optional_args = CreateOptionalArgs(
-      conversation->conversation.get(), extra_context,
-      optional_args ? optional_args->visual_token_budget : std::nullopt,
-      optional_args ? optional_args->max_output_tokens : std::nullopt,
-      optional_args ? optional_args->thinking_config : std::nullopt);
+      conversation->conversation.get(), extra_context, optional_args);
 
   auto response = conversation->conversation->SendMessage(
       json_message, std::move(litert_lm_optional_args));
@@ -1447,10 +1532,7 @@ int litert_lm_conversation_send_message_stream(
   }
 
   litert::lm::OptionalArgs litert_lm_optional_args = CreateOptionalArgs(
-      conversation->conversation.get(), extra_context,
-      optional_args ? optional_args->visual_token_budget : std::nullopt,
-      optional_args ? optional_args->max_output_tokens : std::nullopt,
-      optional_args ? optional_args->thinking_config : std::nullopt);
+      conversation->conversation.get(), extra_context, optional_args);
 
   absl::Status status = conversation->conversation->SendMessageAsync(
       json_message, CreateConversationCallback(callback, callback_data),

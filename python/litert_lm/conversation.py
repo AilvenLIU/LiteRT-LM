@@ -127,14 +127,44 @@ class Conversation(interfaces.AbstractConversation):
 
   def _create_optional_args(
       self,
+      repetition_penalty_config: interfaces.RepetitionPenaltyConfig | None,
       max_output_tokens: int | None,
       thinking_config: interfaces.ThinkingConfig | None,
   ) -> ctypes.c_void_p | None:
     """Creates a C pointer for ConversationOptionalArgs if needed."""
-    if max_output_tokens is None and thinking_config is None:
+    if (
+        repetition_penalty_config is None
+        and max_output_tokens is None
+        and thinking_config is None
+    ):
       return None
     ptr = self._lib.litert_lm_conversation_optional_args_create()
     try:
+      if repetition_penalty_config is not None:
+        rpp_ptr = self._lib.litert_lm_repetition_penalty_config_create()
+        try:
+          if repetition_penalty_config.repetition_penalty is not None:
+            self._lib.litert_lm_repetition_penalty_config_set_repetition_penalty(
+                rpp_ptr, repetition_penalty_config.repetition_penalty
+            )
+          if repetition_penalty_config.presence_penalty is not None:
+            self._lib.litert_lm_repetition_penalty_config_set_presence_penalty(
+                rpp_ptr, repetition_penalty_config.presence_penalty
+            )
+          if repetition_penalty_config.frequency_penalty is not None:
+            self._lib.litert_lm_repetition_penalty_config_set_frequency_penalty(
+                rpp_ptr, repetition_penalty_config.frequency_penalty
+            )
+          if repetition_penalty_config.window_size is not None:
+            self._lib.litert_lm_repetition_penalty_config_set_window_size(
+                rpp_ptr, repetition_penalty_config.window_size
+            )
+          self._lib.litert_lm_conversation_optional_args_set_repetition_penalty_config(
+              ptr, rpp_ptr
+          )
+        finally:
+          if rpp_ptr:
+            self._lib.litert_lm_repetition_penalty_config_delete(rpp_ptr)
       if max_output_tokens is not None:
         self._lib.litert_lm_conversation_optional_args_set_max_output_tokens(
             ptr, max_output_tokens
@@ -163,6 +193,9 @@ class Conversation(interfaces.AbstractConversation):
       self,
       message: str | Contents | Message | collections.abc.Mapping[str, Any],
       *,
+      repetition_penalty_config: (
+          interfaces.RepetitionPenaltyConfig | None
+      ) = None,
       max_output_tokens: int | None = None,
       thinking_config: interfaces.ThinkingConfig | None = None,
   ) -> collections.abc.Mapping[str, Any]:
@@ -176,7 +209,9 @@ class Conversation(interfaces.AbstractConversation):
       ctx_json = json.dumps(getattr(self, "extra_context", {}))
 
       optional_args_ptr = self._create_optional_args(
-          max_output_tokens, thinking_config
+          repetition_penalty_config,
+          max_output_tokens,
+          thinking_config,
       )
       try:
         resp_ptr = self._lib.litert_lm_conversation_send_message(
@@ -211,6 +246,9 @@ class Conversation(interfaces.AbstractConversation):
       self,
       message: str | Contents | Message | collections.abc.Mapping[str, Any],
       *,
+      repetition_penalty_config: (
+          interfaces.RepetitionPenaltyConfig | None
+      ) = None,
       max_output_tokens: int | None = None,
       thinking_config: interfaces.ThinkingConfig | None = None,
   ) -> collections.abc.Iterator[collections.abc.Mapping[str, Any]]:
@@ -238,7 +276,9 @@ class Conversation(interfaces.AbstractConversation):
       self._current_callback = c_callback
 
       optional_args_ptr = self._create_optional_args(
-          max_output_tokens, thinking_config
+          repetition_penalty_config,
+          max_output_tokens,
+          thinking_config,
       )
       try:
         res = self._lib.litert_lm_conversation_send_message_stream(

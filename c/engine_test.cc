@@ -28,6 +28,7 @@
 #include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "absl/synchronization/notification.h"  // from @com_google_absl
 #include "nlohmann/json.hpp"  // from @nlohmann_json
+#include "runtime/components/logits_processor/repetition_penalty_config.h"
 #include "runtime/conversation/conversation.h"
 #include "runtime/conversation/io_types.h"
 #include "runtime/conversation/thinking_config.h"
@@ -37,6 +38,7 @@
 
 using ::litert::lm::Conversation;
 using ::litert::lm::EngineSettings;
+using ::litert::lm::RepetitionPenaltyConfig;
 using ::litert::lm::SessionConfig;
 
 struct LiteRtLmEngineSettings {
@@ -48,6 +50,7 @@ struct LiteRtLmSessionConfig {
 };
 
 struct LiteRtLmConversationOptionalArgs {
+  std::optional<RepetitionPenaltyConfig> repetition_penalty_config;
   std::optional<int> visual_token_budget;
   std::optional<int> max_output_tokens;
   std::optional<litert::lm::ThinkingConfig> thinking_config;
@@ -111,6 +114,9 @@ using SamplerParamsPtr =
 using ConversationConfigPtr =
     std::unique_ptr<LiteRtLmConversationConfig,
                     decltype(&litert_lm_conversation_config_delete)>;
+using RepetitionPenaltyConfigPtr =
+    std::unique_ptr<LiteRtLmRepetitionPenaltyConfig,
+                    decltype(&litert_lm_repetition_penalty_config_delete)>;
 using OptionalArgsPtr =
     std::unique_ptr<LiteRtLmConversationOptionalArgs,
                     decltype(&litert_lm_conversation_optional_args_delete)>;
@@ -552,8 +558,8 @@ TEST(EngineCTest, CreateConversationConfigWithSamplerBackend) {
       &litert_lm_conversation_delete);
   ASSERT_NE(conversation, nullptr);
 
-  const auto& final_session_config = conversation->conversation->GetConfig()
-                                   .GetSessionConfig();
+  const auto& final_session_config =
+      conversation->conversation->GetConfig().GetSessionConfig();
   EXPECT_EQ(final_session_config.GetSamplerBackend(), litert::lm::Backend::GPU);
 }
 
@@ -1266,9 +1272,24 @@ TEST(EngineCTest, ConversationSendMessageWithOptionalArgs) {
   ASSERT_NE(conversation, nullptr);
 
   // 4. Create Optional Args.
+  RepetitionPenaltyConfigPtr repetition_penalty_config(
+      litert_lm_repetition_penalty_config_create(),
+      &litert_lm_repetition_penalty_config_delete);
+  ASSERT_NE(repetition_penalty_config, nullptr);
+  litert_lm_repetition_penalty_config_set_repetition_penalty(
+      repetition_penalty_config.get(), 1.2f);
+  litert_lm_repetition_penalty_config_set_presence_penalty(
+      repetition_penalty_config.get(), 0.1f);
+  litert_lm_repetition_penalty_config_set_frequency_penalty(
+      repetition_penalty_config.get(), 0.2f);
+  litert_lm_repetition_penalty_config_set_window_size(
+      repetition_penalty_config.get(), 10);
+
   OptionalArgsPtr optional_args(litert_lm_conversation_optional_args_create(),
                                 &litert_lm_conversation_optional_args_delete);
   ASSERT_NE(optional_args, nullptr);
+  litert_lm_conversation_optional_args_set_repetition_penalty_config(
+      optional_args.get(), repetition_penalty_config.get());
   litert_lm_conversation_optional_args_set_visual_token_budget(
       optional_args.get(), 100);
 
@@ -1531,9 +1552,24 @@ TEST(EngineCTest, ConversationSendMessageStreamWithOptionalArgs) {
   const char* message_json =
       R"({"role": "user", "content": [{"type": "text", "text": "Hello"}]})";
 
+  RepetitionPenaltyConfigPtr repetition_penalty_config(
+      litert_lm_repetition_penalty_config_create(),
+      &litert_lm_repetition_penalty_config_delete);
+  ASSERT_NE(repetition_penalty_config, nullptr);
+  litert_lm_repetition_penalty_config_set_repetition_penalty(
+      repetition_penalty_config.get(), 1.2f);
+  litert_lm_repetition_penalty_config_set_presence_penalty(
+      repetition_penalty_config.get(), 0.1f);
+  litert_lm_repetition_penalty_config_set_frequency_penalty(
+      repetition_penalty_config.get(), 0.2f);
+  litert_lm_repetition_penalty_config_set_window_size(
+      repetition_penalty_config.get(), 10);
+
   OptionalArgsPtr optional_args(litert_lm_conversation_optional_args_create(),
                                 &litert_lm_conversation_optional_args_delete);
   ASSERT_NE(optional_args, nullptr);
+  litert_lm_conversation_optional_args_set_repetition_penalty_config(
+      optional_args.get(), repetition_penalty_config.get());
   litert_lm_conversation_optional_args_set_visual_token_budget(
       optional_args.get(), 100);
 

@@ -33,6 +33,7 @@ from .interfaces import Backend
 from .interfaces import BenchmarkInfo
 from .interfaces import LoraConfig
 from .interfaces import LoraRankConfig
+from .interfaces import RepetitionPenaltyConfig
 from .interfaces import Responses
 from .interfaces import SamplerConfig
 from .interfaces import ThinkingConfig
@@ -58,6 +59,7 @@ __all__ = (
     "LoraConfig",
     "LoraRankConfig",
     "Message",
+    "RepetitionPenaltyConfig",
     "Responses",
     "Role",
     "SamplerConfig",
