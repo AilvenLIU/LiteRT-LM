@@ -15,10 +15,10 @@
 import collections.abc
 import http.client
 import json
-import os
 import pathlib
 import threading
 from unittest import mock
+import urllib.error
 import urllib.request
 
 from absl.testing import absltest
@@ -174,7 +174,7 @@ class ServeOpenAIStreamingTest(absltest.TestCase):
       )
       try:
         response2 = conn.getresponse()
-      except Exception as e:
+      except Exception as e:  # pylint: disable=broad-exception-caught
         self.fail(f"Second request failed (timed out as expected?): {e!r}")
 
       self.assertEqual(response2.status, 200)
@@ -215,6 +215,76 @@ class ServeOpenAIStreamingTest(absltest.TestCase):
         self.assertEqual(m["object"], "model")
         self.assertEqual(m["created"], 123456789)
         self.assertEqual(m["owned_by"], "litert-lm")
+
+  def test_parse_thinking_config(self):
+    config_none = openai_handler._parse_thinking_config(
+        {"reasoning_effort": "none"}
+    )
+    self.assertIsNotNone(config_none)
+    self.assertFalse(config_none.enable_thinking)
+    self.assertEqual(config_none.thinking_token_budget, 0)
+
+    for effort in ("minimal", "low", "medium", "high", "xhigh"):
+      config = openai_handler._parse_thinking_config(
+          {"reasoning_effort": effort}
+      )
+      self.assertIsNotNone(config)
+      self.assertTrue(config.enable_thinking)
+      self.assertEqual(config.thinking_token_budget, -1)
+
+    with self.assertRaises(ValueError):
+      openai_handler._parse_thinking_config(
+          {"reasoning_effort": "invalid_effort"}
+      )
+
+    with self.assertRaises(ValueError):
+      openai_handler._parse_thinking_config({"reasoning_effort": 10})
+
+    with self.assertRaises(ValueError):
+      openai_handler._parse_thinking_config({"reasoning_effort": True})
+
+  def test_openai_responses_invalid_reasoning_effort(self):
+    mock_from_id = self.enter_context(
+        mock.patch.object(model.Model, "from_model_id", autospec=True)
+    )
+    mock_from_id.return_value = model.Model(
+        model_id="gemma3", model_path=str(self.model_path)
+    )
+
+    data = json.dumps(
+        {"model": "gemma3", "input": "Say hi", "reasoning_effort": "invalid"}
+    ).encode("utf-8")
+
+    req = urllib.request.Request(
+        f"http://localhost:{self.port}/v1/responses",
+        data=data,
+        headers={"Content-Type": "application/json"},
+    )
+
+    with self.assertRaises(urllib.error.HTTPError) as cm:
+      urllib.request.urlopen(req)
+    self.assertEqual(cm.exception.code, 400)
+
+  def test_openai_responses_with_reasoning_effort(self):
+    mock_from_id = self.enter_context(
+        mock.patch.object(model.Model, "from_model_id", autospec=True)
+    )
+    mock_from_id.return_value = model.Model(
+        model_id="gemma3", model_path=str(self.model_path)
+    )
+
+    data = json.dumps(
+        {"model": "gemma3", "input": "Say hi", "reasoning_effort": "low"}
+    ).encode("utf-8")
+
+    req = urllib.request.Request(
+        f"http://localhost:{self.port}/v1/responses",
+        data=data,
+        headers={"Content-Type": "application/json"},
+    )
+
+    with urllib.request.urlopen(req) as response:
+      self.assertEqual(response.getcode(), 200)
 
 
 if __name__ == "__main__":

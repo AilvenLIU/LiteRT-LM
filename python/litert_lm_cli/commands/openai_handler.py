@@ -84,6 +84,42 @@ def _parse_sampler_config(
   )
 
 
+def _parse_thinking_config(
+    body: dict[str, Any],
+) -> litert_lm.ThinkingConfig | None:
+  """Parses and validates thinking/reasoning parameters from the request body."""
+  reasoning_effort = body.get("reasoning_effort")
+  if reasoning_effort is None:
+    return None
+
+  if not isinstance(reasoning_effort, str):
+    raise ValueError(
+        "reasoning_effort must be a string, got"
+        f" {type(reasoning_effort).__name__}"
+    )
+
+  effort_lower = reasoning_effort.lower()
+  if effort_lower == "none":
+    return litert_lm.ThinkingConfig(
+        enable_thinking=False,
+        thinking_token_budget=0,
+    )
+
+  supported_efforts = ("minimal", "low", "medium", "high", "xhigh")
+  if effort_lower in supported_efforts:
+    # TODO: b/514760339 - Support fine-grained reasoning effort token budget
+    # mappings.
+    return litert_lm.ThinkingConfig(
+        enable_thinking=True,
+        thinking_token_budget=-1,
+    )
+
+  raise ValueError(
+      f"Invalid reasoning_effort value: {reasoning_effort!r}. "
+      "Supported strings: none, minimal, low, medium, high, xhigh."
+  )
+
+
 class _OpenAIStreamFormatter(abc.ABC):
   """A formatter for OpenAI API compatible Server-Sent Events."""
 
@@ -942,6 +978,16 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       )
       return
 
+    try:
+      thinking_config = _parse_thinking_config(body)
+    except ValueError as e:
+      self.send_error(
+          400,
+          "Invalid thinking parameters: "
+          + "".join(traceback.format_exception_only(e)),
+      )
+      return
+
     # Parse tools if this is a chat completions request.
     tools_data = body.get("tools")
     tools = (
@@ -957,6 +1003,7 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
           tools=tools or None,
           automatic_tool_calling=False,
           sampler_config=sampler_config,
+          thinking_config=thinking_config,
       ) as conv:
         now = datetime.datetime.now(datetime.timezone.utc)
         now_str = now.strftime("%Y%m%d%H%M%S%f")
@@ -998,6 +1045,16 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
     if engine is None:
       return
 
+    try:
+      thinking_config = _parse_thinking_config(body)
+    except ValueError as e:
+      self.send_error(
+          400,
+          "Invalid thinking parameters: "
+          + "".join(traceback.format_exception_only(e)),
+      )
+      return
+
     stream = body.get("stream", False)
 
     try:
@@ -1005,6 +1062,7 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
           messages=[],
           automatic_tool_calling=False,
           sampler_config=None,
+          thinking_config=thinking_config,
       ) as conv:
         now = datetime.datetime.now(datetime.timezone.utc)
         now_str = now.strftime("%Y%m%d%H%M%S%f")
