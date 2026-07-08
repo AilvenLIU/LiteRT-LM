@@ -79,11 +79,7 @@ jobs:
         if: env.REFRESH_CACHE != 'true'
         uses: actions/cache/restore@v4
         with:
-          path: |
-            ~/.cache/bazel-macos
-            ~/.cache/bazel-macos-dylib
-            ~/.cache/bazel-ios
-            ~/.cache/bazel-repo
+          path: ~/.cache/bazel
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
           restore-keys: |
             ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_HEAD }}
@@ -121,9 +117,10 @@ jobs:
 
       - name: Run bazel build on MacOS with dynamic linking.
         run: |
-          bazel build --disk_cache=~/.cache/bazel-macos-dylib \
-            --repository_cache=~/.cache/bazel-repo \
+          bazel build --disk_cache=~/.cache/bazel \
+            --repository_cache=~/.cache/bazel/repo \
             --config=macos_arm64 \
+            -c opt \
             --define=litert_link_capi_so=true \
             --define=litert_runtime_link_mode=dynamic \
             --define=resolve_symbols_in_exec=false \
@@ -131,9 +128,10 @@ jobs:
 
       - name: Run bazel test on MacOS.
         run: |
-          bazel test --disk_cache=~/.cache/bazel-macos-dylib \
-            --repository_cache=~/.cache/bazel-repo \
+          bazel test --disk_cache=~/.cache/bazel \
+            --repository_cache=~/.cache/bazel/repo \
             --config=macos_arm64 \
+            -c opt \
             --define=litert_link_capi_so=true \
             --define=litert_runtime_link_mode=dynamic \
             --define=resolve_symbols_in_exec=false \
@@ -159,13 +157,14 @@ jobs:
       # - name: Run bazel build for iOS Simulator.
       #   run: |
 
-      #     bazel build --disk_cache=~/.cache/bazel-ios \
-      #       --repository_cache=~/.cache/bazel-repo \
+      #     bazel build --disk_cache=~/.cache/bazel \
+      #       --repository_cache=~/.cache/bazel/repo \
       #       --build_tag_filters=-requires-mac-inputs:hard,-no_mac \
       #       --config=ios_arm64 \
       #       --apple_platform_type=ios \
       #       --cpu=ios_arm64 \
       #       --ios_multi_cpus=arm64 \
+      #       -c opt \
       #       --define=litert_link_capi_so=true \
       #       --define=litert_runtime_link_mode=dynamic \
       #       --define=resolve_symbols_in_exec=false \
@@ -188,9 +187,5 @@ jobs:
         uses: actions/cache/save@v4
         if: env.REFRESH_CACHE == 'true'
         with:
-          path: |
-            ~/.cache/bazel-macos
-            ~/.cache/bazel-macos-dylib
-            ~/.cache/bazel-ios
-            ~/.cache/bazel-repo
+          path: ~/.cache/bazel
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
