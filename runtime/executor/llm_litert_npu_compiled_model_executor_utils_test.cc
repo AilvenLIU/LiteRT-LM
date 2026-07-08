@@ -600,6 +600,314 @@ TEST_F(ExecutorUtilsTest, HWKVCacheUpdateGemma3nPrefill) {
   }
 }
 
+TEST_F(ExecutorUtilsTest, HWKVCacheUpdateSWADecode) {
+  int hidden_dim = 4;
+  int cache_seq = 8;
+  int slice_seq = 1;
+  int start_pos = 9;  // 9 % 8 = 1
+
+  std::vector<float> cache_data(hidden_dim * cache_seq, 0.0f);
+  std::vector<float> slice_data = {1.0f, 2.0f, 3.0f, 4.0f};
+  std::vector<int32_t> pos_data = {start_pos};
+
+  absl::flat_hash_map<absl::string_view, TensorBuffer> in_buffers;
+  in_buffers.emplace("input_pos",
+                     CreateTensorBuffer(pos_data, ElementType::Int32));
+  in_buffers.emplace("kv_cache_k_0", CreateTensorBufferWithDims(
+                                         cache_data, ElementType::Float32,
+                                         {1, cache_seq, hidden_dim}));
+  in_buffers.emplace("kv_cache_v_0", CreateTensorBufferWithDims(
+                                         cache_data, ElementType::Float32,
+                                         {1, cache_seq, hidden_dim}));
+  in_buffers.emplace("kv_slice_k_0", CreateTensorBufferWithDims(
+                                         slice_data, ElementType::Float32,
+                                         {1, slice_seq, hidden_dim}));
+  in_buffers.emplace("kv_slice_v_0", CreateTensorBufferWithDims(
+                                         slice_data, ElementType::Float32,
+                                         {1, slice_seq, hidden_dim}));
+
+  absl::flat_hash_map<absl::string_view, TensorBuffer> out_buffers;
+
+  ASSERT_TRUE(
+      HWKVCacheUpdate(in_buffers, out_buffers, {}, /*enable_swa=*/true).ok());
+
+  auto lock_expected = TensorBufferScopedLock::Create<float>(
+      in_buffers.at("kv_cache_k_0"), TensorBuffer::LockMode::kRead);
+  auto& lock = *lock_expected;
+
+  // Verify that only index 1 (wrapped from 9) is updated
+  int target_pos = start_pos % cache_seq;
+  for (int i = 0; i < cache_seq; ++i) {
+    for (int h = 0; h < hidden_dim; ++h) {
+      float expected = (i == target_pos) ? slice_data[h] : 0.0f;
+      EXPECT_EQ(lock.second[i * hidden_dim + h], expected)
+          << "Mismatch at seq " << i << " head " << h;
+    }
+  }
+}
+
+TEST_F(ExecutorUtilsTest, HWKVCacheUpdateSWADecodeTransposed) {
+  int hidden_dim = 4;
+  int cache_seq = 8;
+  int slice_seq = 1;
+  int start_pos = 9;  // 9 % 8 = 1
+
+  std::vector<float> cache_data(hidden_dim * cache_seq, 0.0f);
+  std::vector<float> slice_data = {1.0f, 2.0f, 3.0f, 4.0f};
+  std::vector<int32_t> pos_data = {start_pos};
+
+  absl::flat_hash_map<absl::string_view, TensorBuffer> in_buffers;
+  in_buffers.emplace("input_pos",
+                     CreateTensorBuffer(pos_data, ElementType::Int32));
+  // Transposed cache: [1, hidden_dim, cache_seq]
+  in_buffers.emplace("kv_cache_k_0", CreateTensorBufferWithDims(
+                                         cache_data, ElementType::Float32,
+                                         {1, hidden_dim, cache_seq}));
+  in_buffers.emplace("kv_cache_v_0", CreateTensorBufferWithDims(
+                                         cache_data, ElementType::Float32,
+                                         {1, hidden_dim, cache_seq}));
+  in_buffers.emplace("kv_slice_k_0", CreateTensorBufferWithDims(
+                                         slice_data, ElementType::Float32,
+                                         {1, 1, slice_seq, hidden_dim}));
+  in_buffers.emplace("kv_slice_v_0", CreateTensorBufferWithDims(
+                                         slice_data, ElementType::Float32,
+                                         {1, 1, slice_seq, hidden_dim}));
+
+  absl::flat_hash_map<absl::string_view, TensorBuffer> out_buffers;
+
+  ASSERT_TRUE(
+      HWKVCacheUpdate(in_buffers, out_buffers, {}, /*enable_swa=*/true).ok());
+
+  auto lock_expected = TensorBufferScopedLock::Create<float>(
+      in_buffers.at("kv_cache_k_0"), TensorBuffer::LockMode::kRead);
+  auto& lock = *lock_expected;
+
+  int target_pos = start_pos % cache_seq;
+  for (int h = 0; h < hidden_dim; ++h) {
+    for (int s = 0; s < cache_seq; ++s) {
+      float expected = (s == target_pos) ? slice_data[h] : 0.0f;
+      EXPECT_EQ(lock.second[h * cache_seq + s], expected)
+          << "Mismatch at head " << h << " seq " << s;
+    }
+  }
+}
+
+TEST_F(ExecutorUtilsTest, HWKVCacheUpdateSWAPrefillWrap) {
+  int hidden_dim = 4;
+  int cache_seq = 8;
+  int slice_seq = 4;
+  int start_pos = 6;  // 6 + 4 = 10 > 8. Wraps to 6, 7, 0, 1.
+
+  std::vector<float> cache_data(hidden_dim * cache_seq, 0.0f);
+  std::vector<float> slice_data = {
+      1.0f,  2.0f,  3.0f,  4.0f,   // token 0
+      5.0f,  6.0f,  7.0f,  8.0f,   // token 1
+      9.0f,  10.0f, 11.0f, 12.0f,  // token 2
+      13.0f, 14.0f, 15.0f, 16.0f   // token 3
+  };
+  std::vector<int32_t> pos_data = {start_pos};
+
+  absl::flat_hash_map<absl::string_view, TensorBuffer> in_buffers;
+  in_buffers.emplace("input_pos",
+                     CreateTensorBuffer(pos_data, ElementType::Int32));
+  in_buffers.emplace("kv_cache_k_0", CreateTensorBufferWithDims(
+                                         cache_data, ElementType::Float32,
+                                         {1, cache_seq, hidden_dim}));
+  in_buffers.emplace("kv_cache_v_0", CreateTensorBufferWithDims(
+                                         cache_data, ElementType::Float32,
+                                         {1, cache_seq, hidden_dim}));
+  in_buffers.emplace("kv_slice_k_0", CreateTensorBufferWithDims(
+                                         slice_data, ElementType::Float32,
+                                         {1, slice_seq, hidden_dim}));
+  in_buffers.emplace("kv_slice_v_0", CreateTensorBufferWithDims(
+                                         slice_data, ElementType::Float32,
+                                         {1, slice_seq, hidden_dim}));
+
+  absl::flat_hash_map<absl::string_view, TensorBuffer> out_buffers;
+
+  ASSERT_TRUE(
+      HWKVCacheUpdate(in_buffers, out_buffers, {}, /*enable_swa=*/true).ok());
+
+  auto lock_expected = TensorBufferScopedLock::Create<float>(
+      in_buffers.at("kv_cache_k_0"), TensorBuffer::LockMode::kRead);
+  auto& lock = *lock_expected;
+
+  // Expected mapping:
+  // cache[6] <- slice[0] (1..4)
+  // cache[7] <- slice[1] (5..8)
+  // cache[0] <- slice[2] (9..12)
+  // cache[1] <- slice[3] (13..16)
+
+  std::vector<int> expected_slice_idx = {
+      2,   // cache[0]
+      3,   // cache[1]
+      -1,  // cache[2]
+      -1,  // cache[3]
+      -1,  // cache[4]
+      -1,  // cache[5]
+      0,   // cache[6]
+      1    // cache[7]
+  };
+
+  for (int i = 0; i < cache_seq; ++i) {
+    int s_idx = expected_slice_idx[i];
+    for (int h = 0; h < hidden_dim; ++h) {
+      float expected =
+          (s_idx == -1) ? 0.0f : slice_data[s_idx * hidden_dim + h];
+      EXPECT_EQ(lock.second[i * hidden_dim + h], expected)
+          << "Mismatch at seq " << i << " head " << h;
+    }
+  }
+}
+
+TEST_F(ExecutorUtilsTest, HWKVCacheUpdateSWAPrefillWrapTransposed) {
+  int hidden_dim = 4;
+  int cache_seq = 8;
+  int slice_seq = 2;
+  int start_pos = 7;  // 7 + 2 = 9 > 8. Wraps to 7 and 0.
+
+  std::vector<float> cache_data(hidden_dim * cache_seq, 0.0f);
+  // Slice layout is [seq, hidden] (seq-major).
+  std::vector<float> slice_data = {
+      1.0f, 2.0f, 3.0f, 4.0f,  // seq 0, h=0..3
+      5.0f, 6.0f, 7.0f, 8.0f   // seq 1, h=0..3
+  };
+  std::vector<int32_t> pos_data = {start_pos};
+
+  absl::flat_hash_map<absl::string_view, TensorBuffer> in_buffers;
+  in_buffers.emplace("input_pos",
+                     CreateTensorBuffer(pos_data, ElementType::Int32));
+  in_buffers.emplace("kv_cache_k_0", CreateTensorBufferWithDims(
+                                         cache_data, ElementType::Float32,
+                                         {1, hidden_dim, cache_seq}));
+  in_buffers.emplace("kv_cache_v_0", CreateTensorBufferWithDims(
+                                         cache_data, ElementType::Float32,
+                                         {1, hidden_dim, cache_seq}));
+  in_buffers.emplace("kv_slice_k_0", CreateTensorBufferWithDims(
+                                         slice_data, ElementType::Float32,
+                                         {1, slice_seq, hidden_dim}));
+  in_buffers.emplace("kv_slice_v_0", CreateTensorBufferWithDims(
+                                         slice_data, ElementType::Float32,
+                                         {1, slice_seq, hidden_dim}));
+
+  absl::flat_hash_map<absl::string_view, TensorBuffer> out_buffers;
+
+  ASSERT_TRUE(
+      HWKVCacheUpdate(in_buffers, out_buffers, {}, /*enable_swa=*/true).ok());
+
+  auto lock_expected = TensorBufferScopedLock::Create<float>(
+      in_buffers.at("kv_cache_k_0"), TensorBuffer::LockMode::kRead);
+  auto& lock = *lock_expected;
+
+  // Expected mapping:
+  // cache[h][7] <- slice[0][h] (1..4)
+  // cache[h][0] <- slice[1][h] (5..8)
+
+  std::vector<int> expected_slice_seq_idx = {
+      1,   // cache seq 0
+      -1,  // cache seq 1
+      -1,  // cache seq 2
+      -1,  // cache seq 3
+      -1,  // cache seq 4
+      -1,  // cache seq 5
+      -1,  // cache seq 6
+      0    // cache seq 7
+  };
+
+  for (int h = 0; h < hidden_dim; ++h) {
+    for (int s = 0; s < cache_seq; ++s) {
+      int s_seq = expected_slice_seq_idx[s];
+      float expected =
+          (s_seq == -1) ? 0.0f : slice_data[s_seq * hidden_dim + h];
+      EXPECT_EQ(lock.second[h * cache_seq + s], expected)
+          << "Mismatch at head " << h << " seq " << s;
+    }
+  }
+}
+
+TEST_F(ExecutorUtilsTest, HWKVCacheUpdateSWAPrefillWithValidMask) {
+  int hidden_dim = 2;
+  int cache_seq = 8;
+  int slice_seq = 8;
+
+  // Initialize cache with distinct values
+  std::vector<float> cache_data(hidden_dim * cache_seq);
+  for (int i = 0; i < cache_seq; ++i) {
+    for (int h = 0; h < hidden_dim; ++h) {
+      cache_data[i * hidden_dim + h] = static_cast<float>(100 + i * 10 + h);
+    }
+  }
+
+  // Slice data: 6 real tokens, 2 padding tokens (value 999.0)
+  std::vector<float> slice_data = {
+      1.0f,   2.0f,    // token 0 (real, maps to pos 104)
+      3.0f,   4.0f,    // token 1 (real, maps to pos 105)
+      5.0f,   6.0f,    // token 2 (real, maps to pos 106)
+      7.0f,   8.0f,    // token 3 (real, maps to pos 107)
+      9.0f,   10.0f,   // token 4 (real, maps to pos 108)
+      11.0f,  12.0f,   // token 5 (real, maps to pos 109)
+      999.0f, 999.0f,  // token 6 (padding)
+      999.0f, 999.0f   // token 7 (padding)
+  };
+
+  std::vector<int32_t> pos_data = {100, 101, 102, 103, 104, 105,
+                                   106, 107, 108, 109, 0,   0};
+
+  std::vector<uint8_t> valid_mask_data = {true, true, true, true, true,  true,
+                                          true, true, true, true, false, false};
+
+  absl::flat_hash_map<absl::string_view, TensorBuffer> in_buffers;
+  in_buffers.emplace("input_pos",
+                     CreateTensorBuffer(pos_data, ElementType::Int32));
+  in_buffers.emplace("valid_mask",
+                     CreateTensorBuffer(valid_mask_data, ElementType::Bool));
+  in_buffers.emplace("kv_cache_k_0", CreateTensorBufferWithDims(
+                                         cache_data, ElementType::Float32,
+                                         {1, cache_seq, hidden_dim}));
+  in_buffers.emplace("kv_cache_v_0", CreateTensorBufferWithDims(
+                                         cache_data, ElementType::Float32,
+                                         {1, cache_seq, hidden_dim}));
+  in_buffers.emplace("kv_slice_k_0", CreateTensorBufferWithDims(
+                                         slice_data, ElementType::Float32,
+                                         {1, slice_seq, hidden_dim}));
+  in_buffers.emplace("kv_slice_v_0", CreateTensorBufferWithDims(
+                                         slice_data, ElementType::Float32,
+                                         {1, slice_seq, hidden_dim}));
+
+  absl::flat_hash_map<absl::string_view, TensorBuffer> out_buffers;
+
+  ASSERT_TRUE(
+      HWKVCacheUpdate(in_buffers, out_buffers, {}, /*enable_swa=*/true).ok());
+
+  auto lock_expected = TensorBufferScopedLock::Create<float>(
+      in_buffers.at("kv_cache_k_0"), TensorBuffer::LockMode::kRead);
+  auto& lock = *lock_expected;
+
+  // Expected cache content:
+  // cache[0] <- slice[0] (1, 2)  -- maps to pos 104
+  // cache[1] <- slice[1] (3, 4)  -- maps to pos 105
+  // cache[2] <- slice[2] (5, 6)  -- maps to pos 106
+  // cache[3] <- slice[3] (7, 8)  -- maps to pos 107
+  // cache[4] <- slice[4] (9, 10) -- maps to pos 108
+  // cache[5] <- slice[5] (11, 12)-- maps to pos 109
+  // cache[6] <- original cache[6] (160, 161)
+  // cache[7] <- original cache[7] (170, 171)
+
+  for (int i = 0; i < 6; ++i) {
+    EXPECT_EQ(lock.second[i * hidden_dim + 0], slice_data[i * hidden_dim + 0])
+        << "Mismatch at seq " << i;
+    EXPECT_EQ(lock.second[i * hidden_dim + 1], slice_data[i * hidden_dim + 1])
+        << "Mismatch at seq " << i;
+  }
+  // Check that original values are preserved for indices 6 and 7
+  for (int i = 6; i < 8; ++i) {
+    EXPECT_EQ(lock.second[i * hidden_dim + 0], cache_data[i * hidden_dim + 0])
+        << "Overwritten at seq " << i;
+    EXPECT_EQ(lock.second[i * hidden_dim + 1], cache_data[i * hidden_dim + 1])
+        << "Overwritten at seq " << i;
+  }
+}
+
 TEST_F(ExecutorUtilsTest, HWMaskUpdateInt8) {
   int seq_q = 1;
   int seq_k = 4096 + 4;  // capacity + batch

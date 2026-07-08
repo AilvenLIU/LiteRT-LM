@@ -325,7 +325,8 @@ absl::StatusOr<int> ApplyGreedySampling(::litert::TensorBuffer& decoded_logits,
 absl::Status HWKVCacheUpdate(
     absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>& in_buffers,
     absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>& out_buffers,
-    const absl::flat_hash_map<absl::string_view, HWQuantParams>& quant_params) {
+    const absl::flat_hash_map<absl::string_view, HWQuantParams>& quant_params,
+    bool enable_swa) {
   static constexpr absl::string_view kInputPos = "input_pos";
   if (!in_buffers.contains(kInputPos)) {
     return absl::InvalidArgumentError("Missing input_pos buffer");
@@ -346,16 +347,36 @@ absl::Status HWKVCacheUpdate(
   if (pos_lock.second == nullptr) {
     return absl::InternalError("Failed to lock input_pos buffer");
   }
-  int start_pos = static_cast<const int32_t*>(pos_lock.second)[0];
-  if (start_pos < 0) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("input_pos must be non-negative: ", start_pos));
+
+  const int32_t* input_pos_ptr = static_cast<const int32_t*>(pos_lock.second);
+
+  // Extract the valid mask if present, which is used to filter out padding
+  // tokens and to only update the cache with valid tokens.
+  static constexpr absl::string_view kValidMask = "valid_mask";
+  const bool* valid_mask = nullptr;
+  int64_t valid_mask_size = 0;
+  std::optional<::litert::TensorBufferScopedLock> valid_mask_lock;
+  if (in_buffers.contains(kValidMask)) {
+    auto& buf = in_buffers.at(kValidMask);
+    LITERT_ASSIGN_OR_RETURN(auto valid_mask_type, buf.TensorType());
+    LITERT_ASSIGN_OR_RETURN(auto num_elements,
+                            valid_mask_type.Layout().NumElements());
+    valid_mask_size = num_elements;
+    if (valid_mask_type.ElementType() != ::litert::ElementType::Bool) {
+      return absl::InvalidArgumentError("valid_mask must be Bool type");
+    }
+    LITERT_ASSIGN_OR_RETURN(auto lock,
+                            ::litert::TensorBufferScopedLock::Create(
+                                buf, ::litert::TensorBuffer::LockMode::kRead));
+    valid_mask = static_cast<const bool*>(lock.second);
+    valid_mask_lock.emplace(std::move(lock.first));
   }
 
   auto perform_update = [&](::litert::TensorBuffer& cache,
                             const ::litert::RankedTensorType& slice_type,
-                            const void* slice_ptr,
-                            size_t slice_bytes) -> absl::Status {
+                            const void* slice_ptr, size_t slice_bytes,
+                            absl::string_view cache_name,
+                            absl::string_view slice_name) -> absl::Status {
     LITERT_ASSIGN_OR_RETURN(auto cache_type, cache.TensorType());
 
     int cache_rank = cache_type.Layout().Rank();
@@ -418,8 +439,67 @@ absl::Status HWKVCacheUpdate(
           "Failed to identify hidden dimension in slice");
     }
 
-    if (start_pos + slice_seq > cache_seq) {
-      return absl::OutOfRangeError("KV-cache update out of range");
+    if (slice_seq > cache_seq) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Slice sequence length (", slice_seq,
+                       ") exceeds cache capacity (", cache_seq, ")"));
+    }
+
+    int64_t real_start = 0;
+    int64_t real_len = slice_seq;
+    int64_t start_pos = input_pos_ptr[0];
+
+    if (valid_mask != nullptr) {
+      int64_t mask_offset = pos_num_elements - slice_seq;
+      if (mask_offset < 0) {
+        return absl::InternalError(
+            "slice_seq cannot be larger than pos_num_elements");
+      }
+      const bool* sub_mask = valid_mask + mask_offset;
+      int64_t first_true = -1;
+      int64_t true_count = 0;
+      for (int64_t i = 0; i < slice_seq; ++i) {
+        if (sub_mask[i]) {
+          if (first_true == -1) {
+            first_true = i;
+          }
+          ++true_count;
+        }
+      }
+      if (first_true != -1) {
+        real_start = first_true;
+        real_len = true_count;
+        // NOTE: The current implementation assumes that valid tokens in
+        // `valid_mask` form a contiguous range from `first_true` to
+        // `first_true + true_count - 1`. If `valid_mask` contains
+        // non-contiguous valid entries (e.g., [T, F, T]), the memcpy operations
+        // below will incorrectly copy a contiguous block. This is acceptable
+        // for typical prefill inputs where valid tokens are always contiguous.
+        start_pos = input_pos_ptr[mask_offset + real_start];
+      } else {
+        real_len = 0;
+      }
+    } else {
+      if (slice_seq < pos_num_elements) {
+        start_pos = input_pos_ptr[pos_num_elements - slice_seq];
+      }
+    }
+
+    if (real_len == 0) {
+      return absl::OkStatus();
+    }
+
+    if (start_pos < 0) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("input_pos must be non-negative: ", start_pos));
+    }
+
+    int64_t wp = enable_swa ? (start_pos % cache_seq) : start_pos;
+
+    if (wp + real_len > cache_seq) {
+      if (!enable_swa) {
+        return absl::OutOfRangeError("KV-cache update out of range");
+      }
     }
 
     // static constexpr int kSliceOuterRank = 2;
@@ -475,87 +555,111 @@ absl::Status HWKVCacheUpdate(
       if (!cache_is_transposed) {
         if (!slice_is_transposed || slice_seq == 1) {
           // Cache is [..., seq, hidden], Slice is [..., seq, hidden] (or seq=1)
-          std::memcpy(c_ptr + (start_pos * hidden_dim * element_size), s_ptr,
-                      slice_seq * hidden_dim * element_size);
+          int64_t chunk1_seq = std::min(real_len, cache_seq - wp);
+          int64_t chunk2_seq = real_len - chunk1_seq;
+          const uint8_t* s_ptr_offset =
+              s_ptr + (real_start * hidden_dim * element_size);
+          std::memcpy(c_ptr + (wp * hidden_dim * element_size), s_ptr_offset,
+                      chunk1_seq * hidden_dim * element_size);
+          if (chunk2_seq > 0) {
+            std::memcpy(c_ptr,
+                        s_ptr_offset + (chunk1_seq * hidden_dim * element_size),
+                        chunk2_seq * hidden_dim * element_size);
+          }
         } else {
           // Cache is [..., seq, hidden], Slice is [..., hidden, seq]
-          for (int64_t s = 0; s < slice_seq; ++s) {
+          for (int64_t s = 0; s < real_len; ++s) {
+            int64_t wrapped_pos = (wp + s) % cache_seq;
+            int64_t slice_s = real_start + s;
             for (int64_t h = 0; h < hidden_dim; ++h) {
-              std::memcpy(
-                  c_ptr + ((start_pos + s) * hidden_dim + h) * element_size,
-                  s_ptr + (h * slice_seq + s) * element_size, element_size);
+              std::memcpy(c_ptr + (wrapped_pos * hidden_dim + h) * element_size,
+                          s_ptr + (h * slice_seq + slice_s) * element_size,
+                          element_size);
             }
           }
         }
       } else {
         // Cache is [..., hidden, seq]
-        if (slice_seq == 1) {
+        if ((!slice_is_transposed && real_len == 1) || slice_seq == 1) {
+          const uint8_t* s_ptr_offset =
+              s_ptr + (real_start * hidden_dim * element_size);
 #if defined(__ANDROID__) && defined(__ARM_NEON) && defined(__aarch64__)
           if (element_size == 1) {
             int64_t h = 0;
             for (; h <= hidden_dim - 16; h += 16) {
-              uint8x16_t v = vld1q_u8(s_ptr + h);
-              c_ptr[(h + 0) * cache_seq + start_pos] = vgetq_lane_u8(v, 0);
-              c_ptr[(h + 1) * cache_seq + start_pos] = vgetq_lane_u8(v, 1);
-              c_ptr[(h + 2) * cache_seq + start_pos] = vgetq_lane_u8(v, 2);
-              c_ptr[(h + 3) * cache_seq + start_pos] = vgetq_lane_u8(v, 3);
-              c_ptr[(h + 4) * cache_seq + start_pos] = vgetq_lane_u8(v, 4);
-              c_ptr[(h + 5) * cache_seq + start_pos] = vgetq_lane_u8(v, 5);
-              c_ptr[(h + 6) * cache_seq + start_pos] = vgetq_lane_u8(v, 6);
-              c_ptr[(h + 7) * cache_seq + start_pos] = vgetq_lane_u8(v, 7);
-              c_ptr[(h + 8) * cache_seq + start_pos] = vgetq_lane_u8(v, 8);
-              c_ptr[(h + 9) * cache_seq + start_pos] = vgetq_lane_u8(v, 9);
-              c_ptr[(h + 10) * cache_seq + start_pos] = vgetq_lane_u8(v, 10);
-              c_ptr[(h + 11) * cache_seq + start_pos] = vgetq_lane_u8(v, 11);
-              c_ptr[(h + 12) * cache_seq + start_pos] = vgetq_lane_u8(v, 12);
-              c_ptr[(h + 13) * cache_seq + start_pos] = vgetq_lane_u8(v, 13);
-              c_ptr[(h + 14) * cache_seq + start_pos] = vgetq_lane_u8(v, 14);
-              c_ptr[(h + 15) * cache_seq + start_pos] = vgetq_lane_u8(v, 15);
+              uint8x16_t v = vld1q_u8(s_ptr_offset + h);
+              c_ptr[(h + 0) * cache_seq + wp] = vgetq_lane_u8(v, 0);
+              c_ptr[(h + 1) * cache_seq + wp] = vgetq_lane_u8(v, 1);
+              c_ptr[(h + 2) * cache_seq + wp] = vgetq_lane_u8(v, 2);
+              c_ptr[(h + 3) * cache_seq + wp] = vgetq_lane_u8(v, 3);
+              c_ptr[(h + 4) * cache_seq + wp] = vgetq_lane_u8(v, 4);
+              c_ptr[(h + 5) * cache_seq + wp] = vgetq_lane_u8(v, 5);
+              c_ptr[(h + 6) * cache_seq + wp] = vgetq_lane_u8(v, 6);
+              c_ptr[(h + 7) * cache_seq + wp] = vgetq_lane_u8(v, 7);
+              c_ptr[(h + 8) * cache_seq + wp] = vgetq_lane_u8(v, 8);
+              c_ptr[(h + 9) * cache_seq + wp] = vgetq_lane_u8(v, 9);
+              c_ptr[(h + 10) * cache_seq + wp] = vgetq_lane_u8(v, 10);
+              c_ptr[(h + 11) * cache_seq + wp] = vgetq_lane_u8(v, 11);
+              c_ptr[(h + 12) * cache_seq + wp] = vgetq_lane_u8(v, 12);
+              c_ptr[(h + 13) * cache_seq + wp] = vgetq_lane_u8(v, 13);
+              c_ptr[(h + 14) * cache_seq + wp] = vgetq_lane_u8(v, 14);
+              c_ptr[(h + 15) * cache_seq + wp] = vgetq_lane_u8(v, 15);
             }
             for (; h < hidden_dim; ++h) {
-              c_ptr[h * cache_seq + start_pos] = s_ptr[h];
+              c_ptr[h * cache_seq + wp] = s_ptr_offset[h];
             }
           } else if (element_size == 2) {
             int64_t h = 0;
-            const uint16_t* s_ptr16 = reinterpret_cast<const uint16_t*>(s_ptr);
+            const uint16_t* s_ptr16 =
+                reinterpret_cast<const uint16_t*>(s_ptr_offset);
             uint16_t* c_ptr16 = reinterpret_cast<uint16_t*>(c_ptr);
             for (; h <= hidden_dim - 8; h += 8) {
               uint16x8_t v = vld1q_u16(s_ptr16 + h);
-              c_ptr16[(h + 0) * cache_seq + start_pos] = vgetq_lane_u16(v, 0);
-              c_ptr16[(h + 1) * cache_seq + start_pos] = vgetq_lane_u16(v, 1);
-              c_ptr16[(h + 2) * cache_seq + start_pos] = vgetq_lane_u16(v, 2);
-              c_ptr16[(h + 3) * cache_seq + start_pos] = vgetq_lane_u16(v, 3);
-              c_ptr16[(h + 4) * cache_seq + start_pos] = vgetq_lane_u16(v, 4);
-              c_ptr16[(h + 5) * cache_seq + start_pos] = vgetq_lane_u16(v, 5);
-              c_ptr16[(h + 6) * cache_seq + start_pos] = vgetq_lane_u16(v, 6);
-              c_ptr16[(h + 7) * cache_seq + start_pos] = vgetq_lane_u16(v, 7);
+              c_ptr16[(h + 0) * cache_seq + wp] = vgetq_lane_u16(v, 0);
+              c_ptr16[(h + 1) * cache_seq + wp] = vgetq_lane_u16(v, 1);
+              c_ptr16[(h + 2) * cache_seq + wp] = vgetq_lane_u16(v, 2);
+              c_ptr16[(h + 3) * cache_seq + wp] = vgetq_lane_u16(v, 3);
+              c_ptr16[(h + 4) * cache_seq + wp] = vgetq_lane_u16(v, 4);
+              c_ptr16[(h + 5) * cache_seq + wp] = vgetq_lane_u16(v, 5);
+              c_ptr16[(h + 6) * cache_seq + wp] = vgetq_lane_u16(v, 6);
+              c_ptr16[(h + 7) * cache_seq + wp] = vgetq_lane_u16(v, 7);
             }
             for (; h < hidden_dim; ++h) {
-              c_ptr16[h * cache_seq + start_pos] = s_ptr16[h];
+              c_ptr16[h * cache_seq + wp] = s_ptr16[h];
             }
           } else {
 #endif
             for (int64_t h = 0; h < hidden_dim; ++h) {
-              std::memcpy(c_ptr + (h * cache_seq + start_pos) * element_size,
-                          s_ptr + h * element_size, element_size);
+              std::memcpy(c_ptr + (h * cache_seq + wp) * element_size,
+                          s_ptr_offset + h * element_size, element_size);
             }
 #if defined(__ANDROID__) && defined(__ARM_NEON) && defined(__aarch64__)
           }
 #endif
         } else if (slice_is_transposed) {
           // Cache is [..., hidden, seq], Slice is [..., hidden, seq]
+          int64_t chunk1_seq = std::min(real_len, cache_seq - wp);
+          int64_t chunk2_seq = real_len - chunk1_seq;
           for (int64_t h = 0; h < hidden_dim; ++h) {
-            std::memcpy(c_ptr + (h * cache_seq + start_pos) * element_size,
-                        s_ptr + (h * slice_seq) * element_size,
-                        slice_seq * element_size);
+            std::memcpy(c_ptr + (h * cache_seq + wp) * element_size,
+                        s_ptr + (h * slice_seq + real_start) * element_size,
+                        chunk1_seq * element_size);
+            if (chunk2_seq > 0) {
+              std::memcpy(c_ptr + (h * cache_seq) * element_size,
+                          s_ptr + (h * slice_seq + real_start + chunk1_seq) *
+                                      element_size,
+                          chunk2_seq * element_size);
+            }
           }
         } else {
           // Cache is [..., hidden, seq], Slice is [..., seq, hidden]
-          for (int64_t s = 0; s < slice_seq; ++s) {
+          for (int64_t s = 0; s < real_len; ++s) {
+            int64_t wrapped_pos = (wp + s) % cache_seq;
+            int64_t slice_s = real_start + s;
             for (int64_t h = 0; h < hidden_dim; ++h) {
-              std::memcpy(
-                  c_ptr + (h * cache_seq + start_pos + s) * element_size,
-                  s_ptr + (s * hidden_dim + h) * element_size, element_size);
+              std::memcpy(c_ptr + (h * cache_seq + wrapped_pos) * element_size,
+                          s_ptr + (slice_s * hidden_dim + h) * element_size,
+                          element_size);
             }
           }
         }
@@ -609,9 +713,9 @@ absl::Status HWKVCacheUpdate(
                 static_cast<const LiteRtLayout&>(slice_type.Layout())));
         size_t dequantized_slice_bytes = num_elements * sizeof(float);
 
-        auto status = perform_update(cache, dequantized_slice_type,
-                                     dequantized_slice_scratch.data(),
-                                     dequantized_slice_bytes);
+        auto status = perform_update(
+            cache, dequantized_slice_type, dequantized_slice_scratch.data(),
+            dequantized_slice_bytes, cache_name, slice_name);
         if (!status.ok()) {
           return absl::Status(
               status.code(),
@@ -626,8 +730,8 @@ absl::Status HWKVCacheUpdate(
       }
     } else {
       // Direct update
-      auto status =
-          perform_update(cache, slice_type, slice_lock.second, slice_bytes);
+      auto status = perform_update(cache, slice_type, slice_lock.second,
+                                   slice_bytes, cache_name, slice_name);
       if (!status.ok()) {
         return absl::Status(
             status.code(),
@@ -922,8 +1026,9 @@ absl::Status HWMaskUpdate(
   int64_t valid_mask_size = 0;
   std::optional<::litert::TensorBufferScopedLock> valid_mask_lock;
   const bool* valid_mask = nullptr;
-  if (in_buffers.contains(kValidMask)) {
-    auto& buf = in_buffers.at(kValidMask);
+  auto it = in_buffers.find(kValidMask);
+  if (it != in_buffers.end()) {
+    auto& buf = it->second;
     LITERT_ASSIGN_OR_RETURN(auto valid_mask_type, buf.TensorType());
     LITERT_ASSIGN_OR_RETURN(auto num_elements,
                             valid_mask_type.Layout().NumElements());

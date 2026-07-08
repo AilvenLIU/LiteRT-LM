@@ -128,6 +128,36 @@ constexpr absl::string_view kv_cache_slice_k_root_name = "kv_slice_k_";
 constexpr absl::string_view kv_cache_slice_v_root_name = "kv_slice_v_";
 constexpr absl::string_view kv_cache_slice_c_root_name = "kv_slice_c_";
 
+// Detect if the model uses Sliding Window Attention (SWA) by checking if
+// there are different KV cache sizes (mixed local/global attention).
+//
+// TODO(b/532090618): Remove this heuristic once the engine provides this via
+// metadata to the executor. I.e. new litertlm models will have this
+// information embedded and the engine passes it down.
+bool DetectIsSwa(const absl::flat_hash_map<absl::string_view, TensorBuffer>&
+                     input_kv_cache_buffers) {
+  std::set<int64_t> cache_seqs;
+  for (const auto& [name, buffer] : input_kv_cache_buffers) {
+    if (name.starts_with(kv_cache_k_root_name) ||
+        name.starts_with(kv_cache_v_root_name) ||
+        name.starts_with(kv_cache_c_root_name)) {
+      auto tensor_type_expected = buffer.TensorType();
+      if (tensor_type_expected.HasValue()) {
+        auto dims = tensor_type_expected->Layout().Dimensions();
+        int rank = dims.size();
+        if (rank >= 2) {
+          int last_dim = dims[rank - 1];
+          int second_last_dim = dims[rank - 2];
+          int64_t cache_seq = std::max(last_dim, second_last_dim);
+          cache_seqs.insert(cache_seq);
+        }
+      }
+    }
+  }
+  bool is_swa = cache_seqs.size() > 1;
+  return is_swa;
+}
+
 namespace {
 
 using LogitsQuantizationParams =
@@ -1533,7 +1563,6 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::WarmupInference(
   return absl::OkStatus();
 }
 
-
 absl::Status LlmLiteRtNpuCompiledModelExecutor::WarmupDrafterInference(
     const DrafterContext& drafter_context,
     const DrafterAuxContext& drafter_aux_context) {
@@ -2510,7 +2539,7 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::PrefillCommonPipeline(
       ABSL_RETURN_IF_ERROR(HWKVCacheUpdate(
           cache_update_inference_context_.prefill_input_buffers,
           cache_update_inference_context_.prefill_output_buffers,
-          kv_quant_params_));
+          kv_quant_params_, has_sliding_window_attention_));
     } else {
       auto res = npu_auxiliary_context_.npu_auxiliary_compiled_model.Run(
           CacheUpdateSignatures::kPrefillCacheUpdate,
@@ -2734,7 +2763,7 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::DecodeInternal(
       ABSL_RETURN_IF_ERROR(
           HWKVCacheUpdate(cache_update_inference_context_.decode_input_buffers,
                           cache_update_inference_context_.decode_output_buffers,
-                          kv_quant_params_));
+                          kv_quant_params_, has_sliding_window_attention_));
     } else {
       auto res = npu_auxiliary_context_.npu_auxiliary_compiled_model.Run(
           CacheUpdateSignatures::kDecodeCacheUpdate,
@@ -3242,7 +3271,7 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::CommitVerifiedKVCache(
     ABSL_RETURN_IF_ERROR(
         HWKVCacheUpdate(cache_update_inference_context_.verify_input_buffers,
                         cache_update_inference_context_.verify_output_buffers,
-                        kv_quant_params_));
+                        kv_quant_params_, has_sliding_window_attention_));
   } else {
     LITERT_RETURN_IF_ERROR(
         npu_auxiliary_context_.npu_auxiliary_compiled_model.Run(
@@ -3803,6 +3832,8 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
     }
   }
 
+  const bool has_sliding_window_attention = DetectIsSwa(input_kv_cache_buffers);
+
   ABSL_RETURN_IF_ERROR(WarmupInference(
       llm_compiled_model, llm_inference_context,
       npu_auxiliary_context.npu_auxiliary_compiled_model, rope_context,
@@ -3822,7 +3853,8 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
       output_type, ple_table_element_type, mul_scale, output_scale,
       final_zero_point, std::move(kv_quant_params), kv_cache_init_value,
       speculative_decoding_type, std::move(drafter_context),
-      std::move(drafter_aux_context), embedder_per_layer_model));
+      std::move(drafter_aux_context), has_sliding_window_attention,
+      embedder_per_layer_model));
   return executor;
 }
 
@@ -4039,6 +4071,8 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelWithoutPerLayerEmbedding(
     }
   }
 
+  const bool has_sliding_window_attention = DetectIsSwa(input_kv_cache_buffers);
+
   ABSL_RETURN_IF_ERROR(WarmupInference(
       llm_compiled_model, llm_inference_context,
       npu_auxiliary_context.npu_auxiliary_compiled_model, rope_context,
@@ -4056,7 +4090,7 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelWithoutPerLayerEmbedding(
       {}, 0, 0, litert::ElementType::None, litert::ElementType::None, 1.0f,
       1.0f, 0, std::move(kv_quant_params), kv_cache_init_value,
       speculative_decoding_type, std::move(drafter_context),
-      std::move(drafter_aux_context)));
+      std::move(drafter_aux_context), has_sliding_window_attention));
   return executor;
 }
 
