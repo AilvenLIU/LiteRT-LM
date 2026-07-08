@@ -87,12 +87,18 @@ class Conversation(
    *
    * @param message The message to send to the model.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param thinkingConfig Optional configuration for thinking/reasoning generation.
    * @return The model's response message.
    * @throws IllegalStateException if the conversation is not alive, if the native layer returns an
    *   invalid response, or if the tool call limit is exceeded.
    * @throws LiteRtLmJniException if an error occurs during the native call.
    */
-  fun sendMessage(message: Message, extraContext: Map<String, Any> = emptyMap()): Message {
+  @JvmOverloads
+  fun sendMessage(
+    message: Message,
+    extraContext: Map<String, Any> = emptyMap(),
+    thinkingConfig: ThinkingConfig? = null,
+  ): Message {
     checkIsAlive()
 
     var currentMessageJson = message.toJson()
@@ -106,6 +112,7 @@ class Conversation(
           currentMessageJson.toString(),
           extraContextJsonString,
           visualTokenBudget,
+          if (i == 0) thinkingConfig else null,
         )
       val responseJsonObject = JsonParser.parseString(responseJsonString).asJsonObject
 
@@ -134,13 +141,19 @@ class Conversation(
    *
    * @param contents The list of contents to send to the model.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param thinkingConfig Optional configuration for thinking/reasoning generation.
    * @return The model's response message.
    * @throws IllegalStateException if the conversation is not alive, if the native layer returns an
    *   invalid response, or if the tool call limit is exceeded.
    * @throws LiteRtLmJniException if an error occurs during the native call.
    */
-  fun sendMessage(contents: Contents, extraContext: Map<String, Any> = emptyMap()): Message {
-    return sendMessage(Message.user(contents), extraContext)
+  @JvmOverloads
+  fun sendMessage(
+    contents: Contents,
+    extraContext: Map<String, Any> = emptyMap(),
+    thinkingConfig: ThinkingConfig? = null,
+  ): Message {
+    return sendMessage(Message.user(contents), extraContext, thinkingConfig)
   }
 
   /**
@@ -153,13 +166,18 @@ class Conversation(
    *
    * @param text The text to send to the model.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param thinkingConfig Optional configuration for thinking/reasoning generation.
    * @return The model's response message.
    * @throws IllegalStateException if the conversation is not alive, if the native layer returns an
    *   invalid response, or if the tool call limit is exceeded.
    * @throws LiteRtLmJniException if an error occurs during the native call.
    */
-  fun sendMessage(text: String, extraContext: Map<String, Any> = emptyMap()): Message =
-    sendMessage(Contents.of(text), extraContext)
+  @JvmOverloads
+  fun sendMessage(
+    text: String,
+    extraContext: Map<String, Any> = emptyMap(),
+    thinkingConfig: ThinkingConfig? = null,
+  ): Message = sendMessage(Contents.of(text), extraContext, thinkingConfig)
 
   /**
    * Send a message to the model and returns the response async with a callback.
@@ -172,13 +190,16 @@ class Conversation(
    * @param message The message to send to the model.
    * @param callback The callback to receive the streaming responses.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param thinkingConfig Optional configuration for thinking/reasoning generation.
    * @throws IllegalStateException if the conversation has already been closed or the content is
    *   empty.
    */
+  @JvmOverloads
   fun sendMessageAsync(
     message: Message,
     callback: MessageCallback,
     extraContext: Map<String, Any> = emptyMap(),
+    thinkingConfig: ThinkingConfig? = null,
   ) {
     checkIsAlive()
 
@@ -192,6 +213,7 @@ class Conversation(
       extraContextJsonString,
       jniCallback,
       visualTokenBudget,
+      thinkingConfig,
     )
   }
 
@@ -206,14 +228,17 @@ class Conversation(
    * @param contents The list of contents to send to the model.
    * @param callback The callback to receive the streaming responses.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param thinkingConfig Optional configuration for thinking/reasoning generation.
    * @throws IllegalStateException if the conversation has already been closed or the content is
    *   empty.
    */
+  @JvmOverloads
   fun sendMessageAsync(
     contents: Contents,
     callback: MessageCallback,
     extraContext: Map<String, Any> = emptyMap(),
-  ) = sendMessageAsync(Message.user(contents), callback, extraContext)
+    thinkingConfig: ThinkingConfig? = null,
+  ) = sendMessageAsync(Message.user(contents), callback, extraContext, thinkingConfig)
 
   /**
    * Send a text to the model and returns the response async with a callback.
@@ -226,14 +251,17 @@ class Conversation(
    * @param text The text to send to the model.
    * @param callback The callback to receive the streaming responses.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param thinkingConfig Optional configuration for thinking/reasoning generation.
    * @throws IllegalStateException if the conversation has already been closed or the content is
    *   empty.
    */
+  @JvmOverloads
   fun sendMessageAsync(
     text: String,
     callback: MessageCallback,
     extraContext: Map<String, Any> = emptyMap(),
-  ) = sendMessageAsync(Contents.of(text), callback, extraContext)
+    thinkingConfig: ThinkingConfig? = null,
+  ) = sendMessageAsync(Contents.of(text), callback, extraContext, thinkingConfig)
 
   /**
    * Sends a message to the model and returns the response async as a [Flow].
@@ -245,13 +273,16 @@ class Conversation(
    *
    * @param message The message to send to the model.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param thinkingConfig Optional configuration for thinking/reasoning generation.
    * @return A Flow of messages representing the model's response.
    * @throws IllegalStateException if the conversation has already been closed or the content is
    *   empty.
    */
+  @JvmOverloads
   fun sendMessageAsync(
     message: Message,
     extraContext: Map<String, Any> = emptyMap(),
+    thinkingConfig: ThinkingConfig? = null,
   ): Flow<Message> = callbackFlow {
     sendMessageAsync(
       message,
@@ -269,6 +300,7 @@ class Conversation(
         }
       },
       extraContext,
+      thinkingConfig,
     )
     awaitClose {}
   }
@@ -283,14 +315,17 @@ class Conversation(
    *
    * @param contents The list of contents to send to the model.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param thinkingConfig Optional configuration for thinking/reasoning generation.
    * @return A Flow of messages representing the model's response.
    * @throws IllegalStateException if the conversation has already been closed or the content is
    *   empty.
    */
+  @JvmOverloads
   fun sendMessageAsync(
     contents: Contents,
     extraContext: Map<String, Any> = emptyMap(),
-  ): Flow<Message> = sendMessageAsync(Message.user(contents), extraContext)
+    thinkingConfig: ThinkingConfig? = null,
+  ): Flow<Message> = sendMessageAsync(Message.user(contents), extraContext, thinkingConfig)
 
   /**
    * Sends a text to the model and returns the response async as a [Flow].
@@ -302,12 +337,17 @@ class Conversation(
    *
    * @param text The text to send to the model.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param thinkingConfig Optional configuration for thinking/reasoning generation.
    * @return A Flow of messages representing the model's response.
    * @throws IllegalStateException if the conversation has already been closed or the content is
    *   empty.
    */
-  fun sendMessageAsync(text: String, extraContext: Map<String, Any> = emptyMap()): Flow<Message> =
-    sendMessageAsync(Contents.of(text), extraContext)
+  @JvmOverloads
+  fun sendMessageAsync(
+    text: String,
+    extraContext: Map<String, Any> = emptyMap(),
+    thinkingConfig: ThinkingConfig? = null,
+  ): Flow<Message> = sendMessageAsync(Contents.of(text), extraContext, thinkingConfig)
 
   private fun handleToolCalls(toolCallsJsonObject: JsonObject): JsonObject {
     val toolCallsJSONArray = toolCallsJsonObject.getAsJsonArray("tool_calls")
@@ -377,6 +417,7 @@ class Conversation(
           "{}",
           this@JniMessageCallbackImpl,
           @OptIn(ExperimentalApi::class) ExperimentalFlags.visualTokenBudget,
+          null,
         )
         pendingToolResponseJSONMessage = null // Clear after sending
       } else {

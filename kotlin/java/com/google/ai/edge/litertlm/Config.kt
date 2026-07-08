@@ -35,6 +35,17 @@ data class Channel(val channelName: String, val start: String, val end: String) 
 }
 
 /**
+ * Configuration for thinking/reasoning generation.
+ *
+ * @property enableThinking Whether thinking/reasoning generation is enabled.
+ * @property thinkingTokenBudget The token budget for thinking/reasoning generation. Defaults to -1
+ *   (infinite budget).
+ */
+data class ThinkingConfig
+@JvmOverloads
+constructor(val enableThinking: Boolean = true, val thinkingTokenBudget: Int = -1)
+
+/**
  * Backend for the LiteRT-LM engine.
  *
  * This is the Kotlin version of the C++'s `litert::lm::Backend`.
@@ -120,6 +131,7 @@ data class EngineConfig(
  * @property prefillPrefaceOnInit Whether to prefill the preface on initialization. Defaults to
  *   false. Note that this will make createConversation() take longer to finish, so you may want to
  *   call it in a background thread.
+ * @property thinkingConfig Configuration for thinking/reasoning generation.
  */
 data class ConversationConfig
 @JvmOverloads
@@ -133,6 +145,7 @@ constructor(
   val extraContext: Map<String, Any> = emptyMap(),
   val loraConfig: LoraConfig? = null,
   val prefillPrefaceOnInit: Boolean = false,
+  val thinkingConfig: ThinkingConfig? = null,
 )
 
 /**

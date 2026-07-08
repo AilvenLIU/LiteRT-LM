@@ -40,6 +40,7 @@ cc_binary(
         "//runtime/components:prompt_template",
         "//runtime/conversation",
         "//runtime/conversation:io_types",
+        "//runtime/conversation:thinking_config",
         "//runtime/conversation/model_data_processor:config_registry",
         "//runtime/conversation/model_data_processor:gemma4_data_processor_config",
         "//runtime/engine:engine_factory",

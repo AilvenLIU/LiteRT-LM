@@ -91,6 +91,7 @@ fun benchmark(
         null, // loraPath
         null, // audioLoraPath
         false, // prefillPrefaceOnInit
+        null, // thinkingConfig
       )
 
     Conversation(conversationHandle).use { conversation ->
