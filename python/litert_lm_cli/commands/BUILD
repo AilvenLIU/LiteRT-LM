@@ -149,6 +149,7 @@ py_test(
     ],
     deps = [
         ":serve",
+        "//python/litert_lm",
         "//python/litert_lm_cli:model",
         "@absl_py//absl/testing:absltest",
     ],

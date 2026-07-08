@@ -37,6 +37,7 @@ class LiteRTLMServer(http.server.HTTPServer):
     vision_backend: The hardware backend used for vision encoding, or None.
     audio_backend: The hardware backend used for audio encoding, or None.
     allowed_origins: Allowed CORS origins.
+    address_family: Socket address family (e.g. AF_INET or AF_INET6).
   """
 
   def __init__(
@@ -173,6 +174,7 @@ def get_or_initialize_server_engine(
       max_num_tokens=max_num_tokens,
       vision_backend=vision_backend,
       audio_backend=audio_backend,
+      enable_benchmark=True,
   )
   engine.__enter__()
   server.litert_lm_engine = engine

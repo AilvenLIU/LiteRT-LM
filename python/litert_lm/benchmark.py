@@ -17,7 +17,6 @@ import ctypes
 
 from . import interfaces
 from ._ffi import _get_lib
-from ._ffi import ActivationDataType
 from ._ffi import InputDataType
 
 
@@ -109,27 +108,7 @@ class Benchmark(interfaces.AbstractBenchmark):
       lib.litert_lm_engine_delete(engine_ptr)
       raise RuntimeError("Failed to get benchmark info")
 
-    info = interfaces.BenchmarkInfo(
-        init_time_in_second=lib.litert_lm_benchmark_info_get_total_init_time_in_second(
-            info_ptr
-        ),
-        time_to_first_token_in_second=lib.litert_lm_benchmark_info_get_time_to_first_token(
-            info_ptr
-        ),
-        last_prefill_token_count=lib.litert_lm_benchmark_info_get_prefill_token_count_at(
-            info_ptr, 0
-        ),
-        last_prefill_tokens_per_second=lib.litert_lm_benchmark_info_get_prefill_tokens_per_sec_at(
-            info_ptr, 0
-        ),
-        last_decode_token_count=lib.litert_lm_benchmark_info_get_decode_token_count_at(
-            info_ptr, 0
-        ),
-        last_decode_tokens_per_second=lib.litert_lm_benchmark_info_get_decode_tokens_per_sec_at(
-            info_ptr, 0
-        ),
-    )
-
+    info = interfaces.create_benchmark_info(lib, info_ptr)
     lib.litert_lm_benchmark_info_delete(info_ptr)
     lib.litert_lm_session_delete(session_ptr)
     lib.litert_lm_engine_delete(engine_ptr)

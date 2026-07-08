@@ -66,6 +66,7 @@ class Engine(interfaces.AbstractEngine):
       ) = None,
       lora_rank_config: interfaces.LoraRankConfig | None = None,
       activation_data_type: ActivationDataType | None = None,
+      enable_benchmark: bool = False,
       **kwargs,
   ):
     backend = _normalize_backend(backend)
@@ -94,6 +95,9 @@ class Engine(interfaces.AbstractEngine):
         (self.vision_backend.get_name() if self.vision_backend else None),
         (self.audio_backend.get_name() if self.audio_backend else None),
     )
+
+    if enable_benchmark:
+      self._lib.litert_lm_engine_settings_enable_benchmark(settings)
 
     if (
         isinstance(self.backend, interfaces.Backend.NPU)

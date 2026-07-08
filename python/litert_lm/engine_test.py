@@ -39,12 +39,13 @@ class LiteRtLmTestBase(parameterized.TestCase):
         / "litert_lm/runtime/testdata/test_lm.litertlm"
     )
 
-  def _create_engine(self, max_num_tokens=10):
+  def _create_engine(self, max_num_tokens=10, enable_benchmark=False):
     return litert_lm.Engine(
         self.model_path,
         litert_lm.Backend.CPU(),
         max_num_tokens=max_num_tokens,
         cache_dir=":nocache",
+        enable_benchmark=enable_benchmark,
     )
 
   @classmethod
@@ -513,6 +514,19 @@ class EngineTest(LiteRtLmTestBase):
       user_message = {"role": "user", "content": "Hello world!"}
       conversation.send_message(user_message)
       self.assertEqual(conversation.token_count, 10)
+
+  def test_conversation_get_benchmark_info(self):
+    with (
+        self._create_engine(enable_benchmark=True) as engine,
+        engine.create_conversation() as conversation,
+    ):
+      user_message = {"role": "user", "content": "Hello world!"}
+      conversation.send_message(user_message)
+      info = conversation.get_benchmark_info()
+      self.assertIsInstance(info, litert_lm.BenchmarkInfo)
+      self.assertGreaterEqual(info.init_time_in_second, 0.0)
+      self.assertGreater(info.last_prefill_token_count, 0)
+      self.assertGreater(info.last_decode_token_count, 0)
 
   def test_create_conversation_with_extra_context(self):
     extra_context = {"key": "value"}
