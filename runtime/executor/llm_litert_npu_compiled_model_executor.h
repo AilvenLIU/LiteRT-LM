@@ -343,6 +343,7 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
       int32_t final_zero_point = 0,
       absl::flat_hash_map<absl::string_view, HWQuantParams> kv_quant_params =
           {},
+      int64_t kv_cache_init_value = 0,
       SpeculativeDecodingType speculative_decoding_type =
           SpeculativeDecodingType::kNone,
       std::optional<DrafterContext> drafter_context = std::nullopt,
@@ -379,7 +380,8 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
         drafter_aux_context_(std::move(drafter_aux_context)),
         embedder_per_layer_model_(embedder_per_layer_model),
         per_tensor_logits_scale_(quantization_params.scale),
-        per_tensor_logits_zero_point_(quantization_params.zero_point) {
+        per_tensor_logits_zero_point_(quantization_params.zero_point),
+        kv_cache_init_value_(kv_cache_init_value) {
     auto npu_config_status = executor_settings_.GetBackendConfig<NpuConfig>();
     if (npu_config_status.ok()) {
       npu_config_ = *npu_config_status;
@@ -583,8 +585,6 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
       ::litert::TensorBuffer prefill_valid_mask,
       ::litert::TensorBuffer decode_valid_mask,
       ::litert::TensorBuffer verify_valid_mask);
-  // Run a 'warmup' inference on every model (prefill and decode).  This is
-  // intended to be called before the first actual inference.
   static absl::Status WarmupInference(
       ::litert::CompiledModel& compiled_model_llm,
       InferenceContext& llm_inference_context,
@@ -601,8 +601,9 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
 
   // Clears all buffers in the provided 'buffers' map that belong to the KV
   // cache.
-  static absl::Status ClearKVCache(
-      absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>& buffers);
+  absl::Status ClearKVCache(
+      absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>& buffers)
+      const;
 
   bool UseEmbeddingLookupManager() const {
     return embedding_lookup_manager_ != nullptr;
@@ -640,7 +641,8 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
           decode_output_kv_cache_slice_buffers,
       absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
           verify_output_kv_cache_slice_buffers,
-      absl::flat_hash_map<absl::string_view, HWQuantParams>& kv_quant_params);
+      absl::flat_hash_map<absl::string_view, HWQuantParams>& kv_quant_params,
+      int64_t kv_cache_init_value);
 
   // Create the executor for Gemma3n, with multi-modality support.
   static absl::StatusOr<std::unique_ptr<LlmLiteRtNpuCompiledModelExecutor>>
@@ -726,6 +728,7 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
   // Tracks whether a decode step was run so we know how to update the logits
   // processor state.
   bool ran_decode_ = false;
+  int64_t kv_cache_init_value_ = 0;
 };
 
 std::ostream& operator<<(

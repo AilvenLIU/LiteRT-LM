@@ -85,6 +85,28 @@ using ::litert::TensorBuffer;
 
 constexpr int kInvalidTokenId = -1;
 
+absl::Status FillKVCacheBuffer(TensorBuffer& buffer, int64_t init_value) {
+  LITERT_ASSIGN_OR_RETURN(RankedTensorType tensor_type, buffer.TensorType());
+  LITERT_ASSIGN_OR_RETURN(auto size, buffer.PackedSize());
+  LITERT_ASSIGN_OR_RETURN(
+      auto lock, ::litert::TensorBufferScopedLock::Create(
+                     buffer, ::litert::TensorBuffer::LockMode::kWrite));
+
+  auto element_type = tensor_type.ElementType();
+  if (element_type == ::litert::ElementType::Int16) {
+    auto* ptr = static_cast<int16_t*>(lock.second);
+    std::fill(ptr, ptr + size / sizeof(int16_t),
+              static_cast<int16_t>(init_value));
+  } else if (element_type == ::litert::ElementType::UInt16) {
+    auto* ptr = static_cast<uint16_t*>(lock.second);
+    std::fill(ptr, ptr + size / sizeof(uint16_t),
+              static_cast<uint16_t>(init_value));
+  } else {
+    std::memset(lock.second, 0, size);
+  }
+  return absl::OkStatus();
+}
+
 constexpr char kPrefillSignature[] = "prefill_128";
 constexpr int kPrefillSize = 128;
 constexpr char kDecodeSignature[] = "decode";
@@ -290,6 +312,37 @@ litert::Expected<bool> HasPerLayerEmbedder(
     }
   }
   return false;
+}
+
+int64_t GetKvCacheInitValue(ModelResources& resources) {
+  int64_t kv_cache_init_value = 0;
+  if (auto metadata_status = resources.GetLlmMetadata(); metadata_status.ok()) {
+    const proto::LlmMetadata* metadata = *metadata_status;
+    if (metadata && metadata->has_kv_cache_init_value()) {
+      kv_cache_init_value = metadata->kv_cache_init_value();
+    }
+  }
+  return kv_cache_init_value;
+}
+
+absl::Status ClearKVCacheToZero(
+    absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>& buffers) {
+  for (auto& [buffer_name, buffer] : buffers) {
+    if (buffer_name.starts_with(kv_cache_k_root_name) ||
+        buffer_name.starts_with(kv_cache_v_root_name) ||
+        buffer_name.starts_with(kv_cache_c_root_name)) {
+      auto status = buffer.Clear();
+      if (!status) {
+        LITERT_ASSIGN_OR_RETURN(
+            auto lock_and_addr,
+            ::litert::TensorBufferScopedLock::Create(
+                buffer, ::litert::TensorBuffer::LockMode::kWrite));
+        LITERT_ASSIGN_OR_RETURN(size_t size, buffer.Size());
+        std::memset(lock_and_addr.second, 0, size);
+      }
+    }
+  }
+  return absl::OkStatus();
 }
 
 }  // namespace
@@ -888,7 +941,8 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::AllocateTransformerBuffers(
         decode_output_kv_cache_slice_buffers,
     absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
         verify_output_kv_cache_slice_buffers,
-    absl::flat_hash_map<absl::string_view, HWQuantParams>& kv_quant_params) {
+    absl::flat_hash_map<absl::string_view, HWQuantParams>& kv_quant_params,
+    int64_t kv_cache_init_value) {
   auto prefill_signature = transformer_model->FindSignature(kPrefillSignature);
 
   if (prefill_signature.HasValue()) {
@@ -917,7 +971,8 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::AllocateTransformerBuffers(
       LITERT_ASSIGN_OR_RETURN(
           input_kv_cache_buffers[input_name],
           llm_compiled_model.CreateInputBuffer(kPrefillSignature, input_name));
-      input_kv_cache_buffers[input_name].Clear();
+      LITERT_RETURN_IF_ERROR(FillKVCacheBuffer(
+          input_kv_cache_buffers[input_name], kv_cache_init_value));
     } else {
       LITERT_ASSIGN_OR_RETURN(
           gemma_prefill_input_buffers[input_name],
@@ -938,7 +993,8 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::AllocateTransformerBuffers(
         LITERT_ASSIGN_OR_RETURN(
             input_kv_cache_buffers[input_name],
             llm_compiled_model.CreateInputBuffer(kDecodeSignature, input_name));
-        input_kv_cache_buffers[input_name].Clear();
+        LITERT_RETURN_IF_ERROR(FillKVCacheBuffer(
+            input_kv_cache_buffers[input_name], kv_cache_init_value));
       }
       continue;
     }
@@ -1473,9 +1529,10 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::WarmupInference(
 
   // Clear the KV cache buffers after warmup.
   ABSL_RETURN_IF_ERROR(
-      ClearKVCache(llm_inference_context.prefill_input_buffers));
+      ClearKVCacheToZero(llm_inference_context.prefill_input_buffers));
   return absl::OkStatus();
 }
+
 
 absl::Status LlmLiteRtNpuCompiledModelExecutor::WarmupDrafterInference(
     const DrafterContext& drafter_context,
@@ -3399,6 +3456,7 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
     const LlmExecutorSettings& executor_settings, ModelResources& resources,
     litert::Environment& env, const litert::Model* transformer_model,
     LogitsQuantizationParams quantization_params) {
+  int64_t kv_cache_init_value = GetKvCacheInitValue(resources);
   // If the model is fully AOT compiled for NPU, NPU accelerator is used
   // automatically.
   LITERT_ASSIGN_OR_RETURN(auto options,
@@ -3426,12 +3484,13 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
       verify_output_kv_cache_slice_buffers;
 
   absl::flat_hash_map<absl::string_view, HWQuantParams> kv_quant_params;
-  ABSL_RETURN_IF_ERROR(AllocateTransformerBuffers(
+  LITERT_RETURN_IF_ERROR(AllocateTransformerBuffers(
       env, transformer_model, llm_compiled_model, gemma_prefill_input_buffers,
       gemma_decode_input_buffers, gemma_verify_input_buffers,
       input_kv_cache_buffers, prefill_output_kv_cache_slice_buffers,
       decode_output_kv_cache_slice_buffers,
-      verify_output_kv_cache_slice_buffers, kv_quant_params));
+      verify_output_kv_cache_slice_buffers, kv_quant_params,
+      kv_cache_init_value));
 
   // Gemma3n specific fix: KV cache buffer 19 of *prefill* is not connected
   // to any OPs in the model, making the LiteRT runtime allocate host memory
@@ -3439,12 +3498,12 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
   if (input_kv_cache_buffers.contains(cache_k19)) {
     LITERT_ASSIGN_OR_RETURN(auto buffer_k, llm_compiled_model.CreateInputBuffer(
                                                kDecodeSignature, cache_k19));
-    buffer_k.Clear();
+    LITERT_RETURN_IF_ERROR(FillKVCacheBuffer(buffer_k, kv_cache_init_value));
     input_kv_cache_buffers[cache_k19] = std::move(buffer_k);
 
     LITERT_ASSIGN_OR_RETURN(auto buffer_v, llm_compiled_model.CreateInputBuffer(
                                                kDecodeSignature, cache_v19));
-    buffer_v.Clear();
+    LITERT_RETURN_IF_ERROR(FillKVCacheBuffer(buffer_v, kv_cache_init_value));
     input_kv_cache_buffers[cache_v19] = std::move(buffer_v);
   }
   LITERT_ASSIGN_OR_RETURN(
@@ -3536,11 +3595,6 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
           std::move(decode_input_pos), std::move(verify_input_pos),
           std::move(prefill_valid_mask), std::move(decode_valid_mask),
           std::move(verify_valid_mask)));
-
-  ABSL_RETURN_IF_ERROR(WarmupInference(
-      llm_compiled_model, llm_inference_context,
-      npu_auxiliary_context.npu_auxiliary_compiled_model, rope_context,
-      mask_context, cache_update_inference_context));
 
   // For now we only support one prefill length in the model.
   SortedPrefillSignatureMap prefill_runner_set;
@@ -3749,6 +3803,11 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
     }
   }
 
+  ABSL_RETURN_IF_ERROR(WarmupInference(
+      llm_compiled_model, llm_inference_context,
+      npu_auxiliary_context.npu_auxiliary_compiled_model, rope_context,
+      mask_context, cache_update_inference_context));
+
   auto executor = absl::WrapUnique(new LlmLiteRtNpuCompiledModelExecutor(
       executor_settings, env, std::move(embedder_context),
       std::move(npu_auxiliary_context), std::move(mask_context),
@@ -3761,9 +3820,9 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelHasPerLayerEmbedding(
       std::move(ple_table_ptrs), std::move(ple_quant_params),
       std::move(ple_per_tensor_scales), table_count, ple_embedding_dim_val,
       output_type, ple_table_element_type, mul_scale, output_scale,
-      final_zero_point, std::move(kv_quant_params), speculative_decoding_type,
-      std::move(drafter_context), std::move(drafter_aux_context),
-      embedder_per_layer_model));
+      final_zero_point, std::move(kv_quant_params), kv_cache_init_value,
+      speculative_decoding_type, std::move(drafter_context),
+      std::move(drafter_aux_context), embedder_per_layer_model));
   return executor;
 }
 
@@ -3772,6 +3831,7 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelWithoutPerLayerEmbedding(
     const LlmExecutorSettings& executor_settings, ModelResources& resources,
     litert::Environment& env, const litert::Model* transformer_model,
     LogitsQuantizationParams quantization_params) {
+  int64_t kv_cache_init_value = GetKvCacheInitValue(resources);
   // Set up LiteRt options.
   LITERT_ASSIGN_OR_RETURN(auto options,
                           CreateLiteRtNpuOptions(executor_settings));
@@ -3803,7 +3863,8 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelWithoutPerLayerEmbedding(
       gemma_decode_input_buffers, gemma_verify_input_buffers,
       input_kv_cache_buffers, prefill_output_kv_cache_slice_buffers,
       decode_output_kv_cache_slice_buffers,
-      verify_output_kv_cache_slice_buffers, kv_quant_params));
+      verify_output_kv_cache_slice_buffers, kv_quant_params,
+      kv_cache_init_value));
   LITERT_ASSIGN_OR_RETURN(
       auto llm_inference_context,
       CreateLlmInferenceContextWithBufferSharing(
@@ -3924,11 +3985,6 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelWithoutPerLayerEmbedding(
           std::move(prefill_valid_mask), std::move(decode_valid_mask),
           std::move(verify_valid_mask)));
 
-  ABSL_RETURN_IF_ERROR(WarmupInference(
-      llm_compiled_model, llm_inference_context,
-      npu_auxiliary_context.npu_auxiliary_compiled_model, rope_context,
-      mask_context, cache_update_inference_context));
-
   // For now we only support one prefill length in the model.
   SortedPrefillSignatureMap prefill_runner_set;
   prefill_runner_set[kPrefillSize] = kPrefillSignature;
@@ -3983,6 +4039,11 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelWithoutPerLayerEmbedding(
     }
   }
 
+  ABSL_RETURN_IF_ERROR(WarmupInference(
+      llm_compiled_model, llm_inference_context,
+      npu_auxiliary_context.npu_auxiliary_compiled_model, rope_context,
+      mask_context, cache_update_inference_context));
+
   auto executor = absl::WrapUnique(new LlmLiteRtNpuCompiledModelExecutor(
       executor_settings, env, std::move(embedder_context),
       std::move(npu_auxiliary_context), std::move(mask_context),
@@ -3993,26 +4054,20 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelWithoutPerLayerEmbedding(
       /*per_layer_embedding_lookup_manager=*/nullptr,
       /*embedder_per_layer_context=*/std::nullopt, quantization_params, {}, {},
       {}, 0, 0, litert::ElementType::None, litert::ElementType::None, 1.0f,
-      1.0f, 0, std::move(kv_quant_params), speculative_decoding_type,
-      std::move(drafter_context), std::move(drafter_aux_context)));
+      1.0f, 0, std::move(kv_quant_params), kv_cache_init_value,
+      speculative_decoding_type, std::move(drafter_context),
+      std::move(drafter_aux_context)));
   return executor;
 }
 
 absl::Status LlmLiteRtNpuCompiledModelExecutor::ClearKVCache(
-    absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>& buffers) {
+    absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>& buffers)
+    const {
   for (auto& [buffer_name, buffer] : buffers) {
     if (buffer_name.starts_with(kv_cache_k_root_name) ||
         buffer_name.starts_with(kv_cache_v_root_name) ||
         buffer_name.starts_with(kv_cache_c_root_name)) {
-      auto status = buffer.Clear();
-      if (!status) {
-        LITERT_ASSIGN_OR_RETURN(
-            auto lock_and_addr,
-            ::litert::TensorBufferScopedLock::Create(
-                buffer, ::litert::TensorBuffer::LockMode::kWrite));
-        LITERT_ASSIGN_OR_RETURN(size_t size, buffer.Size());
-        std::memset(lock_and_addr.second, 0, size);
-      }
+      LITERT_RETURN_IF_ERROR(FillKVCacheBuffer(buffer, kv_cache_init_value_));
     }
   }
   return absl::OkStatus();
