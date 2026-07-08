@@ -230,6 +230,17 @@ public actor Engine {
         && ExperimentalFlags.enableConversationToolCallStreaming,
       ExperimentalFlags.conversationToolCallStreamingChannelName)
 
+    if let thinkingConfig = conversationConfig.thinkingConfig {
+      guard let cThinkingConfig = litert_lm_thinking_config_create() else {
+        throw LiteRTLMError.engine(.failedToCreateConversationConfig)
+      }
+      defer { litert_lm_thinking_config_delete(cThinkingConfig) }
+      litert_lm_thinking_config_set_enable_thinking(cThinkingConfig, thinkingConfig.enableThinking)
+      litert_lm_thinking_config_set_thinking_token_budget(
+        cThinkingConfig, Int32(thinkingConfig.thinkingTokenBudget))
+      litert_lm_conversation_config_set_thinking_config(cConversationConfig, cThinkingConfig)
+    }
+
     guard
       let conversationHandle = litert_lm_conversation_create(
         engineHandle, cConversationConfig)

@@ -311,4 +311,39 @@ class ConversationTests: XCTestCase {
     XCTAssertFalse(rendered.isEmpty)
     XCTAssertTrue(rendered.contains("You are a helpful assistant"))
   }
+
+  func testCreateConversationWithThinkingConfig() async throws {
+    let config = ConversationConfig(
+      thinkingConfig: ThinkingConfig(enableThinking: true, thinkingTokenBudget: 32)
+    )
+    let conversation = try await self.engine.createConversation(with: config)
+    XCTAssertTrue(conversation.isAlive)
+  }
+
+  func testSendMessageWithThinkingConfig() async throws {
+    let conversation = try await self.engine.createConversation(with: ConversationConfig())
+    XCTAssertTrue(conversation.isAlive)
+
+    let response = try await conversation.sendMessage(
+      Message("Hello"),
+      thinkingConfig: ThinkingConfig(enableThinking: true, thinkingTokenBudget: 32)
+    )
+    XCTAssertFalse(response.contents.isEmpty)
+  }
+
+  func testSendMessageStreamWithThinkingConfig() async throws {
+    let conversation = try await self.engine.createConversation(with: ConversationConfig())
+    XCTAssertTrue(conversation.isAlive)
+
+    let message = Message("Hello")
+    var chunkCount = 0
+
+    for try await _ in conversation.sendMessageStream(
+      message,
+      thinkingConfig: ThinkingConfig(enableThinking: true, thinkingTokenBudget: 32)
+    ) {
+      chunkCount += 1
+    }
+    XCTAssertGreaterThan(chunkCount, 0)
+  }
 }

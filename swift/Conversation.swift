@@ -72,19 +72,21 @@ public class Conversation {
   ///
   /// - Parameter message: The message to send to the model.
   /// - Parameter extraContext: The extra context to send to the model.
+  /// - Parameter thinkingConfig: Optional configuration for thinking/reasoning generation.
   /// - Returns: The model's response message.
   /// - Throws: A `LiteRTLMError` if sending the message fails or the model
   ///   returns an invalid response.
-  public func sendMessage(_ message: Message, extraContext: [String: Any]? = nil) async throws
-    -> Message
-  {
+  public func sendMessage(
+    _ message: Message, extraContext: [String: Any]? = nil, thinkingConfig: ThinkingConfig? = nil
+  ) async throws -> Message {
     let handle = try checkIsAlive()
 
     var currentMessageJson: [String: Any] = message.toJson
 
-    for _ in 0..<recurringToolCallLimit {
+    for i in 0..<recurringToolCallLimit {
       let (responseJson, responseString) = try attemptSendMessage(
-        handle: handle, messageJson: currentMessageJson, extraContext: extraContext)
+        handle: handle, messageJson: currentMessageJson, extraContext: extraContext,
+        thinkingConfig: i == 0 ? thinkingConfig : nil)
 
       guard let toolCalls = responseJson["tool_calls"] as? [[String: Any]] else {
         if responseJson["content"] != nil || responseJson["channels"] != nil {
@@ -95,11 +97,13 @@ public class Conversation {
       }
       currentMessageJson = try await handleToolCalls(toolCalls)
     }
-    throw LiteRTLMError.conversation(.recurringToolCallLimitExceeded(limit: recurringToolCallLimit))
+    throw LiteRTLMError.conversation(
+      .recurringToolCallLimitExceeded(limit: recurringToolCallLimit))
   }
 
   private func attemptSendMessage(
-    handle: CConversationHandle, messageJson: [String: Any], extraContext: [String: Any]?
+    handle: CConversationHandle, messageJson: [String: Any], extraContext: [String: Any]?,
+    thinkingConfig: ThinkingConfig? = nil
   ) throws
     -> (responseJson: [String: Any], responseString: String)
   {
@@ -115,11 +119,23 @@ public class Conversation {
       extraContextString = String(data: extraData, encoding: .utf8)
     }
     let optionalArgs = litert_lm_conversation_optional_args_create()
+    defer { litert_lm_conversation_optional_args_delete(optionalArgs) }
     if let visualTokenBudget = ExperimentalFlags.visualTokenBudget {
       litert_lm_conversation_optional_args_set_visual_token_budget(
         optionalArgs, Int32(visualTokenBudget))
     }
-    defer { litert_lm_conversation_optional_args_delete(optionalArgs) }
+    if let thinkingConfig = thinkingConfig {
+      guard let cThinkingConfig = litert_lm_thinking_config_create() else {
+        throw LiteRTLMError.conversation(
+          .invalidResponse("Failed to create native thinking config."))
+      }
+      defer { litert_lm_thinking_config_delete(cThinkingConfig) }
+      litert_lm_thinking_config_set_enable_thinking(
+        cThinkingConfig, thinkingConfig.enableThinking)
+      litert_lm_thinking_config_set_thinking_token_budget(
+        cThinkingConfig, Int32(thinkingConfig.thinkingTokenBudget))
+      litert_lm_conversation_optional_args_set_thinking_config(optionalArgs, cThinkingConfig)
+    }
 
     guard
       let responsePtr = litert_lm_conversation_send_message(
@@ -187,9 +203,10 @@ public class Conversation {
   ///
   /// - Parameter message: The message to send.
   /// - Parameter extraContext: The extra context to send to the model.
+  /// - Parameter thinkingConfig: Optional configuration for thinking/reasoning generation.
   /// - Returns: An async throwing stream of `Message` chunks.
   public func sendMessageStream(
-    _ message: Message, extraContext: [String: Any]? = nil
+    _ message: Message, extraContext: [String: Any]? = nil, thinkingConfig: ThinkingConfig? = nil
   ) -> AsyncThrowingStream<Message, Error> {
     return AsyncThrowingStream { continuation in
       do {
@@ -199,7 +216,8 @@ public class Conversation {
           continuation: continuation, conversation: self)
 
         try self.sendToStream(
-          handle: handle, messageJson: messageJson, extraContext: extraContext, context: context)
+          handle: handle, messageJson: messageJson, extraContext: extraContext,
+          thinkingConfig: thinkingConfig, context: context)
       } catch {
         continuation.finish(throwing: error)
       }
@@ -223,6 +241,7 @@ public class Conversation {
     handle: CConversationHandle,
     messageJson: [String: Any],
     extraContext: [String: Any]? = nil,
+    thinkingConfig: ThinkingConfig? = nil,
     context: StreamContext
   ) throws {
     let messageData = try JSONSerialization.data(withJSONObject: messageJson)
@@ -238,11 +257,23 @@ public class Conversation {
     }
 
     let optionalArgs = litert_lm_conversation_optional_args_create()
+    defer { litert_lm_conversation_optional_args_delete(optionalArgs) }
     if let visualTokenBudget = ExperimentalFlags.visualTokenBudget {
       litert_lm_conversation_optional_args_set_visual_token_budget(
         optionalArgs, Int32(visualTokenBudget))
     }
-    defer { litert_lm_conversation_optional_args_delete(optionalArgs) }
+    if let thinkingConfig = thinkingConfig {
+      guard let cThinkingConfig = litert_lm_thinking_config_create() else {
+        throw LiteRTLMError.conversation(
+          .invalidResponse("Failed to create native thinking config."))
+      }
+      defer { litert_lm_thinking_config_delete(cThinkingConfig) }
+      litert_lm_thinking_config_set_enable_thinking(
+        cThinkingConfig, thinkingConfig.enableThinking)
+      litert_lm_thinking_config_set_thinking_token_budget(
+        cThinkingConfig, Int32(thinkingConfig.thinkingTokenBudget))
+      litert_lm_conversation_optional_args_set_thinking_config(optionalArgs, cThinkingConfig)
+    }
 
     let contextPtr = Unmanaged.passRetained(context).toOpaque()
 
