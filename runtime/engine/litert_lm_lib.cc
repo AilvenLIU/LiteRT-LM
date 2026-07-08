@@ -657,9 +657,12 @@ absl::StatusOr<EngineSettings> CreateEngineSettings(
 absl::StatusOr<std::unique_ptr<litert::lm::Engine>> CreateEngine(
     const LiteRtLmSettings& settings, const EngineSettings& engine_settings) {
   ABSL_LOG(INFO) << "Creating engine";
+  absl::string_view input_prompt_as_hint =
+      (settings.disable_input_prompt_as_hint) ? absl::string_view()
+                                              : settings.input_prompt;
   ABSL_ASSIGN_OR_RETURN(auto engine,
                         litert::lm::EngineFactory::CreateDefault(
-                            std::move(engine_settings), settings.input_prompt));
+                            std::move(engine_settings), input_prompt_as_hint));
   if (settings.vision_backend.has_value()) {
     ABSL_ASSIGN_OR_RETURN(auto vision_executor_properties,
                           engine->GetVisionExecutorProperties());

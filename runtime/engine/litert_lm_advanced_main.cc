@@ -333,6 +333,8 @@ absl::Status MainHelper(int argc, char** argv) {
   settings.use_hw_ple_for_npu = absl::GetFlag(FLAGS_use_hw_ple_for_npu);
   settings.enable_npu_debug_logging =
       absl::GetFlag(FLAGS_enable_npu_debug_logging);
+  settings.disable_input_prompt_as_hint =
+      absl::GetFlag(FLAGS_disable_input_prompt_as_hint);
 
   // Adjust max_num_tokens and prefill_batch_size if not set on benchmark mode.
   if (settings.benchmark && settings.benchmark_prefill_tokens > 0) {

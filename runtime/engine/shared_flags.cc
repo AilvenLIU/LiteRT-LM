@@ -189,3 +189,8 @@ ABSL_FLAG(bool, use_hw_cache_update_for_npu, true,
 ABSL_FLAG(bool, use_hw_ple_for_npu, true, "If true, use HW PLE for NPU.");
 ABSL_FLAG(bool, enable_npu_debug_logging, false,
           "If true, enable debug logging for NPU.");
+ABSL_FLAG(
+    bool, disable_input_prompt_as_hint, false,
+    "If true, disable the input prompt as a hint when creating the engine. "
+    "This is useful to align the behavior of other languages with C++, where "
+    "the input prompt is not used as a hint.");
