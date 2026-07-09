@@ -217,9 +217,11 @@ pytype_strict_library(
         "//python/litert_lm_cli/commands:delete",
         "//python/litert_lm_cli/commands:import",  # fixdeps: keep
         "//python/litert_lm_cli/commands:list",
+        "//python/litert_lm_cli/commands:pack",
         "//python/litert_lm_cli/commands:rename",
         "//python/litert_lm_cli/commands:run",
         "//python/litert_lm_cli/commands:serve",
+        "//python/litert_lm_cli/commands:unpack",
         requirement("click"),
     ],
     imports = [".."],
@@ -234,7 +236,6 @@ py_test(
     deps = [
         ":common",
         ":main_lib",
-        ":model",
         "//python/litert_lm",
         "//python/litert_lm_cli/commands:run",
         "@absl_py//absl/testing:absltest",

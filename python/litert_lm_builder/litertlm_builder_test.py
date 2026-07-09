@@ -633,6 +633,43 @@ class LitertlmBuilderTest(parameterized.TestCase):
       rebuilt_builder.build(f)
     self.assertTrue(os.path.exists(rebuild_path))
 
+  def test_pack(self):
+    """Tests packing a litertlm file from a TOML configuration using pack."""
+    builder = litertlm_builder.LitertLmFileBuilder()
+    self._add_system_metadata(builder)
+    tflite_path = self._create_dummy_file("model.tflite", b"dummy content")
+    builder.add_tflite_model(
+        tflite_path, litertlm_builder.TfLiteModelType.PREFILL_DECODE
+    )
+    litertlm_path = os.path.join(self.temp_dir, "test_orig.litertlm")
+    with litertlm_core.open_file(litertlm_path, "wb") as f:
+      builder.build(f)
+
+    unpack_dir = os.path.join(self.temp_dir, "unpacked_for_pack")
+    toml_path = litertlm_builder.unpack(litertlm_path, unpack_dir)
+
+    packed_litertlm_path = os.path.join(self.temp_dir, "packed.litertlm")
+    res_path = litertlm_builder.pack(toml_path, packed_litertlm_path)
+    self.assertEqual(res_path, packed_litertlm_path)
+    self.assertTrue(os.path.exists(packed_litertlm_path))
+
+  def test_pack_invalid_toml_does_not_truncate_output_file(self):
+    """Tests that packing with an invalid TOML does not truncate existing output file."""
+    output_path = os.path.join(self.temp_dir, "existing_model.litertlm")
+    original_content = b"original model bytes 12345"
+    with open(output_path, "wb") as f:
+      f.write(original_content)
+
+    invalid_toml_path = os.path.join(self.temp_dir, "broken.toml")
+    with open(invalid_toml_path, "w") as f:
+      f.write("[invalid toml syntax <<<")
+
+    with self.assertRaises(Exception):
+      litertlm_builder.pack(invalid_toml_path, output_path)
+
+    with open(output_path, "rb") as f:
+      self.assertEqual(f.read(), original_content)
+
 
 if __name__ == "__main__":
   absltest.main()

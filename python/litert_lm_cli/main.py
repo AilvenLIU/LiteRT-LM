@@ -15,6 +15,7 @@
 """Main script for litert-lm binary."""
 
 import importlib
+import sys
 
 import click
 
@@ -25,9 +26,11 @@ from litert_lm_cli.commands import benchmark as _benchmark_module
 from litert_lm_cli.commands import convert as _convert_module
 from litert_lm_cli.commands import delete as _delete_module
 from litert_lm_cli.commands import list as _list_module
+from litert_lm_cli.commands import pack as _pack_module
 from litert_lm_cli.commands import rename as _rename_module
 from litert_lm_cli.commands import run as _run_module
 from litert_lm_cli.commands import serve as _serve_module
+from litert_lm_cli.commands import unpack as _unpack_module
 
 # Import 'import' subcommand dynamically to bypass Python keyword restriction.
 _import_module = importlib.import_module(
@@ -57,9 +60,13 @@ _delete_module.register(cli)
 _rename_module.register(cli)
 _benchmark_module.register(cli)
 _run_module.register(cli)
+_pack_module.register(cli)
+_unpack_module.register(cli)
 
 
-def main():
+def main(argv=None) -> None:
+  """Entry point for console_scripts and binary execution."""
+  del argv  # Unused.
   litert_lm.set_min_log_severity(litert_lm.LogSeverity.ERROR)
   cli()
 

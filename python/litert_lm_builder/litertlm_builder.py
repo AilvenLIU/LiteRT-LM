@@ -46,7 +46,7 @@ import io
 import os
 import pathlib
 import shutil
-from typing import Any, BinaryIO, Callable, Optional, TypeVar
+from typing import Any, BinaryIO, Callable, Optional, TypeVar, cast
 import uuid
 import zlib
 
@@ -791,9 +791,7 @@ def _round_up_to_block_size(offset: int) -> int:
   )
 
 
-def _copy_file_to_stream(
-    f_src: Any, f_dst: BinaryIO, buffer_size=1024 * 1024
-):
+def _copy_file_to_stream(f_src: Any, f_dst: BinaryIO, buffer_size=1024 * 1024):
   """Copies data from f_src to f_dst efficiently."""
   # Try to use os.sendfile (zero-copy) if available.
   if hasattr(os, "sendfile"):
@@ -910,3 +908,25 @@ def unpack(litertlm_path: str, output_dir: str) -> str:
 
 
 unpack_litertlm_file = unpack
+
+
+def pack(toml_path: str, output_path: str) -> str:
+  """Packs a TOML configuration and its referenced files into a LiteRT-LM file.
+
+  Args:
+    toml_path: The path to the input TOML configuration file (e.g., model.toml).
+    output_path: The path where the packed LiteRT-LM file will be saved.
+
+  Returns:
+    The path to the generated LiteRT-LM file.
+  """
+  output_dir = os.path.dirname(output_path)
+  if output_dir:
+    os.makedirs(output_dir, exist_ok=True)
+  builder = LitertLmFileBuilder.from_toml_file(toml_path)
+  with litertlm_core.open_file(output_path, "wb") as f:
+    builder.build(cast(BinaryIO, f))
+  return output_path
+
+
+pack_litertlm_file = pack

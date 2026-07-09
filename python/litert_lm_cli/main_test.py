@@ -14,6 +14,7 @@
 
 """Unit tests for the main litert-lm CLI."""
 
+import os
 import unittest.mock
 
 from absl.testing import absltest
@@ -633,6 +634,543 @@ class MainTest(absltest.TestCase):
         "Invalid value for '--cpu-thread-count': 0 is not in the range x>=1.",
         result.output,
     )
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.unpack"
+  )
+  @unittest.mock.patch(
+      "litert_lm_cli.model.Model.from_model_reference"
+  )
+  def test_unpack_command_with_output_dir(
+      self, mock_from_model_ref, mock_builder_unpack
+  ):
+    mock_model = unittest.mock.MagicMock()
+    mock_from_model_ref.return_value = mock_model
+    mock_model.exists.return_value = True
+    mock_model.model_path = "/path/to/my-model/model.litertlm"
+    mock_builder_unpack.return_value = "/path/to/unpacked/model.toml"
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      result = runner.invoke(
+          main.cli, ["unpack", "my-model", "--output-dir", "unpacked"]
+      )
+      self.assertEqual(result.exit_code, 0)
+      mock_builder_unpack.assert_called_once_with(
+          "/path/to/my-model/model.litertlm", "unpacked"
+      )
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.unpack"
+  )
+  @unittest.mock.patch(
+      "litert_lm_cli.model.Model.from_model_reference"
+  )
+  def test_unpack_command_with_file_output_dir_fails(
+      self, mock_from_model_ref, mock_builder_unpack
+  ):
+    mock_model = unittest.mock.MagicMock()
+    mock_from_model_ref.return_value = mock_model
+    mock_model.exists.return_value = True
+    mock_model.model_path = "/path/to/my-model/model.litertlm"
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      with open("existing_file", "w") as f:
+        f.write("dummy")
+      result = runner.invoke(
+          main.cli, ["unpack", "my-model", "--output-dir", "existing_file"]
+      )
+      self.assertEqual(result.exit_code, 2)
+      self.assertIn(
+          "Directory 'existing_file' is a file.",
+          result.output,
+      )
+      mock_builder_unpack.assert_not_called()
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.unpack"
+  )
+  @unittest.mock.patch(
+      "litert_lm_cli.model.Model.from_model_reference"
+  )
+  def test_unpack_command_default_dir(
+      self, mock_from_model_ref, mock_builder_unpack
+  ):
+    mock_model = unittest.mock.MagicMock()
+    mock_from_model_ref.return_value = mock_model
+    mock_model.exists.return_value = True
+    mock_model.model_path = "/path/to/my-model/model.litertlm"
+    mock_builder_unpack.return_value = "my-model.litertlm.unpacked/model.toml"
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      # Create a dummy source file to simulate unpacking a local .litertlm file
+      with open("my-model.litertlm", "w") as f:
+        f.write("dummy")
+      result = runner.invoke(main.cli, ["unpack", "my-model.litertlm"])
+      self.assertEqual(result.exit_code, 0)
+      mock_builder_unpack.assert_called_once_with(
+          "/path/to/my-model/model.litertlm", "./my-model"
+      )
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.unpack"
+  )
+  @unittest.mock.patch(
+      "litert_lm_cli.model.Model.from_model_reference"
+  )
+  def test_unpack_command_default_dir_conflict_fails(
+      self, mock_from_model_ref, mock_builder_unpack
+  ):
+    mock_model = unittest.mock.MagicMock()
+    mock_from_model_ref.return_value = mock_model
+    mock_model.exists.return_value = True
+    mock_model.model_path = "/path/to/my-model/model.litertlm"
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      with open("my-model", "w") as f:
+        f.write("existing file")
+      with open("my-model.litertlm", "w") as f:
+        f.write("dummy")
+      result = runner.invoke(main.cli, ["unpack", "my-model.litertlm"])
+      self.assertEqual(result.exit_code, 0)
+      self.assertIn(
+          "Error: Cannot unpack into './my-model' because it conflicts with an"
+          " existing file",
+          result.output,
+      )
+      mock_builder_unpack.assert_not_called()
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.unpack"
+  )
+  @unittest.mock.patch(
+      "litert_lm_cli.model.Model.from_model_reference"
+  )
+  def test_unpack_command_default_dir_in_subfolder(
+      self, mock_from_model_ref, mock_builder_unpack
+  ):
+    mock_model = unittest.mock.MagicMock()
+    mock_from_model_ref.return_value = mock_model
+    mock_model.exists.return_value = True
+    mock_model.model_path = "/path/to/my-model/model.litertlm"
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      os.makedirs("sub/dir", exist_ok=True)
+      with open("sub/dir/model.litertlm", "w") as f:
+        f.write("dummy")
+      result = runner.invoke(main.cli, ["unpack", "sub/dir/model.litertlm"])
+      self.assertEqual(result.exit_code, 0)
+      mock_builder_unpack.assert_called_once_with(
+          "/path/to/my-model/model.litertlm", "sub/dir/model"
+      )
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.unpack"
+  )
+  @unittest.mock.patch(
+      "litert_lm_cli.model.Model.from_model_reference"
+  )
+  def test_unpack_command_model_id_requires_output_dir(
+      self, mock_from_model_ref, mock_builder_unpack
+  ):
+    mock_model = unittest.mock.MagicMock()
+    mock_from_model_ref.return_value = mock_model
+    mock_model.exists.return_value = True
+    mock_model.model_path = "/path/to/my-model/model.litertlm"
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      result = runner.invoke(main.cli, ["unpack", "my-model"])
+      self.assertEqual(result.exit_code, 0)
+      self.assertIn(
+          "Error: --output-dir is required when unpacking a model ID.",
+          result.output,
+      )
+      mock_builder_unpack.assert_not_called()
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.unpack"
+  )
+  @unittest.mock.patch(
+      "litert_lm_cli.model.Model.from_model_reference"
+  )
+  def test_unpack_command_expands_user(
+      self, mock_from_model_ref, mock_builder_unpack
+  ):
+    mock_model = unittest.mock.MagicMock()
+    mock_from_model_ref.return_value = mock_model
+    mock_model.exists.return_value = True
+    mock_model.model_path = "/path/to/my-model/model.litertlm"
+    mock_builder_unpack.return_value = "/path/to/unpacked/model.toml"
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      result = runner.invoke(
+          main.cli, ["unpack", "my-model", "--output-dir", "~/unpacked"]
+      )
+      self.assertEqual(result.exit_code, 0)
+      expected_dir = os.path.expanduser("~/unpacked")
+      mock_builder_unpack.assert_called_once_with(
+          "/path/to/my-model/model.litertlm", expected_dir
+      )
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.pack"
+  )
+  def test_pack_command(self, mock_builder_pack):
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      with open("model.toml", "w") as f:
+        f.write('[[section]]\nsection_type = "TFLiteModel"')
+      result = runner.invoke(
+          main.cli,
+          ["pack", ".", "--output", "out.litertlm"],
+      )
+      self.assertEqual(result.exit_code, 0)
+      expected_config = os.path.join(".", "model.toml")
+      expected_out = os.path.abspath("out.litertlm")
+      mock_builder_pack.assert_called_once_with(expected_config, expected_out)
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.pack"
+  )
+  def test_pack_command_default_output(self, mock_builder_pack):
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      with open("model.toml", "w") as f:
+        f.write('[[section]]\nsection_type = "TFLiteModel"')
+      result = runner.invoke(main.cli, ["pack"])
+      self.assertEqual(result.exit_code, 0)
+      expected_config = "model.toml"
+      expected_out = os.path.abspath("output.litertlm")
+      mock_builder_pack.assert_called_once_with(expected_config, expected_out)
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.pack"
+  )
+  def test_pack_command_directory_fails(self, mock_builder_pack):
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      os.makedirs("my_dir", exist_ok=True)
+      result = runner.invoke(main.cli, ["pack", "my_dir"])
+      self.assertEqual(result.exit_code, 0)
+      self.assertIn("Error: TOML configuration file not found", result.output)
+      mock_builder_pack.assert_not_called()
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.pack"
+  )
+  def test_pack_command_default_config_not_found(self, mock_builder_pack):
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      result = runner.invoke(main.cli, ["pack"])
+      self.assertEqual(result.exit_code, 2)
+      self.assertIn(
+          "Path 'model.toml' does not exist.",
+          result.output,
+      )
+      mock_builder_pack.assert_not_called()
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.pack"
+  )
+  def test_pack_command_with_directory(self, mock_builder_pack):
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      os.makedirs("my-model", exist_ok=True)
+      with open("my-model/model.toml", "w") as f:
+        f.write("dummy")
+      result = runner.invoke(main.cli, ["pack", "my-model"])
+      self.assertEqual(result.exit_code, 0)
+      expected_config = os.path.join("my-model", "model.toml")
+      expected_out = os.path.abspath("my-model.litertlm")
+      mock_builder_pack.assert_called_once_with(expected_config, expected_out)
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.pack"
+  )
+  def test_pack_command_with_current_directory(self, mock_builder_pack):
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      os.makedirs("my-model", exist_ok=True)
+      with open("my-model/model.toml", "w") as f:
+        f.write("dummy")
+      # Change working directory to inside my-model
+      original_cwd = os.getcwd()
+      try:
+        os.chdir("my-model")
+        result = runner.invoke(main.cli, ["pack", "."])
+        self.assertEqual(result.exit_code, 0)
+        expected_config = os.path.join(".", "model.toml")
+        expected_out = os.path.abspath(os.path.join("..", "my-model.litertlm"))
+        mock_builder_pack.assert_called_once_with(expected_config, expected_out)
+      finally:
+        os.chdir(original_cwd)
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.pack"
+  )
+  def test_pack_command_with_config_file_succeeds(self, mock_builder_pack):
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      with open("test-model.toml", "w") as f:
+        f.write("dummy")
+      result = runner.invoke(main.cli, ["pack", "test-model.toml"])
+      self.assertEqual(result.exit_code, 0)
+      expected_out = os.path.abspath("output.litertlm")
+      mock_builder_pack.assert_called_once_with("test-model.toml", expected_out)
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.pack"
+  )
+  def test_pack_command_with_non_existent_path_fails(self, mock_builder_pack):
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      result = runner.invoke(main.cli, ["pack", "invalid_path"])
+      self.assertEqual(result.exit_code, 2)
+      self.assertIn("Path 'invalid_path' does not exist.", result.output)
+      mock_builder_pack.assert_not_called()
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.pack"
+  )
+  def test_pack_command_with_directory_output_fails(self, mock_builder_pack):
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      with open("model.toml", "w") as f:
+        f.write('[[section]]\nsection_type = "TFLiteModel"')
+      os.makedirs("output_dir", exist_ok=True)
+      result = runner.invoke(main.cli, ["pack", "--output", "output_dir"])
+      self.assertEqual(result.exit_code, 2)
+      self.assertIn(
+          "File 'output_dir' is a directory.",
+          result.output,
+      )
+      mock_builder_pack.assert_not_called()
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.pack"
+  )
+  def test_pack_command_default_output_conflict_with_directory_fails(
+      self, mock_builder_pack
+  ):
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      with open("model.toml", "w") as f:
+        f.write('[[section]]\nsection_type = "TFLiteModel"')
+      os.makedirs("output.litertlm", exist_ok=True)
+      result = runner.invoke(main.cli, ["pack"])
+      self.assertEqual(result.exit_code, 0)
+      self.assertIn(
+          "is a directory. The output path must be a file.",
+          result.output,
+      )
+      mock_builder_pack.assert_not_called()
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.pack"
+  )
+  def test_pack_existing_output_non_interactive_fails(self, mock_builder_pack):
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      with open("model.toml", "w") as f:
+        f.write('[[section]]\nsection_type = "TFLiteModel"')
+      with open("out.litertlm", "w") as f:
+        f.write("existing")
+      result = runner.invoke(
+          main.cli, ["pack", ".", "--output", "out.litertlm"]
+      )
+      self.assertEqual(result.exit_code, 0)
+      self.assertIn(
+          "already exists. Please use a different --output", result.output
+      )
+      mock_builder_pack.assert_not_called()
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.pack"
+  )
+  def test_pack_existing_output_with_allow_overwrite_succeeds(
+      self, mock_builder_pack
+  ):
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      with open("model.toml", "w") as f:
+        f.write('[[section]]\nsection_type = "TFLiteModel"')
+      with open("out.litertlm", "w") as f:
+        f.write("existing")
+      result = runner.invoke(
+          main.cli,
+          ["pack", ".", "--output", "out.litertlm", "--allow-overwrite"],
+      )
+      self.assertEqual(result.exit_code, 0)
+      mock_builder_pack.assert_called_once()
+
+  @unittest.mock.patch(
+      "litert_lm_cli.commands.pack._is_interactive",
+      return_value=True,
+  )
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.pack"
+  )
+  def test_pack_existing_output_interactive_confirm(
+      self, mock_builder_pack, mock_is_interactive
+  ):
+    del mock_is_interactive  # unused
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      with open("model.toml", "w") as f:
+        f.write('[[section]]\nsection_type = "TFLiteModel"')
+      with open("out.litertlm", "w") as f:
+        f.write("existing")
+      result = runner.invoke(
+          main.cli,
+          ["pack", ".", "--output", "out.litertlm"],
+          input="y\n",
+      )
+      self.assertEqual(result.exit_code, 0)
+      mock_builder_pack.assert_called_once()
+
+  @unittest.mock.patch(
+      "litert_lm_cli.commands.pack._is_interactive",
+      return_value=True,
+  )
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.pack"
+  )
+  def test_pack_existing_output_interactive_abort(
+      self, mock_builder_pack, mock_is_interactive
+  ):
+    del mock_is_interactive  # unused
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      with open("model.toml", "w") as f:
+        f.write('[[section]]\nsection_type = "TFLiteModel"')
+      with open("out.litertlm", "w") as f:
+        f.write("existing")
+      result = runner.invoke(
+          main.cli,
+          ["pack", ".", "--output", "out.litertlm"],
+          input="n\n",
+      )
+      self.assertEqual(result.exit_code, 0)
+      self.assertIn("Aborted.", result.output)
+      mock_builder_pack.assert_not_called()
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.unpack"
+  )
+  @unittest.mock.patch(
+      "litert_lm_cli.model.Model.from_model_reference"
+  )
+  def test_unpack_existing_output_dir_non_interactive_fails(
+      self, mock_from_model_ref, mock_builder_unpack
+  ):
+    mock_model = unittest.mock.MagicMock()
+    mock_from_model_ref.return_value = mock_model
+    mock_model.exists.return_value = True
+    mock_model.model_path = "/path/to/my-model/model.litertlm"
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      with open("my-model.litertlm", "w") as f:
+        f.write("dummy")
+      os.makedirs("my-model", exist_ok=True)
+      result = runner.invoke(main.cli, ["unpack", "my-model.litertlm"])
+      self.assertEqual(result.exit_code, 0)
+      self.assertIn(
+          "already exists. Please use a different --output-dir", result.output
+      )
+      mock_builder_unpack.assert_not_called()
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.unpack"
+  )
+  @unittest.mock.patch(
+      "litert_lm_cli.model.Model.from_model_reference"
+  )
+  def test_unpack_existing_output_dir_with_allow_overwrite_succeeds(
+      self, mock_from_model_ref, mock_builder_unpack
+  ):
+    mock_model = unittest.mock.MagicMock()
+    mock_from_model_ref.return_value = mock_model
+    mock_model.exists.return_value = True
+    mock_model.model_path = "/path/to/my-model/model.litertlm"
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      with open("my-model.litertlm", "w") as f:
+        f.write("dummy")
+      os.makedirs("my-model", exist_ok=True)
+      result = runner.invoke(
+          main.cli, ["unpack", "my-model.litertlm", "--allow-overwrite"]
+      )
+      self.assertEqual(result.exit_code, 0)
+      mock_builder_unpack.assert_called_once()
+
+  @unittest.mock.patch(
+      "litert_lm_cli.commands.unpack._is_interactive",
+      return_value=True,
+  )
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.unpack"
+  )
+  @unittest.mock.patch(
+      "litert_lm_cli.model.Model.from_model_reference"
+  )
+  def test_unpack_existing_output_dir_interactive_confirm(
+      self, mock_from_model_ref, mock_builder_unpack, mock_is_interactive
+  ):
+    del mock_is_interactive  # unused
+    mock_model = unittest.mock.MagicMock()
+    mock_from_model_ref.return_value = mock_model
+    mock_model.exists.return_value = True
+    mock_model.model_path = "/path/to/my-model/model.litertlm"
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      with open("my-model.litertlm", "w") as f:
+        f.write("dummy")
+      os.makedirs("my-model", exist_ok=True)
+      result = runner.invoke(
+          main.cli, ["unpack", "my-model.litertlm"], input="y\n"
+      )
+      self.assertEqual(result.exit_code, 0)
+      mock_builder_unpack.assert_called_once()
+
+  @unittest.mock.patch(
+      "litert_lm_cli.commands.unpack._is_interactive",
+      return_value=True,
+  )
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.unpack"
+  )
+  @unittest.mock.patch(
+      "litert_lm_cli.model.Model.from_model_reference"
+  )
+  def test_unpack_existing_output_dir_interactive_abort(
+      self, mock_from_model_ref, mock_builder_unpack, mock_is_interactive
+  ):
+    del mock_is_interactive  # unused
+    mock_model = unittest.mock.MagicMock()
+    mock_from_model_ref.return_value = mock_model
+    mock_model.exists.return_value = True
+    mock_model.model_path = "/path/to/my-model/model.litertlm"
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      with open("my-model.litertlm", "w") as f:
+        f.write("dummy")
+      os.makedirs("my-model", exist_ok=True)
+      result = runner.invoke(
+          main.cli, ["unpack", "my-model.litertlm"], input="n\n"
+      )
+      self.assertEqual(result.exit_code, 0)
+      self.assertIn("Aborted.", result.output)
+      mock_builder_unpack.assert_not_called()
 
 
 if __name__ == "__main__":
