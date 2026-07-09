@@ -392,10 +392,9 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::CreatePrefillInputBuffers(
   // the prefill length.
   if (!signatures_.input_tokens.empty()) {
     ABSL_RETURN_IF_ERROR(dyn_shape_resolver(signatures_.input_tokens));
-    LITERT_ASSIGN_OR_RETURN(
-        auto tokens_buffer,
-        compiled_model_->CreateInputBuffer(prefill_signature,
-                                           signatures_.input_tokens));
+    LITERT_ASSIGN_OR_RETURN(auto tokens_buffer,
+                            compiled_model_->CreateInputBuffer(
+                                prefill_signature, signatures_.input_tokens));
     prefill_input_buffers[signatures_.input_tokens] = std::move(tokens_buffer);
   } else {
     // If input_tokens is empty, we must have input_embeddings.
@@ -436,10 +435,9 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::CreatePrefillInputBuffers(
     }
   }
   ABSL_RETURN_IF_ERROR(dyn_shape_resolver(signatures_.input_positions));
-  LITERT_ASSIGN_OR_RETURN(
-      auto positions_buffer,
-      compiled_model_->CreateInputBuffer(prefill_signature,
-                                         signatures_.input_positions));
+  LITERT_ASSIGN_OR_RETURN(auto positions_buffer,
+                          compiled_model_->CreateInputBuffer(
+                              prefill_signature, signatures_.input_positions));
   prefill_input_buffers[signatures_.input_positions] =
       std::move(positions_buffer);
 
@@ -1994,6 +1992,12 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
     }
   }
 
+  const proto::ExecutorMetadata* executor_metadata = nullptr;
+  auto executor_metadata_or = resources.GetExecutorMetadata();
+  if (executor_metadata_or.ok()) {
+    executor_metadata = *executor_metadata_or;
+  }
+
   bool enable_profiling =
       executor_settings.GetAdvancedSettings() &&
       executor_settings.GetAdvancedSettings()->enable_profiling;
@@ -2006,7 +2010,9 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
       std::move(decode_output_kv_cache_buffers), std::move(prefill_runner_set),
       signatures, batch_size, std::move(cache_path),
       std::move(embedding_lookup), std::move(per_layer_embedding_lookup),
-      use_fp16_precision, activation_data_type, std::move(mtp_drafter)));
+      use_fp16_precision, activation_data_type, std::move(mtp_drafter),
+      executor_metadata));
+
   if (enable_profiling) {
     auto status = executor->StartProfiling();
     if (!status.ok()) {
@@ -2330,6 +2336,11 @@ LlmLiteRtCompiledModelExecutorDynamic::Create(
   std::unique_ptr<EmbeddingLookupManager> per_layer_embedding_lookup;
   ABSL_RETURN_IF_ERROR(InitializeEmbeddingLookups(
       lrt_env, resources, embedding_lookup, per_layer_embedding_lookup));
+  const proto::ExecutorMetadata* executor_metadata = nullptr;
+  auto executor_metadata_or = resources.GetExecutorMetadata();
+  if (executor_metadata_or.ok()) {
+    executor_metadata = *executor_metadata_or;
+  }
   bool enable_profiling =
       executor_settings.GetAdvancedSettings() &&
       executor_settings.GetAdvancedSettings()->enable_profiling;
@@ -2341,7 +2352,8 @@ LlmLiteRtCompiledModelExecutorDynamic::Create(
       std::move(value_cache_input_names), signatures, batch_size,
       std::move(weight_cache_path), std::move(embedding_lookup),
       std::move(per_layer_embedding_lookup), /*use_fp16_precision=*/false,
-      /*logits_data_type=*/LogitsDataType::FLOAT32));
+      /*logits_data_type=*/LogitsDataType::FLOAT32,
+      /*mtp_drafter=*/nullptr, executor_metadata));
   if (enable_profiling) {
     auto status = executor->StartProfiling();
     if (!status.ok()) {

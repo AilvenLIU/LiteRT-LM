@@ -61,6 +61,8 @@ class ModelResourcesLitertLm : public ModelResources {
 
   absl::StatusOr<const proto::LlmMetadata*> GetLlmMetadata() override;
 
+  absl::StatusOr<const proto::ExecutorMetadata*> GetExecutorMetadata() override;
+
   absl::StatusOr<const proto::EmbeddingMetadata*> GetEmbeddingMetadata()
       override;
 
@@ -70,8 +72,8 @@ class ModelResourcesLitertLm : public ModelResources {
       ModelType model_type) override;
 
   // Returns the TFLite model section files region.
-  absl::StatusOr<FileRegion>
-  GetTFLiteModelSectionFileRegion(ModelType model_type) override;
+  absl::StatusOr<FileRegion> GetTFLiteModelSectionFileRegion(
+      ModelType model_type) override;
 
  protected:
   explicit ModelResourcesLitertLm(
@@ -89,6 +91,7 @@ class ModelResourcesLitertLm : public ModelResources {
   absl::flat_hash_map<ModelType, std::unique_ptr<litert::Model>> model_map_;
   std::unique_ptr<proto::LlmMetadata> llm_metadata_;
   std::unique_ptr<proto::EmbeddingMetadata> embedding_metadata_;
+  std::unique_ptr<proto::ExecutorMetadata> executor_metadata_;
 };
 
 }  // namespace litert::lm

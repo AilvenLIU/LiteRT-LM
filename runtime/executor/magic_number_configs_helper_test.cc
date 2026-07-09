@@ -101,6 +101,8 @@ class ModelResourcesMock : public ModelResources {
  public:
   MOCK_METHOD(absl::StatusOr<const proto::LlmMetadata*>, GetLlmMetadata, (),
               (override));
+  MOCK_METHOD(absl::StatusOr<const proto::ExecutorMetadata*>,
+              GetExecutorMetadata, (), (override));
   MOCK_METHOD(absl::StatusOr<std::unique_ptr<Tokenizer>>, GetTokenizer, (),
               (override));
   MOCK_METHOD(absl::StatusOr<absl::string_view>, GetTFLiteModelBuffer,

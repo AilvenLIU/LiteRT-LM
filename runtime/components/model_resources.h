@@ -38,6 +38,7 @@
 #endif  // ENABLE_SENTENCEPIECE_TOKENIZER
 #include "support/tokenizer/tokenizer.h"  // from @litert
 #include "runtime/proto/embedding_metadata.pb.h"
+#include "runtime/proto/executor_metadata.pb.h"
 #include "runtime/proto/llm_metadata.pb.h"
 #include "runtime/util/scoped_file.h"
 
@@ -153,7 +154,6 @@ inline std::string ModelTypeToString(ModelType model_type) {
   }
 }
 
-
 // Describes the location of a contiguous region of bytes in a file.
 struct FileRegion {
   size_t offset;
@@ -197,8 +197,8 @@ class ModelResources {
       ModelType model_type) = 0;
 
   // Returns the region of the requested ModelType in the ModelResources.
-  virtual absl::StatusOr<FileRegion>
-  GetTFLiteModelSectionFileRegion(ModelType model_type) = 0;
+  virtual absl::StatusOr<FileRegion> GetTFLiteModelSectionFileRegion(
+      ModelType model_type) = 0;
 
   // Returns the TFLite model backend constraint. When there is no constraint
   // for the given model type, it will return an nullopt.
@@ -216,6 +216,10 @@ class ModelResources {
 
   // Returns the llm metadata.
   virtual absl::StatusOr<const proto::LlmMetadata*> GetLlmMetadata() = 0;
+
+  // Returns the executor metadata.
+  virtual absl::StatusOr<const proto::ExecutorMetadata*>
+  GetExecutorMetadata() = 0;
 
   // Returns the embedding metadata.
   virtual absl::StatusOr<const proto::EmbeddingMetadata*>
