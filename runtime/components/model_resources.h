@@ -30,16 +30,24 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_model.h"  // from @litert
+#ifdef ENABLE_HUGGINGFACE_TOKENIZER
 #include "support/tokenizer/huggingface_tokenizer.h"  // from @litert
+#endif  // ENABLE_HUGGINGFACE_TOKENIZER
+#ifdef ENABLE_SENTENCEPIECE_TOKENIZER
 #include "support/tokenizer/sentencepiece_tokenizer.h"  // from @litert
+#endif  // ENABLE_SENTENCEPIECE_TOKENIZER
 #include "support/tokenizer/tokenizer.h"  // from @litert
 #include "runtime/proto/llm_metadata.pb.h"
 #include "runtime/util/scoped_file.h"
 
 namespace litert::lm {
 
+#ifdef ENABLE_HUGGINGFACE_TOKENIZER
 using ::litert::support::HuggingFaceTokenizer;
+#endif  // ENABLE_HUGGINGFACE_TOKENIZER
+#ifdef ENABLE_SENTENCEPIECE_TOKENIZER
 using ::litert::support::SentencePieceTokenizer;
+#endif  // ENABLE_SENTENCEPIECE_TOKENIZER
 using ::litert::support::Tokenizer;
 
 enum class ModelType {

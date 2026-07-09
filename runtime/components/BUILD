@@ -303,13 +303,7 @@ cc_library(
         "//runtime/util:litert_status_util",
         "//runtime/util:scoped_file",
         "//schema/core:litertlm_header_schema",
-    ] + select({
-        ":disable_huggingface_tokenizer": [],
-        "//conditions:default": ["@litert//support/tokenizer:huggingface_tokenizer"],
-    }) + select({
-        ":disable_sentencepiece_tokenizer": [],
-        "//conditions:default": ["@litert//support/tokenizer:sentencepiece_tokenizer"],
-    }),
+    ],
 )
 
 cc_library(
@@ -322,11 +316,15 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@litert//litert/cc:litert_model",
         "@litert//support/tokenizer",
-        "@litert//support/tokenizer:huggingface_tokenizer",
-        "@litert//support/tokenizer:sentencepiece_tokenizer",
         "//runtime/proto:llm_metadata_cc_proto",
         "//runtime/util:scoped_file",
-    ],
+    ] + select({
+        ":disable_huggingface_tokenizer": [],
+        "//conditions:default": ["@litert//support/tokenizer:huggingface_tokenizer"],
+    }) + select({
+        ":disable_sentencepiece_tokenizer": [],
+        "//conditions:default": ["@litert//support/tokenizer:sentencepiece_tokenizer"],
+    }),
 )
 
 cc_library(
