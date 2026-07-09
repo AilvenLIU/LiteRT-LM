@@ -42,7 +42,6 @@
 #include "litert/cc/litert_element_type.h"  // from @litert
 #include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_layout.h"  // from @litert
-#include "litert/cc/litert_macros.h"  // from @litert
 #include "litert/cc/litert_model.h"  // from @litert
 #include "litert/cc/litert_options.h"  // from @litert
 #include "litert/cc/litert_ranked_tensor_type.h"  // from @litert
@@ -59,6 +58,7 @@
 #include "runtime/executor/litert_compiled_model_executor_utils.h"
 #include "runtime/executor/llm_executor_io_types.h"
 #include "runtime/util/convert_tensor_buffer.h"  // IWYU pragma: keep
+#include "runtime/util/status_macros.h"
 #include "runtime/util/tensor_buffer_util.h"
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"  // from @litert
 #include "tflite/types/half.h"  // from @litert
@@ -213,9 +213,7 @@ absl::StatusOr<std::unique_ptr<AudioContext>> AudioStreamingContext::Clone()
     LITERT_ASSIGN_OR_RETURN(auto new_buffer, buffer.Duplicate());
     new_state_buffers[name] = std::move(new_buffer);
   }
-  auto context = std::make_unique<AudioStreamingContext>(std::move(new_state_buffers));
-  context->buffered_spectrogram() = buffered_spectrogram_;
-  return context;
+  return std::make_unique<AudioStreamingContext>(std::move(new_state_buffers));
 }
 
 absl::StatusOr<
@@ -542,7 +540,6 @@ absl::Status AudioLiteRtCompiledModelExecutor::AudioStreamingEncoder::Reset() {
       memset(buffer_lock_and_addr.second, 0, packed_size);
     }
   }
-  buffered_spectrogram_.clear();
   return absl::OkStatus();
 }
 
@@ -786,8 +783,7 @@ AudioLiteRtCompiledModelExecutor::Create(
 }
 
 absl::StatusOr<int> AudioLiteRtCompiledModelExecutor::EncodeInternal(
-    absl::Span<const float> spectrogram_tensor,
-    absl::Span<const uint8_t> spectrogram_mask,
+    absl::Span<float> spectrogram_tensor, absl::Span<uint8_t> spectrogram_mask,
     absl::Span<float> audio_embeddings) {
   ABSL_RETURN_IF_ERROR(audio_encoder_->ClearInputBuffers());
   auto& input_buffer = audio_encoder_->GetMutableInputSpectrogramBuffer();
@@ -943,34 +939,86 @@ absl::StatusOr<ExecutorAudioData> AudioLiteRtCompiledModelExecutor::Encode(
   LITERT_ASSIGN_OR_RETURN(
       auto spectrogram_host_buffer,
       GetDataAsVector<float>(const_cast<TensorBuffer&>(spectrogram_tensor)));
+
+  int feature_dim = spectrogram_feature_dimensions_;
+  std::vector<float> audio_embeddings;
+  int total_valid_tokens = 0;
+
+  // Default to non-streaming mode.
+  int window_size = sequence_length_;
+  int overlap_size = 0;
+  int stride = window_size;
+
+  if (audio_encoder_->IsStreaming()) {
+    window_size = executor_properties_.streaming_chunk_size;
+    overlap_size = executor_properties_.streaming_chunk_overlap_size;
+    stride = window_size - overlap_size;
+  }
+
+  if (stride <= 0) {
+    return absl::InternalError(
+        "Invalid stride size (window_size <= overlap_size).");
+  }
+
+  int total_frames = input_sequence_length;
+  // At least one chunk.
+  int N = 1;
+  if (total_frames > window_size) {
+    N = CeilIntDiv(total_frames - overlap_size, stride);
+  }
+  int chunk_max_tokens = CeilIntDiv(window_size, encoder_shrinking_factor_);
+  int max_tokens = N * chunk_max_tokens;
+  audio_embeddings.resize(max_tokens * audio_embedding_dimensions_);
+
   LITERT_ASSIGN_OR_RETURN(
       auto spectrogram_mask_host_buffer,
       GetDataAsVector<uint8_t>(const_cast<TensorBuffer&>(spectrogram_mask)));
-  // If there are buffered spectrogram from the previous inference, add them to
-  // the beginning of the spectrogram host buffer.
-  if (!audio_encoder_->GetBufferedSpectrogram().empty() &&
-      executor_settings_.GetAudioBufferingEnabled()) {
-    auto& buffered_spectrogram =
-        audio_encoder_->GetMutableBufferedSpectrogram();
-    const int buffer_length =
-        buffered_spectrogram.size() / spectrogram_feature_dimensions_;
-    spectrogram_host_buffer.insert(spectrogram_host_buffer.begin(),
-                                   buffered_spectrogram.begin(),
-                                   buffered_spectrogram.end());
-    std::vector<uint8_t> mask_padding(buffer_length, 1);
-    spectrogram_mask_host_buffer.insert(spectrogram_mask_host_buffer.begin(),
-                                        mask_padding.begin(),
-                                        mask_padding.end());
-    input_sequence_length += buffer_length;
-    buffered_spectrogram.clear();
+
+  int pos = 0;
+  // At least one chunk is guaranteed to be processed in the first iteration,
+  // and prevent the last chunk only containing overlapped information.
+  while (pos == 0 || pos + overlap_size < total_frames) {
+    int chunk_len = std::min(window_size, total_frames - pos);
+    auto spectrogram_slice =
+        absl::MakeSpan(spectrogram_host_buffer)
+            .subspan(pos * feature_dim, chunk_len * feature_dim);
+
+    auto spectrogram_mask_slice =
+        absl::MakeSpan(spectrogram_mask_host_buffer).subspan(pos, chunk_len);
+
+    int chunk_max_tokens = CeilIntDiv(chunk_len, encoder_shrinking_factor_);
+    auto audio_embeddings_slice =
+        absl::MakeSpan(audio_embeddings)
+            .subspan(total_valid_tokens * audio_embedding_dimensions_,
+                     chunk_max_tokens * audio_embedding_dimensions_);
+
+    ABSL_ASSIGN_OR_RETURN(
+        int chunk_valid_tokens,
+        EncodeInternal(spectrogram_slice, spectrogram_mask_slice,
+                       audio_embeddings_slice));
+
+    total_valid_tokens += chunk_valid_tokens;
+    pos += stride;
   }
 
-  // If buffering is enabled, we don't flush the spectrogram frames in the
-  // Encode function.
-  return EncodeSpecsAndMasks(
-      spectrogram_host_buffer, spectrogram_mask_host_buffer,
-      input_sequence_length,
-      /*is_flush=*/!executor_settings_.GetAudioBufferingEnabled());
+  // Create the final audio embeddings tensor.
+  int buffer_tokens = std::max(1, total_valid_tokens);
+  RankedTensorType audio_embeddings_tensor_type(
+      GetElementType<float>(),
+      Layout(Dimensions({1, buffer_tokens, audio_embedding_dimensions_})));
+  LITERT_ASSIGN_OR_RETURN(
+      auto audio_embeddings_tensor,
+      TensorBuffer::CreateManaged(
+          env_, TensorBufferType::kHostMemory, audio_embeddings_tensor_type,
+          buffer_tokens * audio_embedding_dimensions_ * sizeof(float)));
+  LITERT_RETURN_IF_ERROR(InitializeBuffer(audio_embeddings_tensor));
+  LITERT_RETURN_IF_ERROR(audio_embeddings_tensor.Write<float>(
+      absl::MakeSpan(audio_embeddings)
+          .subspan(0, total_valid_tokens * audio_embedding_dimensions_)));
+  ExecutorAudioData audio_data;
+  audio_data.SetEmbeddings(std::move(audio_embeddings_tensor));
+  audio_data.SetValidTokens(total_valid_tokens);
+  return audio_data;
 }
 
 absl::StatusOr<ExecutorAudioData> AudioLiteRtCompiledModelExecutor::Encode(
@@ -993,140 +1041,6 @@ absl::StatusOr<ExecutorAudioData> AudioLiteRtCompiledModelExecutor::Encode(
   std::vector<uint8_t> all_ones(input_sequence_length, 1);
   LITERT_RETURN_IF_ERROR(mask_tensor.Write<uint8_t>(absl::MakeSpan(all_ones)));
   return Encode(spectrogram_tensor, mask_tensor);
-}
-
-absl::StatusOr<ExecutorAudioData> AudioLiteRtCompiledModelExecutor::Flush() {
-  // If no buffered spectrogram frames, return empty.
-  if (audio_encoder_->GetBufferedSpectrogram().empty() ||
-      !executor_settings_.GetAudioBufferingEnabled() ||
-      !audio_encoder_->IsStreaming()) {
-    ExecutorAudioData audio_data;
-    audio_data.SetValidTokens(0);
-    return audio_data;
-  }
-
-  // Process the remaining buffered spectrogram frames.
-  auto& buffered_spectrogram = audio_encoder_->GetMutableBufferedSpectrogram();
-  const int feature_dim = spectrogram_feature_dimensions_;
-  const int total_frames = buffered_spectrogram.size() / feature_dim;
-
-  // Create a mask of all ones for the buffered frames.
-  std::vector<uint8_t> spectrogram_mask_host_buffer(total_frames, 1);
-
-  return EncodeSpecsAndMasks(buffered_spectrogram, spectrogram_mask_host_buffer,
-                             total_frames,
-                             /*is_flush=*/true);
-}
-
-absl::StatusOr<ExecutorAudioData>
-AudioLiteRtCompiledModelExecutor::EncodeSpecsAndMasks(
-    const std::vector<float>& spectrogram_host_buffer,
-    const std::vector<uint8_t>& spectrogram_mask_host_buffer, int total_frames,
-    bool is_flush) {
-  const int feature_dim = spectrogram_feature_dimensions_;
-
-  // Determine window parameters (same as Encode).
-  int window_size = sequence_length_;
-  int overlap_size = 0;
-  int stride = window_size;
-  if (audio_encoder_->IsStreaming()) {
-    window_size = executor_properties_.streaming_chunk_size;
-    overlap_size = executor_properties_.streaming_chunk_overlap_size;
-    stride = window_size - overlap_size;
-  }
-
-  if (stride <= 0) {
-    return absl::InternalError(
-        "Invalid stride size (window_size <= overlap_size).");
-  }
-
-  // In streaming mode, buffer frames until we have at least one full window.
-  // This prevents processing zero-padded partial windows which produce
-  // different embeddings depending on chunk size. The remaining buffered
-  // frames will be flushed via Flush() when InputAudioEnd is encountered.
-  if (!is_flush && audio_encoder_->IsStreaming() &&
-      total_frames < window_size &&
-      executor_settings_.GetAudioBufferingEnabled()) {
-    auto& buffered_spectrogram =
-        audio_encoder_->GetMutableBufferedSpectrogram();
-    buffered_spectrogram.insert(buffered_spectrogram.end(),
-                                spectrogram_host_buffer.begin(),
-                                spectrogram_host_buffer.end());
-    // Return empty embeddings with 0 valid tokens.
-    ExecutorAudioData audio_data;
-    audio_data.SetValidTokens(0);
-    return audio_data;
-  }
-
-  // Calculate N chunks.
-  int N = 1;
-  if (total_frames > window_size) {
-    N = CeilIntDiv(total_frames - overlap_size, stride);
-  }
-  int chunk_max_tokens = CeilIntDiv(window_size, encoder_shrinking_factor_);
-  int max_tokens = N * chunk_max_tokens;
-  std::vector<float> audio_embeddings(max_tokens * audio_embedding_dimensions_);
-
-  int total_valid_tokens = 0;
-  int pos = 0;
-  // If flush is enabled, process all the frames, and prevent the last chunk
-  // containing only the overlapped information. If not flush, make sure each
-  // chunk has a full window size.
-  while (pos + window_size <= total_frames ||
-         (is_flush && pos + overlap_size < total_frames)) {
-    int chunk_len = std::min(window_size, total_frames - pos);
-    auto spectrogram_slice =
-        absl::MakeSpan(spectrogram_host_buffer)
-            .subspan(pos * feature_dim, chunk_len * feature_dim);
-    auto spectrogram_mask_slice =
-        absl::MakeSpan(spectrogram_mask_host_buffer).subspan(pos, chunk_len);
-
-    int current_chunk_max_tokens =
-        CeilIntDiv(chunk_len, encoder_shrinking_factor_);
-    auto audio_embeddings_slice =
-        absl::MakeSpan(audio_embeddings)
-            .subspan(total_valid_tokens * audio_embedding_dimensions_,
-                     current_chunk_max_tokens * audio_embedding_dimensions_);
-
-    ABSL_ASSIGN_OR_RETURN(
-        int chunk_valid_tokens,
-        EncodeInternal(spectrogram_slice, spectrogram_mask_slice,
-                       audio_embeddings_slice));
-    total_valid_tokens += chunk_valid_tokens;
-    pos += stride;
-  }
-
-  // If there are remaining frames, buffer them for the next inference.
-  if (!is_flush && pos < total_frames && audio_encoder_->IsStreaming() &&
-      executor_settings_.GetAudioBufferingEnabled()) {
-    auto& buffered_spectrogram =
-        audio_encoder_->GetMutableBufferedSpectrogram();
-    buffered_spectrogram.insert(
-        buffered_spectrogram.end(),
-        spectrogram_host_buffer.begin() + pos * feature_dim,
-        spectrogram_host_buffer.end());
-  } else {
-    audio_encoder_->GetMutableBufferedSpectrogram().clear();
-  }
-
-  // Create the final audio embeddings tensor.
-  int buffer_tokens = std::max(1, total_valid_tokens);
-  RankedTensorType audio_embeddings_tensor_type(
-      GetElementType<float>(),
-      Layout(Dimensions({1, buffer_tokens, audio_embedding_dimensions_})));
-  LITERT_ASSIGN_OR_RETURN(
-      auto audio_embeddings_tensor,
-      TensorBuffer::CreateManaged(
-          env_, TensorBufferType::kHostMemory, audio_embeddings_tensor_type,
-          buffer_tokens * audio_embedding_dimensions_ * sizeof(float)));
-  LITERT_RETURN_IF_ERROR(InitializeBuffer(audio_embeddings_tensor));
-  LITERT_RETURN_IF_ERROR(audio_embeddings_tensor.Write<float>(
-      absl::MakeSpan(audio_embeddings)
-          .subspan(0, total_valid_tokens * audio_embedding_dimensions_)));
-  ExecutorAudioData audio_data;
-  audio_data.SetEmbeddings(std::move(audio_embeddings_tensor));
-  audio_data.SetValidTokens(total_valid_tokens);
-  return audio_data;
 }
 
 absl::StatusOr<std::unique_ptr<AudioStreamingContext>>
@@ -1157,9 +1071,6 @@ AudioLiteRtCompiledModelExecutor::AudioStreamingEncoder::CreateNewContext() {
   }
   auto audio_streaming_context =
       std::make_unique<AudioStreamingContext>(std::move(state_buffers));
-  if (executor_settings_.GetAudioBufferingEnabled()) {
-    audio_streaming_context->buffered_spectrogram() = buffered_spectrogram_;
-  }
   return audio_streaming_context;
 }
 
@@ -1182,9 +1093,6 @@ AudioLiteRtCompiledModelExecutor::AudioStreamingEncoder::CloneContext() {
   }
   auto audio_streaming_context =
       std::make_unique<AudioStreamingContext>(std::move(state_buffers));
-  if (executor_settings_.GetAudioBufferingEnabled()) {
-    audio_streaming_context->buffered_spectrogram() = buffered_spectrogram_;
-  }
   return audio_streaming_context;
 }
 
@@ -1229,9 +1137,6 @@ AudioLiteRtCompiledModelExecutor::AudioStreamingEncoder::RestoreContext(
       LITERT_ASSIGN_OR_RETURN(auto buffer_copy, buffer.Duplicate());
       input_buffers_map_[name] = std::move(buffer_copy);
     }
-  }
-  if (executor_settings_.GetAudioBufferingEnabled()) {
-    buffered_spectrogram_ = audio_streaming_context->buffered_spectrogram();
   }
   return absl::OkStatus();
 }

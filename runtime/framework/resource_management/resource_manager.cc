@@ -141,10 +141,6 @@ class LockedAudioExecutor : public AudioExecutor {
 
   absl::Status Reset() override { return audio_executor_->Reset(); }
 
-  absl::StatusOr<ExecutorAudioData> Flush() override {
-    return audio_executor_->Flush();
-  }
-
   absl::StatusOr<AudioExecutorProperties> GetAudioExecutorProperties()
       const override {
     return audio_executor_->GetAudioExecutorProperties();
