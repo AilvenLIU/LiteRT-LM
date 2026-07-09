@@ -633,11 +633,31 @@ SerialExecutionManager::ProcessAndCombineContents(
         ABSL_RETURN_IF_ERROR(benchmark_info->TimeMarkDelta("audio_executor"));
       }
       const int num_audio_tokens = single_audio_data.GetValidTokens();
-      all_audio_data.push_back(std::move(single_audio_data));
-      combined_token_ids.insert(combined_token_ids.end(), num_audio_tokens,
-                                ExecutorAudioData::kSpecialToken);
+      if (num_audio_tokens > 0) {
+        all_audio_data.push_back(std::move(single_audio_data));
+        combined_token_ids.insert(combined_token_ids.end(), num_audio_tokens,
+                                  ExecutorAudioData::kSpecialToken);
+      }
     } else if (const auto* input_audio_end =
                    std::get_if<InputAudioEnd>(&preprocessed_content)) {
+      // We allow audio end token even if the audio executor is not
+      // available.
+      auto audio_executor = resource_manager_->AcquireAudioExecutor();
+      if (audio_executor.ok()) {
+        // Flush any remaining buffered spectrogram frames from streaming
+        // Encode() calls.
+        auto flushed_audio_data = (*audio_executor)->Flush();
+        if (flushed_audio_data.ok()) {
+          const int flushed_tokens = flushed_audio_data->GetValidTokens();
+          if (flushed_tokens > 0) {
+            all_audio_data.push_back(std::move(*flushed_audio_data));
+            combined_token_ids.insert(combined_token_ids.end(), flushed_tokens,
+                                      ExecutorAudioData::kSpecialToken);
+          }
+        } else if (!absl::IsUnimplemented(flushed_audio_data.status())) {
+          return flushed_audio_data.status();
+        }
+      }
       combined_token_ids.push_back(ExecutorAudioData::kEndToken);
     } else {
       return absl::InvalidArgumentError(
@@ -705,6 +725,42 @@ absl::Status SerialExecutionManager::AddPrefillTask(
     auto executor_inputs =
         ProcessAndCombineContents(inputs, session_info->benchmark_info);
     if (!executor_inputs.ok()) {
+      llm_executor.value().reset();
+      if (executor_inputs.status().message() ==
+              "No token IDs found in preprocessed_contents." &&
+          session_info->session_config.AudioModalityEnabled()) {
+        {
+          auto audio_executor = resource_manager_->AcquireAudioExecutor();
+          if (!audio_executor.ok()) {
+            FinishTaskAndLogErrors(task_id, audio_executor.status(),
+                                   std::move(callback));
+            return;
+          }
+          auto audio_executor_properties =
+              (*audio_executor)->GetAudioExecutorProperties();
+          if (!audio_executor_properties.ok()) {
+            audio_executor.value().reset();
+            FinishTaskAndLogErrors(task_id, audio_executor_properties.status(),
+                                   std::move(callback));
+            return;
+          }
+          if (!audio_executor_properties->is_streaming_model) {
+            audio_executor.value().reset();
+            FinishTaskAndLogErrors(task_id, executor_inputs.status(),
+                                   std::move(callback));
+            return;
+          }
+        }
+        ABSL_VLOG(1)
+            << "Input audio chunk is smaller than the audio encoder input "
+               "size. The input audio chunk is buffered and will be processed "
+               "together with the next input audio chunk. Skipping prefill.";
+        // We allow empty input for streaming audio use case, so we mark the
+        // task as done.
+        FinishTaskAndLogErrors(task_id, Responses(TaskState::kDone),
+                               std::move(callback));
+        return;
+      }
       FinishTaskAndLogErrors(task_id, executor_inputs.status(),
                              std::move(callback));
       return;
