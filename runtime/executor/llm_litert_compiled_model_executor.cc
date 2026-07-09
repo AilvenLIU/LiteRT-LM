@@ -36,6 +36,7 @@
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_compiled_model.h"  // from @litert
 #include "litert/cc/litert_element_type.h"  // from @litert
@@ -749,12 +750,13 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::BindTensorsAndRunPrefill(
     output_buffers[output_name] = std::move(output_buffer_dup);
   }
 
+  litert::Options run_options = GetRunOptions();
   if (async) {
     LITERT_RETURN_IF_ERROR(compiled_model_->RunAsync(
-        prefill_signature, input_buffers, output_buffers, async));
+        prefill_signature, input_buffers, output_buffers, async, &run_options));
   } else {
-    LITERT_RETURN_IF_ERROR(
-        compiled_model_->Run(prefill_signature, input_buffers, output_buffers));
+    LITERT_RETURN_IF_ERROR(compiled_model_->Run(
+        prefill_signature, input_buffers, output_buffers, &run_options));
   }
 
   if (!gpu_optimized_single_buffer_cache_) {
@@ -961,10 +963,11 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::BindTensorsAndRunDecode(
     decode_output_buffers[output_name] = std::move(output_buffer_dup);
   }
 
+  litert::Options run_options = GetRunOptions();
   bool async = true;
   LITERT_RETURN_IF_ERROR(
       compiled_model_->RunAsync(kDecodeSignatureRunner, decode_input_buffers,
-                                decode_output_buffers, async));
+                                decode_output_buffers, async, &run_options));
 
   if (!gpu_optimized_single_buffer_cache_) {
     std::swap(input_kv_cache_buffers_, output_kv_cache_buffers_);
@@ -1251,10 +1254,15 @@ absl::StatusOr<TensorBuffer> LlmLiteRtCompiledModelExecutorBase::DecodeLogits(
 
   ++llm_context_->runtime_state().current_step;
 
-  const auto& settings = executor_settings_.GetAdvancedSettings();
-  if (settings && settings->num_logits_to_print_after_decode > 0) {
-    LogTensor(output_logits, settings->num_logits_to_print_after_decode,
-              "Logits")
+  std::optional<AdvancedSettings> advanced_settings;
+  {
+    absl::MutexLock lock(executor_settings_mutex_);
+    advanced_settings = executor_settings_.GetAdvancedSettings();
+  }
+  if (advanced_settings &&
+      advanced_settings->num_logits_to_print_after_decode > 0) {
+    LogTensor(output_logits,
+              advanced_settings->num_logits_to_print_after_decode, "Logits")
         .IgnoreError();
   }
   return output_logits;
@@ -1369,8 +1377,11 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::InitializeSampler(
   auto data_type = logits_data_type.value_or(logits_data_type_);
 
   ABSL_ASSIGN_OR_RETURN(auto vocab_size, GetVocabSize());
-  ABSL_ASSIGN_OR_RETURN(auto sampler_backend,
-                        GetSamplerBackend(executor_settings_));
+  LlmExecutorSettings settings = [this]() {
+    absl::MutexLock lock(executor_settings_mutex_);
+    return executor_settings_;
+  }();
+  ABSL_ASSIGN_OR_RETURN(auto sampler_backend, GetSamplerBackend(settings));
   int output_heads = 1;
   if (llm_context_->runtime_config().output_heads.has_value()) {
     output_heads = llm_context_->runtime_config().output_heads.value();
@@ -1397,11 +1408,17 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::InitializeSampler(
   const bool runs_embedding_on_gpu = (embedding_lookup_ == nullptr);
 
   // If the sampler can handle input, prepare the input tensors for it.
+  bool sampler_handles_input = true;
+  {
+    absl::MutexLock lock(executor_settings_mutex_);
+    if (executor_settings_.GetAdvancedSettings().has_value()) {
+      sampler_handles_input =
+          executor_settings_.GetAdvancedSettings()->sampler_handles_input;
+    }
+  }
   sampler_handles_input_ =
-      (!executor_settings_.GetAdvancedSettings().has_value() ||
-       executor_settings_.GetAdvancedSettings()->sampler_handles_input) &&
-      sampler_->CanHandleInput() && !signatures_.input_tokens.empty() &&
-      runs_embedding_on_gpu;
+      sampler_handles_input && sampler_->CanHandleInput() &&
+      !signatures_.input_tokens.empty() && runs_embedding_on_gpu;
   if (sampler_handles_input_) {
     ABSL_LOG(INFO) << "Sampler will handle decode input tensors.";
     if (!decode_prev_input_pos_) {
@@ -1483,8 +1500,25 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::SampleLogits(
 
 absl::Status LlmLiteRtCompiledModelExecutorBase::UpdateExecutorSettings(
     const LlmExecutorSettings& executor_settings) {
+  absl::MutexLock lock(executor_settings_mutex_);
   executor_settings_ = executor_settings;
   return absl::OkStatus();
+}
+
+litert::Options LlmLiteRtCompiledModelExecutorBase::GetRunOptions() const {
+  absl::MutexLock lock(executor_settings_mutex_);
+  litert::Options run_options;
+  if (executor_settings_.GetAdvancedSettings().has_value()) {
+#if defined(__APPLE__)
+    const auto& advanced_settings = *executor_settings_.GetAdvancedSettings();
+    auto gpu_options = run_options.GetGpuOptions();
+    if (gpu_options.HasValue()) {
+      (void)gpu_options->EnableMetalResidencySet(
+          advanced_settings.gpu_enable_metal_residency_set);
+    }
+#endif
+  }
+  return run_options;
 }
 
 absl::Status LlmLiteRtCompiledModelExecutorBase::SetCurrentStep(int new_step) {
@@ -1948,9 +1982,15 @@ absl::Status LlmLiteRtCompiledModelExecutorDynamic::PrefillInternal(
   if (kv_cache_buffers_1_.empty()) {
     kv_length = prefill_length;
     // First time prefilling, allocate KV cache buffers.
-    bool clear_kv_cache_before_prefill =
-        !executor_settings_.GetAdvancedSettings() ||
-        executor_settings_.GetAdvancedSettings()->clear_kv_cache_before_prefill;
+    bool clear_kv_cache_before_prefill = true;
+    {
+      absl::MutexLock lock(executor_settings_mutex_);
+      if (executor_settings_.GetAdvancedSettings().has_value()) {
+        clear_kv_cache_before_prefill =
+            executor_settings_.GetAdvancedSettings()
+                ->clear_kv_cache_before_prefill;
+      }
+    }
     for (const auto& k_cache_input_name : key_cache_input_names_) {
       ABSL_RETURN_IF_ERROR(ResolveDynamicShape(model_, *compiled_model_,
                                                "prefill", k_cache_input_name,
