@@ -39,7 +39,7 @@ class StateInterface {
   virtual absl::StatusOr<std::string> Serialize() const = 0;
 
   // Loads the KV cache from a serialized byte string.
-  virtual absl::Status Load(absl::string_view serialized_kv_cache) = 0;
+  virtual absl::Status Load(absl::string_view serialized_state) = 0;
 
   // Selects a single batch from the other KV cache and copies it to this KV
   // cache.
@@ -59,6 +59,16 @@ class StateInterface {
 
   // Deep copies the KV cache. This is an expensive operation. Use sparingly.
   virtual absl::StatusOr<std::unique_ptr<StateInterface>> DeepCopy() const = 0;
+
+  // Returns true if this state container holds the tensor with the specified
+  // `tensor_name`. The lookup maps to the signature input/output names of the
+  // model.
+  virtual bool Contains(absl::string_view tensor_name) const = 0;
+
+  // Zeroes out all the buffers held in this state container. Should attempt to
+  // perform the operation asynchronously if the underlying buffers support
+  // asynchronous operations.
+  virtual absl::Status Clear() = 0;
 };
 
 }  // namespace litert::lm

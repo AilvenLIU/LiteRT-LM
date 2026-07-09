@@ -46,9 +46,11 @@
 #include "runtime/components/sampler.h"
 #include "runtime/components/sampler_factory.h"
 #include "runtime/executor/executor_settings_base.h"
+#include "runtime/executor/litert/state.h"
 #include "runtime/executor/litert_compiled_model_executor_utils.h"
 #include "runtime/executor/llm_executor_settings.h"
 #include "runtime/executor/llm_executor_settings_utils.h"
+#include "runtime/executor/state_interface.h"
 #include "runtime/util/convert_tensor_buffer.h"
 #include "runtime/util/status_macros.h"
 
@@ -167,9 +169,9 @@ LlmLiteRtMtpDrafter::~LlmLiteRtMtpDrafter() {
   ABSL_VLOG(1) << "Num drafted tokens: " << num_drafted_tokens_;
   ABSL_VLOG(1) << "Num verified tokens: " << num_verified_tokens_;
   if (num_drafted_tokens_ > 0) {
-    ABSL_VLOG(1) << "Success rate: "
-                 << static_cast<double>(num_verified_tokens_) /
-                        num_drafted_tokens_;
+    ABSL_LOG(INFO) << "MTP Drafter - Success rate: "
+                   << static_cast<double>(num_verified_tokens_) /
+                          num_drafted_tokens_;
   }
 }
 
@@ -196,6 +198,9 @@ LlmLiteRtMtpDrafter::Create(
   LITERT_ASSIGN_OR_RETURN(
       auto compiled_model,
       CompiledModel::Create(env, model->Get(), compilation_options));
+  ABSL_ASSIGN_OR_RETURN(
+      auto base_model_desc,
+      resources.GetTFLiteModel(ModelType::kTfLitePrefillDecode));
 
   absl::flat_hash_map<absl::string_view, TensorBuffer>
       mtp_drafter_input_buffers;
@@ -281,8 +286,8 @@ LlmLiteRtMtpDrafter::Create(
 
   auto drafter = absl::WrapUnique(new LlmLiteRtMtpDrafter(
       std::move(compiled_model), std::move(drafter_signature), base_model,
-      std::move(verify_signature), embedding_manager, ple_manager,
-      std::move(drafter_sampler), std::move(verifier_sampler),
+      std::move(verify_signature), *base_model_desc, embedding_manager,
+      ple_manager, std::move(drafter_sampler), std::move(verifier_sampler),
       std::move(kv_cache_input_names), std::move(mtp_drafter_input_buffers),
       std::move(mtp_drafter_output_buffers), std::move(verifier_input_buffers),
       std::move(verifier_output_buffers), num_draft_steps));
@@ -456,19 +461,23 @@ absl::StatusOr<std::vector<int>> LlmLiteRtMtpDrafter::RunVerification() {
 
 absl::StatusOr<std::vector<std::vector<int>>> LlmLiteRtMtpDrafter::Draft(
     int position, int token_id, std::optional<TensorBuffer> activations,
-    absl::flat_hash_map<absl::string_view, TensorBuffer>&
-        input_kv_cache_buffers,
-    absl::flat_hash_map<absl::string_view, TensorBuffer>&
-        output_kv_cache_buffers) {
+    StateInterface& state) {
+  auto* litert_state = dynamic_cast<LitertState*>(&state);
+  RET_CHECK(litert_state != nullptr);
+  LITERT_ASSIGN_OR_RETURN(
+      auto state_buffers,
+      litert_state->GetStateBuffers(base_model_, verify_signature_.Key()));
+
   ABSL_RETURN_IF_ERROR(
-      PrepareDrafterInputBuffers(position - 1, output_kv_cache_buffers));
+      PrepareDrafterInputBuffers(position - 1, state_buffers.output_buffers));
 
   ABSL_ASSIGN_OR_RETURN(std::vector<int> drafted_tokens,
                         RunDraftingLoop(token_id, activations));
 
   ABSL_RETURN_IF_ERROR(PrepareVerifierInputBuffers(
-      position, token_id, drafted_tokens, input_kv_cache_buffers));
-  ABSL_RETURN_IF_ERROR(PrepareVerifierOutputBuffers(output_kv_cache_buffers));
+      position, token_id, drafted_tokens, state_buffers.input_buffers));
+  ABSL_RETURN_IF_ERROR(
+      PrepareVerifierOutputBuffers(state_buffers.output_buffers));
 
   ABSL_ASSIGN_OR_RETURN(std::vector<int> verifier_id_vector, RunVerification());
 

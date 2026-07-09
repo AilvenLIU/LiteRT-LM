@@ -14,6 +14,7 @@
 
 #include "runtime/executor/litert/state.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -29,14 +30,13 @@
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_compiled_model.h"  // from @litert
 #include "litert/cc/litert_element_type.h"  // from @litert
 #include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_layout.h"  // from @litert
 #include "litert/cc/litert_macros.h"  // from @litert
-#include "litert/cc/litert_model.h"  // from @litert
-#include "litert/cc/litert_model_types.h"  // from @litert
 #include "litert/cc/litert_ranked_tensor_type.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer_types.h"  // from @litert
@@ -53,14 +53,11 @@ namespace {
 constexpr int kDynamicDimValue = -1;
 
 absl::StatusOr<std::optional<int>> GetDynamicDimIndex(
-    const Model& model, absl::string_view signature,
+    const CompiledModel& compiled_model, absl::string_view signature,
     absl::string_view tensor_name) {
-  LITERT_ASSIGN_OR_RETURN(const SimpleSignature& sig,
-                          model.FindSignature(signature));
-  LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
-                          sig.InputTensor(tensor_name));
-  LITERT_ASSIGN_OR_RETURN(const RankedTensorType ranked_tensor_type,
-                          tensor.RankedTensorType());
+  LITERT_ASSIGN_OR_RETURN(
+      const RankedTensorType ranked_tensor_type,
+      compiled_model.GetInputTensorType(signature, tensor_name));
   auto dimensions = ranked_tensor_type.Layout().Dimensions();
   std::optional<int> dynamic_dim_index;
   for (int i = 0; i < dimensions.size(); ++i) {
@@ -73,14 +70,12 @@ absl::StatusOr<std::optional<int>> GetDynamicDimIndex(
   return dynamic_dim_index;
 }
 
-absl::Status ResolveDynamicShape(const SimpleSignature& sig,
-                                 CompiledModel& compiled_model,
+absl::Status ResolveDynamicShape(CompiledModel& compiled_model,
                                  absl::string_view signature,
                                  absl::string_view tensor_name, int new_value) {
-  LITERT_ASSIGN_OR_RETURN(const SimpleTensor& tensor,
-                          sig.InputTensor(tensor_name));
-  LITERT_ASSIGN_OR_RETURN(const RankedTensorType ranked_tensor_type,
-                          tensor.RankedTensorType());
+  LITERT_ASSIGN_OR_RETURN(
+      const RankedTensorType ranked_tensor_type,
+      compiled_model.GetInputTensorType(signature, tensor_name));
   auto dimensions = ranked_tensor_type.Layout().Dimensions();
 
   bool has_dynamic_dim = false;
@@ -202,123 +197,17 @@ absl::Status BroadcastAndCopyBuffer(TensorBuffer& dst, int dst_batch_size,
 }  // namespace
 
 absl::StatusOr<std::unique_ptr<LitertState>> LitertState::Create(
-    Environment& env, const Model& model, absl::string_view signature_name,
-    CompiledModel& compiled_model, bool inplace_update) {
-  std::string kv_cache_k_root_name;
-  std::string kv_cache_v_root_name;
-  LITERT_ASSIGN_OR_RETURN(auto signature, model.FindSignature(signature_name));
-  ABSL_RETURN_IF_ERROR(
-      GetKVCacheRootNames(signature.InputNames(), signature.OutputNames(),
-                          kv_cache_k_root_name, kv_cache_v_root_name));
-
-  std::vector<std::string> key_cache_input_names;
-  std::vector<std::string> value_cache_input_names;
-  std::string mask_input_name;
-  for (auto input_name : signature.InputNames()) {
-    bool is_key_cache_input =
-        absl::StartsWith(input_name, kv_cache_k_root_name);
-    if (is_key_cache_input) {
-      key_cache_input_names.push_back(std::string(input_name));
-    }
-
-    bool is_value_cache_input =
-        absl::StartsWith(input_name, kv_cache_v_root_name);
-    if (is_value_cache_input) {
-      value_cache_input_names.push_back(std::string(input_name));
-    }
-
-    if (absl::StrContains(input_name, "mask")) {
-      mask_input_name = input_name;
-    }
+    Environment& env, CompiledModel& compiled_model,
+    absl::string_view signature_name,
+    const proto::ExecutorMetadata* executor_metadata,
+    AllocationPolicy allocation_policy, int batch_size) {
+  if (executor_metadata == nullptr) {
+    return HeuristicBasedCreate(env, compiled_model, signature_name,
+                                allocation_policy, batch_size);
   }
 
-  ABSL_ASSIGN_OR_RETURN(
-      std::optional<int> k_dynamic_dim,
-      GetDynamicDimIndex(model, signature_name, key_cache_input_names[0]));
-  ABSL_ASSIGN_OR_RETURN(
-      std::optional<int> v_dynamic_dim,
-      GetDynamicDimIndex(model, signature_name, value_cache_input_names[0]));
-  RET_CHECK(k_dynamic_dim.has_value() == v_dynamic_dim.has_value());
-
-  auto create_and_init_buffers =
-      [&](const std::vector<std::string>& input_names,
-          const std::optional<int>& dynamic_dim, bool clear_buffer)
-      -> absl::StatusOr<absl::flat_hash_map<std::string, TensorBuffer>> {
-    absl::flat_hash_map<std::string, TensorBuffer> buffers;
-    for (const auto& input_name : input_names) {
-      if (dynamic_dim.has_value()) {
-        ABSL_RETURN_IF_ERROR(ResolveDynamicShape(signature, compiled_model,
-                                                 signature_name, input_name,
-                                                 /*new_value=*/1));
-      }
-      LITERT_ASSIGN_OR_RETURN(auto buffer, compiled_model.CreateInputBuffer(
-                                               signature_name, input_name));
-      if (clear_buffer) {
-        LITERT_RETURN_IF_ERROR(buffer.Clear());
-      }
-      buffers[input_name] = std::move(buffer);
-    }
-    return buffers;
-  };
-
-  ABSL_ASSIGN_OR_RETURN(
-      auto bank_1_key_cache_buffers,
-      create_and_init_buffers(key_cache_input_names, k_dynamic_dim,
-                              /*clear_buffer=*/true));
-  ABSL_ASSIGN_OR_RETURN(
-      auto bank_1_value_cache_buffers,
-      create_and_init_buffers(value_cache_input_names, v_dynamic_dim,
-                              /*clear_buffer=*/false));
-
-  std::optional<absl::flat_hash_map<std::string, TensorBuffer>>
-      bank_2_key_cache_buffers;
-  std::optional<absl::flat_hash_map<std::string, TensorBuffer>>
-      bank_2_value_cache_buffers;
-  if (!inplace_update) {
-    // Bank 2 buffers are created after Bank 1 shapes are resolved, so no need
-    // to pass dynamic_dim.
-    ABSL_ASSIGN_OR_RETURN(bank_2_key_cache_buffers.emplace(),
-                          create_and_init_buffers(key_cache_input_names,
-                                                  /*dynamic_dim=*/std::nullopt,
-                                                  /*clear_buffer=*/true));
-    ABSL_ASSIGN_OR_RETURN(bank_2_value_cache_buffers.emplace(),
-                          create_and_init_buffers(value_cache_input_names,
-                                                  /*dynamic_dim=*/std::nullopt,
-                                                  /*clear_buffer=*/false));
-  }
-
-  int batch_size;
-  {
-    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& key_cache_tensor,
-                            signature.InputTensor(key_cache_input_names[0]));
-    LITERT_ASSIGN_OR_RETURN(const RankedTensorType key_cache_tensor_type,
-                            key_cache_tensor.RankedTensorType());
-    auto dims = key_cache_tensor_type.Layout().Dimensions();
-    // Expect [batch, ...]
-    RET_CHECK_GT(dims.size(), 1);
-    batch_size = dims[0];
-  }
-  int context_size;
-  {
-    // Mask is our best bet for inferring context size. Key and value tensors
-    // have different layouts and as such cannot be used directly.
-    LITERT_ASSIGN_OR_RETURN(const SimpleTensor& mask_tensor,
-                            signature.InputTensor(mask_input_name));
-    LITERT_ASSIGN_OR_RETURN(const RankedTensorType mask_tensor_type,
-                            mask_tensor.RankedTensorType());
-    auto dims = mask_tensor_type.Layout().Dimensions();
-    // Expect [1, 1, Sequence, KV Length]
-    RET_CHECK_EQ(dims.size(), 4);
-    const bool is_dynamic_kv_cache = k_dynamic_dim.has_value();
-    context_size = is_dynamic_kv_cache ? 1 : dims[3];
-  }
-
-  return absl::WrapUnique(
-      new LitertState(batch_size, context_size, k_dynamic_dim, v_dynamic_dim,
-                      env, std::move(bank_1_key_cache_buffers),
-                      std::move(bank_1_value_cache_buffers),
-                      std::move(bank_2_key_cache_buffers),
-                      std::move(bank_2_value_cache_buffers)));
+  return MetadataBasedCreate(env, compiled_model, signature_name,
+                             *executor_metadata, allocation_policy, batch_size);
 }
 
 absl::Status LitertState::SelectAndCopyFrom(StateInterface& other,
@@ -411,18 +300,45 @@ absl::StatusOr<std::unique_ptr<StateInterface>> LitertState::DeepCopy() const {
     }
   }
 
-  auto copy = absl::WrapUnique(
-      new LitertState(batch_size_, num_entries_, k_dynamic_dim_, v_dynamic_dim_,
-                      env_, std::move(bank_1_key_cache_buffers),
-                      std::move(bank_1_value_cache_buffers),
-                      std::move(bank_2_key_cache_buffers),
-                      std::move(bank_2_value_cache_buffers)));
+  auto copy = absl::WrapUnique(new LitertState(
+      batch_size_, num_entries_, k_dynamic_dim_, v_dynamic_dim_, env_,
+      std::move(bank_1_key_cache_buffers),
+      std::move(bank_1_value_cache_buffers),
+      std::move(bank_2_key_cache_buffers),
+      std::move(bank_2_value_cache_buffers), allocation_policy_));
   copy->bank_1_is_input_ = bank_1_is_input_;
 
   return copy;
 }
 
-absl::Status LitertState::Resize(int num_entries) {
+bool LitertState::Contains(absl::string_view tensor_name) const {
+  return bank_1_key_cache_buffers_.contains(tensor_name) ||
+         bank_1_value_cache_buffers_.contains(tensor_name);
+}
+
+absl::Status LitertState::Clear() {
+  for (auto& [_, buffer] : bank_1_key_cache_buffers_) {
+    LITERT_RETURN_IF_ERROR(buffer.Clear());
+  }
+  for (auto& [_, buffer] : bank_1_value_cache_buffers_) {
+    LITERT_RETURN_IF_ERROR(buffer.Clear());
+  }
+  if (bank_2_key_cache_buffers_.has_value()) {
+    for (auto& [_, buffer] : *bank_2_key_cache_buffers_) {
+      LITERT_RETURN_IF_ERROR(buffer.Clear());
+    }
+  }
+  if (bank_2_value_cache_buffers_.has_value()) {
+    for (auto& [_, buffer] : *bank_2_value_cache_buffers_) {
+      LITERT_RETURN_IF_ERROR(buffer.Clear());
+    }
+  }
+  return absl::OkStatus();
+}
+
+absl::Status LitertState::Resize(CompiledModel& compiled_model,
+                                 absl::string_view signature_name,
+                                 int num_entries) {
   RET_CHECK(!bank_2_key_cache_buffers_.has_value())
           .SetCode(absl::StatusCode::kInvalidArgument)
       << "Out of place KV cache cannot be resized.";
@@ -434,6 +350,15 @@ absl::Status LitertState::Resize(int num_entries) {
   int entries_to_add = num_entries - num_entries_;
   if (entries_to_add <= 0) {
     return absl::OkStatus();
+  }
+
+  for (const auto& [input_name, _] : bank_1_key_cache_buffers_) {
+    ABSL_RETURN_IF_ERROR(ResolveDynamicShape(compiled_model, signature_name,
+                                             input_name, num_entries));
+  }
+  for (const auto& [input_name, _] : bank_1_value_cache_buffers_) {
+    ABSL_RETURN_IF_ERROR(ResolveDynamicShape(compiled_model, signature_name,
+                                             input_name, num_entries));
   }
 
   for (auto& [input_name, key_cache_buffer] : bank_1_key_cache_buffers_) {
@@ -452,7 +377,9 @@ absl::Status LitertState::Resize(int num_entries) {
   return absl::OkStatus();
 }
 
-absl::StatusOr<LitertState::KVCacheBuffers> LitertState::GetKVCacheBuffers() {
+absl::StatusOr<LitertState::StateBuffers> LitertState::GetStateBuffers(
+    CompiledModel& compiled_model, absl::string_view signature_name) {
+  LITERT_RETURN_IF_ERROR(SyncShapes(compiled_model, signature_name));
   auto* input_bank_key = &bank_1_key_cache_buffers_;
   auto* input_bank_value = &bank_1_value_cache_buffers_;
   auto* output_bank_key = &bank_1_key_cache_buffers_;
@@ -469,14 +396,18 @@ absl::StatusOr<LitertState::KVCacheBuffers> LitertState::GetKVCacheBuffers() {
     bank_1_is_input_ = !bank_1_is_input_;
   }
 
-  KVCacheBuffers buffers;
-  for (const auto& [input_name, key_cache_buffer] : *input_bank_key) {
-    LITERT_ASSIGN_OR_RETURN(auto duplicated, key_cache_buffer.Duplicate());
-    buffers.input_buffers[input_name] = std::move(duplicated);
-  }
-  for (const auto& [input_name, value_cache_buffer] : *input_bank_value) {
-    LITERT_ASSIGN_OR_RETURN(auto duplicated, value_cache_buffer.Duplicate());
-    buffers.input_buffers[input_name] = std::move(duplicated);
+  StateBuffers buffers;
+  const bool skip_inputs =
+      allocation_policy_ == AllocationPolicy::kGpuOptimizedInplace;
+  if (!skip_inputs) {
+    for (const auto& [input_name, key_cache_buffer] : *input_bank_key) {
+      LITERT_ASSIGN_OR_RETURN(auto duplicated, key_cache_buffer.Duplicate());
+      buffers.input_buffers[input_name] = std::move(duplicated);
+    }
+    for (const auto& [input_name, value_cache_buffer] : *input_bank_value) {
+      LITERT_ASSIGN_OR_RETURN(auto duplicated, value_cache_buffer.Duplicate());
+      buffers.input_buffers[input_name] = std::move(duplicated);
+    }
   }
 
   for (const auto& [input_name, key_cache_buffer] : *output_bank_key) {
@@ -488,6 +419,384 @@ absl::StatusOr<LitertState::KVCacheBuffers> LitertState::GetKVCacheBuffers() {
     buffers.output_buffers[input_name] = std::move(duplicated);
   }
   return buffers;
+}
+
+absl::Status LitertState::SyncShapes(CompiledModel& compiled_model,
+                                     absl::string_view signature_name) {
+  bool is_static = !k_dynamic_dim_.has_value() && !v_dynamic_dim_.has_value();
+  if (is_static) {
+    return absl::OkStatus();
+  }
+  for (const auto& [input_name, _] : bank_1_key_cache_buffers_) {
+    ABSL_RETURN_IF_ERROR(ResolveDynamicShape(compiled_model, signature_name,
+                                             input_name, num_entries_));
+  }
+  for (const auto& [input_name, _] : bank_1_value_cache_buffers_) {
+    ABSL_RETURN_IF_ERROR(ResolveDynamicShape(compiled_model, signature_name,
+                                             input_name, num_entries_));
+  }
+  return absl::OkStatus();
+}
+
+absl::StatusOr<std::unique_ptr<LitertState>> LitertState::HeuristicBasedCreate(
+    Environment& env, CompiledModel& compiled_model,
+    absl::string_view signature_name, AllocationPolicy allocation_policy,
+    int batch_size) {
+  std::string kv_cache_k_root_name;
+  std::string kv_cache_v_root_name;
+  LITERT_ASSIGN_OR_RETURN(
+      auto sig_input_names,
+      compiled_model.GetSignatureInputNames(signature_name));
+  LITERT_ASSIGN_OR_RETURN(
+      auto sig_output_names,
+      compiled_model.GetSignatureOutputNames(signature_name));
+  ABSL_RETURN_IF_ERROR(GetKVCacheRootNames(sig_input_names, sig_output_names,
+                                           kv_cache_k_root_name,
+                                           kv_cache_v_root_name));
+
+  std::vector<std::string> key_cache_input_names;
+  std::vector<std::string> value_cache_input_names;
+  std::string mask_input_name;
+  for (auto input_name : sig_input_names) {
+    bool is_key_cache_input =
+        absl::StartsWith(input_name, kv_cache_k_root_name);
+    if (is_key_cache_input) {
+      key_cache_input_names.push_back(std::string(input_name));
+    }
+
+    bool is_value_cache_input =
+        absl::StartsWith(input_name, kv_cache_v_root_name);
+    if (is_value_cache_input) {
+      value_cache_input_names.push_back(std::string(input_name));
+    }
+
+    if (absl::StrContains(input_name, "mask")) {
+      mask_input_name = input_name;
+    }
+  }
+
+  ABSL_ASSIGN_OR_RETURN(std::optional<int> k_dynamic_dim,
+                        GetDynamicDimIndex(compiled_model, signature_name,
+                                           key_cache_input_names[0]));
+  ABSL_ASSIGN_OR_RETURN(std::optional<int> v_dynamic_dim,
+                        GetDynamicDimIndex(compiled_model, signature_name,
+                                           value_cache_input_names[0]));
+  RET_CHECK(k_dynamic_dim.has_value() == v_dynamic_dim.has_value());
+
+  auto create_and_init_buffers =
+      [&](const std::vector<std::string>& input_names,
+          const std::optional<int>& dynamic_dim, bool clear_buffer)
+      -> absl::StatusOr<absl::flat_hash_map<std::string, TensorBuffer>> {
+    absl::flat_hash_map<std::string, TensorBuffer> buffers;
+    for (const auto& input_name : input_names) {
+      if (dynamic_dim.has_value()) {
+        ABSL_RETURN_IF_ERROR(ResolveDynamicShape(compiled_model, signature_name,
+                                                 input_name,
+                                                 /*new_value=*/1));
+      }
+      LITERT_ASSIGN_OR_RETURN(auto buffer, compiled_model.CreateInputBuffer(
+                                               signature_name, input_name));
+      if (clear_buffer) {
+        LITERT_RETURN_IF_ERROR(buffer.Clear());
+      }
+      buffers[input_name] = std::move(buffer);
+    }
+    return buffers;
+  };
+
+  auto create_and_init_output_buffers =
+      [&](const std::vector<std::string>& input_names,
+          const std::optional<int>& dynamic_dim, bool clear_buffer)
+      -> absl::StatusOr<absl::flat_hash_map<std::string, TensorBuffer>> {
+    absl::flat_hash_map<std::string, TensorBuffer> buffers;
+    for (const auto& input_name : input_names) {
+      if (dynamic_dim.has_value()) {
+        ABSL_RETURN_IF_ERROR(ResolveDynamicShape(compiled_model, signature_name,
+                                                 input_name,
+                                                 /*new_value=*/1));
+      }
+      LITERT_ASSIGN_OR_RETURN(auto buffer, compiled_model.CreateOutputBuffer(
+                                               signature_name, input_name));
+      if (clear_buffer) {
+        LITERT_RETURN_IF_ERROR(buffer.Clear());
+      }
+      buffers[input_name] = std::move(buffer);
+    }
+    return buffers;
+  };
+
+  absl::flat_hash_map<std::string, TensorBuffer> bank_1_key_cache_buffers;
+  absl::flat_hash_map<std::string, TensorBuffer> bank_1_value_cache_buffers;
+  if (allocation_policy == AllocationPolicy::kGpuOptimizedInplace) {
+    ABSL_ASSIGN_OR_RETURN(
+        bank_1_key_cache_buffers,
+        create_and_init_output_buffers(key_cache_input_names, k_dynamic_dim,
+                                       /*clear_buffer=*/true));
+    ABSL_ASSIGN_OR_RETURN(
+        bank_1_value_cache_buffers,
+        create_and_init_output_buffers(value_cache_input_names, v_dynamic_dim,
+                                       /*clear_buffer=*/true));
+  } else {
+    ABSL_ASSIGN_OR_RETURN(
+        bank_1_key_cache_buffers,
+        create_and_init_buffers(key_cache_input_names, k_dynamic_dim,
+                                /*clear_buffer=*/true));
+    ABSL_ASSIGN_OR_RETURN(
+        bank_1_value_cache_buffers,
+        create_and_init_buffers(value_cache_input_names, v_dynamic_dim,
+                                /*clear_buffer=*/true));
+  }
+
+  std::optional<absl::flat_hash_map<std::string, TensorBuffer>>
+      bank_2_key_cache_buffers;
+  std::optional<absl::flat_hash_map<std::string, TensorBuffer>>
+      bank_2_value_cache_buffers;
+  if (allocation_policy == AllocationPolicy::kPingPong) {
+    // Bank 2 buffers are created after Bank 1 shapes are resolved, so no need
+    // to pass dynamic_dim.
+    ABSL_ASSIGN_OR_RETURN(bank_2_key_cache_buffers.emplace(),
+                          create_and_init_buffers(key_cache_input_names,
+                                                  /*dynamic_dim=*/std::nullopt,
+                                                  /*clear_buffer=*/true));
+    ABSL_ASSIGN_OR_RETURN(bank_2_value_cache_buffers.emplace(),
+                          create_and_init_buffers(value_cache_input_names,
+                                                  /*dynamic_dim=*/std::nullopt,
+                                                  /*clear_buffer=*/false));
+  }
+
+  int context_size = 1;
+  const bool is_dynamic_kv_cache = k_dynamic_dim.has_value();
+  if (!is_dynamic_kv_cache) {
+    if (!mask_input_name.empty()) {
+      // Mask is our best bet for inferring context size. Key and value tensors
+      // have different layouts and as such cannot be used directly.
+      LITERT_ASSIGN_OR_RETURN(
+          const RankedTensorType mask_tensor_type,
+          compiled_model.GetInputTensorType(signature_name, mask_input_name));
+      auto dims = mask_tensor_type.Layout().Dimensions();
+      // Expect [1, 1, Sequence, KV Length]
+      RET_CHECK_EQ(dims.size(), 4);
+      context_size = dims[3];
+    } else {
+      // Fallback: get capacity from key cache tensor layout.
+      // Usually key cache layout is [batch, num_heads, sequence_length,
+      // head_dim]
+      LITERT_ASSIGN_OR_RETURN(const RankedTensorType k_tensor_type,
+                              compiled_model.GetInputTensorType(
+                                  signature_name, key_cache_input_names[0]));
+      auto dims = k_tensor_type.Layout().Dimensions();
+      RET_CHECK_GE(dims.size(), 3);
+      context_size = dims[2];
+    }
+  }
+
+  return absl::WrapUnique(new LitertState(
+      batch_size, context_size, k_dynamic_dim, v_dynamic_dim, env,
+      std::move(bank_1_key_cache_buffers),
+      std::move(bank_1_value_cache_buffers),
+      std::move(bank_2_key_cache_buffers),
+      std::move(bank_2_value_cache_buffers), allocation_policy));
+}
+
+absl::StatusOr<std::unique_ptr<LitertState>> LitertState::MetadataBasedCreate(
+    Environment& env, CompiledModel& compiled_model,
+    absl::string_view signature_name,
+    const proto::ExecutorMetadata& executor_metadata,
+    AllocationPolicy allocation_policy, int batch_size) {
+  std::vector<std::string> key_cache_input_names;
+  std::vector<std::string> value_cache_input_names;
+
+  std::optional<int> k_dynamic_dim;
+  std::optional<int> v_dynamic_dim;
+  std::optional<int> min_sequence_size;
+
+  for (const auto& state_buffer :
+       executor_metadata.llm_executor_metadata().state_buffers()) {
+    std::vector<absl::string_view> names;
+    if (!state_buffer.prefill_input_name().empty()) {
+      names.push_back(state_buffer.prefill_input_name());
+    }
+    if (!state_buffer.prefill_output_name().empty()) {
+      names.push_back(state_buffer.prefill_output_name());
+    }
+    if (!state_buffer.decode_input_name().empty()) {
+      names.push_back(state_buffer.decode_input_name());
+    }
+    if (!state_buffer.decode_output_name().empty()) {
+      names.push_back(state_buffer.decode_output_name());
+    }
+    for (size_t i = 1; i < names.size(); ++i) {
+      RET_CHECK_EQ(names[0], names[i])
+          << "Current implementation requires all state names in StateBuffer"
+             " to be the same: "
+          << names[0] << " vs " << names[i];
+    }
+
+    RET_CHECK(state_buffer.has_sequence_axis())
+        << "Sequence axis must be defined for state buffers in the current "
+           "implementation.";
+
+    RET_CHECK(!names.empty()) << "At least one state name must be defined";
+    std::string input_name = std::string(names[0]);
+
+    bool is_key = false;
+    bool is_value = false;
+
+    switch (state_buffer.type()) {
+      case proto::StateBuffer::TYPE_GLOBAL_KEY_CACHE:
+      case proto::StateBuffer::TYPE_LOCAL_KEY_CACHE:
+        is_key = true;
+        break;
+      case proto::StateBuffer::TYPE_GLOBAL_VALUE_CACHE:
+      case proto::StateBuffer::TYPE_LOCAL_VALUE_CACHE:
+        is_value = true;
+        break;
+      default:
+        return absl::InvalidArgumentError(absl::StrCat(
+            "Unsupported state buffer type: ", state_buffer.type()));
+    }
+
+    LITERT_ASSIGN_OR_RETURN(
+        const RankedTensorType ranked_tensor_type,
+        compiled_model.GetInputTensorType(signature_name, input_name));
+    auto dimensions = ranked_tensor_type.Layout().Dimensions();
+
+    int axis = state_buffer.sequence_axis();
+    RET_CHECK_GE(axis, 0);
+    RET_CHECK_LT(axis, dimensions.size());
+    std::optional<int> dynamic_dim;
+    if (dimensions[axis] == kDynamicDimValue) {
+      dynamic_dim = axis;
+    } else {
+      int seq_size = dimensions[axis];
+      if (min_sequence_size.has_value()) {
+        min_sequence_size = std::min(*min_sequence_size, seq_size);
+      } else {
+        min_sequence_size = seq_size;
+      }
+    }
+
+    if (is_key) {
+      key_cache_input_names.push_back(input_name);
+      if (dynamic_dim.has_value()) {
+        if (k_dynamic_dim.has_value() &&
+            k_dynamic_dim.value() != dynamic_dim.value()) {
+          return absl::InvalidArgumentError(
+              "Mismatched sequence axis for key cache buffers");
+        }
+        k_dynamic_dim = dynamic_dim;
+      }
+    } else if (is_value) {
+      value_cache_input_names.push_back(input_name);
+      if (dynamic_dim.has_value()) {
+        if (v_dynamic_dim.has_value() &&
+            v_dynamic_dim.value() != dynamic_dim.value()) {
+          return absl::InvalidArgumentError(
+              "Mismatched sequence axis for value cache buffers");
+        }
+        v_dynamic_dim = dynamic_dim;
+      }
+    }
+  }
+
+  if (key_cache_input_names.empty() && value_cache_input_names.empty()) {
+    return absl::InvalidArgumentError(
+        "No state buffers found for the current signature");
+  }
+
+  auto create_and_init_buffers =
+      [&](const std::vector<std::string>& input_names,
+          const std::optional<int>& dynamic_dim, bool clear_buffer)
+      -> absl::StatusOr<absl::flat_hash_map<std::string, TensorBuffer>> {
+    absl::flat_hash_map<std::string, TensorBuffer> buffers;
+    for (const auto& input_name : input_names) {
+      if (dynamic_dim.has_value()) {
+        ABSL_RETURN_IF_ERROR(ResolveDynamicShape(compiled_model, signature_name,
+                                                 input_name,
+                                                 /*new_value=*/1));
+      }
+      LITERT_ASSIGN_OR_RETURN(auto buffer, compiled_model.CreateInputBuffer(
+                                               signature_name, input_name));
+      if (clear_buffer) {
+        LITERT_RETURN_IF_ERROR(buffer.Clear());
+      }
+      buffers[input_name] = std::move(buffer);
+    }
+    return buffers;
+  };
+
+  auto create_and_init_output_buffers =
+      [&](const std::vector<std::string>& input_names,
+          const std::optional<int>& dynamic_dim, bool clear_buffer)
+      -> absl::StatusOr<absl::flat_hash_map<std::string, TensorBuffer>> {
+    absl::flat_hash_map<std::string, TensorBuffer> buffers;
+    for (const auto& input_name : input_names) {
+      if (dynamic_dim.has_value()) {
+        ABSL_RETURN_IF_ERROR(ResolveDynamicShape(compiled_model, signature_name,
+                                                 input_name,
+                                                 /*new_value=*/1));
+      }
+      LITERT_ASSIGN_OR_RETURN(auto buffer, compiled_model.CreateOutputBuffer(
+                                               signature_name, input_name));
+      if (clear_buffer) {
+        LITERT_RETURN_IF_ERROR(buffer.Clear());
+      }
+      buffers[input_name] = std::move(buffer);
+    }
+    return buffers;
+  };
+
+  absl::flat_hash_map<std::string, TensorBuffer> bank_1_key_cache_buffers;
+  absl::flat_hash_map<std::string, TensorBuffer> bank_1_value_cache_buffers;
+  if (allocation_policy == AllocationPolicy::kGpuOptimizedInplace) {
+    ABSL_ASSIGN_OR_RETURN(
+        bank_1_key_cache_buffers,
+        create_and_init_output_buffers(key_cache_input_names, k_dynamic_dim,
+                                       /*clear_buffer=*/true));
+    ABSL_ASSIGN_OR_RETURN(
+        bank_1_value_cache_buffers,
+        create_and_init_output_buffers(value_cache_input_names, v_dynamic_dim,
+                                       /*clear_buffer=*/true));
+  } else {
+    ABSL_ASSIGN_OR_RETURN(
+        bank_1_key_cache_buffers,
+        create_and_init_buffers(key_cache_input_names, k_dynamic_dim,
+                                /*clear_buffer=*/true));
+    ABSL_ASSIGN_OR_RETURN(
+        bank_1_value_cache_buffers,
+        create_and_init_buffers(value_cache_input_names, v_dynamic_dim,
+                                /*clear_buffer=*/true));
+  }
+
+  std::optional<absl::flat_hash_map<std::string, TensorBuffer>>
+      bank_2_key_cache_buffers;
+  std::optional<absl::flat_hash_map<std::string, TensorBuffer>>
+      bank_2_value_cache_buffers;
+  if (allocation_policy == AllocationPolicy::kPingPong) {
+    ABSL_ASSIGN_OR_RETURN(bank_2_key_cache_buffers.emplace(),
+                          create_and_init_buffers(key_cache_input_names,
+                                                  /*dynamic_dim=*/std::nullopt,
+                                                  /*clear_buffer=*/true));
+    ABSL_ASSIGN_OR_RETURN(bank_2_value_cache_buffers.emplace(),
+                          create_and_init_buffers(value_cache_input_names,
+                                                  /*dynamic_dim=*/std::nullopt,
+                                                  /*clear_buffer=*/false));
+  }
+
+  int context_size = 1;
+  const bool is_dynamic_kv_cache = k_dynamic_dim.has_value();
+  if (!is_dynamic_kv_cache) {
+    RET_CHECK(min_sequence_size.has_value())
+        << "Static model must have sequence size";
+    context_size = *min_sequence_size;
+  }
+
+  return absl::WrapUnique(new LitertState(
+      batch_size, context_size, k_dynamic_dim, v_dynamic_dim, env,
+      std::move(bank_1_key_cache_buffers),
+      std::move(bank_1_value_cache_buffers),
+      std::move(bank_2_key_cache_buffers),
+      std::move(bank_2_value_cache_buffers), allocation_policy));
 }
 
 }  // namespace litert::lm

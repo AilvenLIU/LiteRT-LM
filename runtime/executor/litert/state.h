@@ -26,17 +26,34 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_compiled_model.h"  // from @litert
 #include "litert/cc/litert_environment.h"  // from @litert
-#include "litert/cc/litert_model.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "runtime/executor/state_interface.h"
+#include "runtime/proto/executor_metadata.pb.h"
 
 namespace litert::lm {
 
 class LitertState : public StateInterface {
  public:
+  enum class AllocationPolicy {
+    // In-place update. The same buffer is used for both input and output KV
+    // cache tensors.
+    kInplace = 0,
+    // Ping-pong update. Two sets of buffers are used and swapped between
+    // inputs and outputs at each step. Required when the backend/model
+    // does not support updating buffers in-place.
+    kPingPong = 1,
+    // GPU-optimized in-place update. Similar to kInplace, but optimized for
+    // GPU backends that handle KV cache updates internally. In this mode,
+    // KV cache buffers are allocated as GPU buffers (outputs) and we skip
+    // passing them as inputs during execution to avoid overhead.
+    kGpuOptimizedInplace = 2,
+  };
+
   static absl::StatusOr<std::unique_ptr<LitertState>> Create(
-      Environment& env, const Model& model, absl::string_view signature_name,
-      CompiledModel& compiled_model, bool inplace_update);
+      Environment& env, CompiledModel& compiled_model,
+      absl::string_view signature_name,
+      const proto::ExecutorMetadata* executor_metadata,
+      AllocationPolicy allocation_policy, int batch_size);
 
   int GetNumEntries() const override { return num_entries_; };
 
@@ -46,7 +63,7 @@ class LitertState : public StateInterface {
     return absl::UnimplementedError("Not implemented");
   }
 
-  absl::Status Load(absl::string_view serialized_kv_cache) override {
+  absl::Status Load(absl::string_view serialized_state) override {
     return absl::UnimplementedError("Not implemented");
   }
 
@@ -57,25 +74,45 @@ class LitertState : public StateInterface {
 
   absl::StatusOr<std::unique_ptr<StateInterface>> DeepCopy() const override;
 
+  bool Contains(absl::string_view tensor_name) const override;
+
+  absl::Status Clear() override;
+
   // Resizes the KV cache to the given number of entries (sequence length).
   // Note: Resize is a no-op if the requested size is smaller than the current
   // size.
-  absl::Status Resize(int num_entries);
+  absl::Status Resize(CompiledModel& compiled_model,
+                      absl::string_view signature_name, int num_entries);
 
-  struct KVCacheBuffers {
+  struct StateBuffers {
     absl::flat_hash_map<absl::string_view, TensorBuffer> input_buffers;
     absl::flat_hash_map<absl::string_view, TensorBuffer> output_buffers;
   };
 
-  // For backends that support inplace update, this returns a single set of KV
-  // cache buffers that can be used for both input and output (i.e,
+  // For backends that support inplace update, this returns a single set of
+  // state cache buffers that can be used for both input and output (i.e,
   // input_buffers and output_buffers point to the same data).
   // For backends that don't support inplace update, this returns two distinct
-  // sets of KV cache buffers, one for input and one for output. On each call,
-  // the input/output buffers will be swapped.
-  absl::StatusOr<KVCacheBuffers> GetKVCacheBuffers();
+  // sets of state cache buffers, one for input and one for output. On each
+  // call, the input/output buffers will be swapped.
+  absl::StatusOr<StateBuffers> GetStateBuffers(
+      CompiledModel& compiled_model, absl::string_view signature_name);
 
  private:
+  absl::Status SyncShapes(CompiledModel& compiled_model,
+                          absl::string_view signature_name);
+
+  static absl::StatusOr<std::unique_ptr<LitertState>> HeuristicBasedCreate(
+      Environment& env, CompiledModel& compiled_model,
+      absl::string_view signature_name, AllocationPolicy allocation_policy,
+      int batch_size);
+
+  static absl::StatusOr<std::unique_ptr<LitertState>> MetadataBasedCreate(
+      Environment& env, CompiledModel& compiled_model,
+      absl::string_view signature_name,
+      const proto::ExecutorMetadata& executor_metadata,
+      AllocationPolicy allocation_policy, int batch_size);
+
   LitertState(
       int batch_size, int num_entries, std::optional<int> k_dynamic_dim,
       std::optional<int> v_dynamic_dim, Environment& env,
@@ -84,7 +121,8 @@ class LitertState : public StateInterface {
       std::optional<absl::flat_hash_map<std::string, TensorBuffer>>
           bank_2_key_cache_buffers,
       std::optional<absl::flat_hash_map<std::string, TensorBuffer>>
-          bank_2_value_cache_buffers)
+          bank_2_value_cache_buffers,
+      AllocationPolicy allocation_policy)
       : batch_size_(batch_size),
         num_entries_(num_entries),
         k_dynamic_dim_(std::move(k_dynamic_dim)),
@@ -93,7 +131,8 @@ class LitertState : public StateInterface {
         bank_1_key_cache_buffers_(std::move(bank_1_key_cache_buffers)),
         bank_1_value_cache_buffers_(std::move(bank_1_value_cache_buffers)),
         bank_2_key_cache_buffers_(std::move(bank_2_key_cache_buffers)),
-        bank_2_value_cache_buffers_(std::move(bank_2_value_cache_buffers)) {}
+        bank_2_value_cache_buffers_(std::move(bank_2_value_cache_buffers)),
+        allocation_policy_(allocation_policy) {}
 
   // Batch size of the KV cache buffers.
   int batch_size_;
@@ -115,6 +154,8 @@ class LitertState : public StateInterface {
       bank_2_value_cache_buffers_;
 
   bool bank_1_is_input_ = true;
+
+  AllocationPolicy allocation_policy_;
 };
 
 }  // namespace litert::lm

@@ -67,6 +67,7 @@
 #include "runtime/components/embedding_lookup/embedding_lookup_manager.h"
 #include "runtime/components/logits_processor/logits_processor.h"
 #include "runtime/components/model_resources.h"
+#include "runtime/executor/litert/legacy_map_state.h"
 #include "runtime/executor/litert_compiled_model_executor_utils.h"
 #include "runtime/executor/llm_executor_io_types.h"
 #include "runtime/executor/llm_executor_processed_tokens.h"
@@ -3450,7 +3451,8 @@ LlmLiteRtNpuCompiledModelExecutor::CreateNewContext(
   std::unique_ptr<ProcessedContext> processed_context =
       std::make_unique<LlmProcessedContext>(
           lora_id,
-          absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>());
+          std::make_unique<LegacyMapState>(
+              absl::flat_hash_map<std::string, ::litert::TensorBuffer>()));
 
   return std::make_unique<LlmContext>(
       std::move(processed_context),
@@ -3460,8 +3462,7 @@ LlmLiteRtNpuCompiledModelExecutor::CreateNewContext(
 
 absl::StatusOr<std::unique_ptr<LlmContext>>
 LlmLiteRtNpuCompiledModelExecutor::CloneContext() const {
-  absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>
-      kv_cache_buffers;
+  absl::flat_hash_map<std::string, ::litert::TensorBuffer> kv_cache_buffers;
   for (const auto& [name, buffer] :
        llm_inference_context_.prefill_input_buffers) {
     if (absl::StartsWith(name, kv_cache_k_root_name) ||
@@ -3474,7 +3475,8 @@ LlmLiteRtNpuCompiledModelExecutor::CloneContext() const {
 
   std::unique_ptr<ProcessedContext> processed_context =
       std::make_unique<LlmProcessedContext>(
-          /*lora_id=*/std::nullopt, std::move(kv_cache_buffers),
+          /*lora_id=*/std::nullopt,
+          std::make_unique<LegacyMapState>(std::move(kv_cache_buffers)),
           processed_tokens_);
 
   RuntimeConfig runtime_config;
@@ -3492,9 +3494,13 @@ LlmLiteRtNpuCompiledModelExecutor::CloneContext() const {
 absl::Status LlmLiteRtNpuCompiledModelExecutor::RestoreContext(
     std::unique_ptr<LlmContext> context_data) {
   if (context_data->runtime_state().current_step > 0) {
-    auto& saved_kv_buffers =
-        static_cast<LlmProcessedContext&>(context_data->processed_context())
-            .kv_cache_buffers();
+    auto& processed_ctx =
+        static_cast<LlmProcessedContext&>(context_data->processed_context());
+    auto* map_state =
+        dynamic_cast<LegacyMapState*>(processed_ctx.state().get());
+    RET_CHECK(map_state != nullptr)
+        << "Expected LegacyMapState in RestoreContext";
+    const auto& saved_kv_buffers = map_state->buffers();
     for (const auto& [name, saved_buffer] : saved_kv_buffers) {
       if (llm_inference_context_.prefill_input_buffers.contains(name)) {
         auto& target_buffer =
