@@ -158,6 +158,8 @@ sealed class Backend(val name: String) {
    *   containing the libraries.
    */
   data class NPU(val nativeLibraryDir: String = "") : Backend("NPU")
+
+  class GOOGLE_TENSOR : Backend("GOOGLE_TENSOR_ARTISAN")
 }
 
 /**
