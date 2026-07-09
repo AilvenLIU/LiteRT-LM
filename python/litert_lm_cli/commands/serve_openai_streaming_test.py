@@ -327,7 +327,10 @@ class ServeOpenAIStreamingTest(absltest.TestCase):
           usage["total_tokens"],
           usage["prompt_tokens"] + usage["completion_tokens"],
       )
-      self.assertNotIn("completion_tokens_details", usage)
+      self.assertIn("completion_tokens_details", usage)
+      self.assertEqual(
+          usage["completion_tokens_details"], {"reasoning_tokens": 0}
+      )
       self.assertNotIn("prompt_tokens_details", usage)
 
   def test_openai_chat_completions_streaming_usage(self):
@@ -368,6 +371,10 @@ class ServeOpenAIStreamingTest(absltest.TestCase):
       self.assertIn("prompt_tokens", usage)
       self.assertIn("completion_tokens", usage)
       self.assertIn("total_tokens", usage)
+      self.assertIn("completion_tokens_details", usage)
+      self.assertEqual(
+          usage["completion_tokens_details"], {"reasoning_tokens": 0}
+      )
 
   def test_compute_token_usage_benchmark_info(self):
     mock_conv = mock.MagicMock()
@@ -384,6 +391,65 @@ class ServeOpenAIStreamingTest(absltest.TestCase):
     self.assertEqual(usage["prompt_tokens"], 15)
     self.assertEqual(usage["completion_tokens"], 10)
     self.assertEqual(usage["total_tokens"], 25)
+    self.assertEqual(
+        usage["completion_tokens_details"], {"reasoning_tokens": 0}
+    )
+
+    usage_with_reasoning = openai_handler._compute_token_usage(
+        mock_conv, reasoning_tokens=4
+    )
+    self.assertEqual(
+        usage_with_reasoning["completion_tokens_details"],
+        {"reasoning_tokens": 4},
+    )
+
+  def test_openai_chat_completions_thinking_tokens_usage(self):
+    mock_engine = mock.MagicMock()
+    mock_conv = mock.MagicMock()
+    mock_engine.create_conversation.return_value.__enter__.return_value = (
+        mock_conv
+    )
+    mock_get_engine = self.enter_context(
+        mock.patch.object(
+            openai_handler.OpenAIHandler, "_get_engine", autospec=True
+        )
+    )
+    mock_get_engine.return_value = mock_engine
+
+    mock_conv.send_message_async.return_value = [
+        {"role": "assistant", "channels": {"thought": "Thinking..."}},
+        {"role": "assistant", "channels": {"thought": "more"}},
+        {"role": "assistant", "content": [{"type": "text", "text": "Hi"}]},
+    ]
+    mock_conv.get_benchmark_info.return_value = litert_lm.BenchmarkInfo(
+        init_time_in_second=0.1,
+        time_to_first_token_in_second=0.05,
+        last_prefill_token_count=5,
+        last_prefill_tokens_per_second=100.0,
+        last_decode_token_count=3,
+        last_decode_tokens_per_second=100.0,
+    )
+
+    data = json.dumps({
+        "model": "gemma3",
+        "messages": [{"role": "user", "content": "Say hi"}],
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        f"http://localhost:{self.port}/v1/chat/completions",
+        data=data,
+        headers={"Content-Type": "application/json"},
+    )
+
+    with urllib.request.urlopen(req) as response:
+      self.assertEqual(response.getcode(), 200)
+      res_body = json.loads(response.read().decode("utf-8"))
+      self.assertIn("usage", res_body)
+      usage = res_body["usage"]
+      self.assertEqual(
+          usage["completion_tokens_details"], {"reasoning_tokens": 2}
+      )
+      self.assertEqual(res_body["choices"][0]["message"]["content"], "Hi")
 
 
 if __name__ == "__main__":

@@ -120,7 +120,11 @@ def _parse_thinking_config(
   )
 
 
-def _compute_token_usage(conv: litert_lm.Conversation) -> dict[str, Any]:
+def _compute_token_usage(
+    conv: litert_lm.Conversation,
+    *,
+    reasoning_tokens: int = 0,
+) -> dict[str, Any]:
   """Computes token usage statistics for the completed conversation turn."""
   prompt_tokens = 0
   completion_tokens = 0
@@ -134,13 +138,13 @@ def _compute_token_usage(conv: litert_lm.Conversation) -> dict[str, Any]:
 
   total_tokens = prompt_tokens + completion_tokens
 
-  # TODO: b/514760339 - Support completion_tokens_details with reasoning_tokens
-  # breakdown once C++ BenchmarkInfo natively exposes channel-specific counts:
-  # "completion_tokens_details": {"reasoning_tokens": reasoning_tokens}
   return {
       "prompt_tokens": prompt_tokens,
       "completion_tokens": completion_tokens,
       "total_tokens": total_tokens,
+      "completion_tokens_details": {
+          "reasoning_tokens": reasoning_tokens,
+      },
   }
 
 
@@ -638,9 +642,12 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       self.wfile.flush()
 
       has_tool_calls = False
+      reasoning_tokens = 0
       for chunk in conv.send_message_async(
           prompt, max_output_tokens=max_completion_tokens
       ):
+        if chunk.get("channels"):
+          reasoning_tokens += 1
         text_output = "".join(
             item.get("text", "")
             for item in chunk.get("content", [])
@@ -661,7 +668,9 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       self.wfile.write(formatter.format_complete(finish_reason=finish_reason))
       self.wfile.flush()
       if include_usage and hasattr(formatter, "format_usage"):
-        usage_dict = _compute_token_usage(conv)
+        usage_dict = _compute_token_usage(
+            conv, reasoning_tokens=reasoning_tokens
+        )
         self.wfile.write(formatter.format_usage(usage_dict))
         self.wfile.flush()
       self.wfile.write(formatter.format_final())
@@ -717,16 +726,22 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       stream_options: Options for streaming, such as include_usage.
     """
     if not stream:
-      response = conv.send_message(
+      text_parts = []
+      tool_calls = []
+      reasoning_tokens = 0
+      for chunk in conv.send_message_async(
           prompt, max_output_tokens=max_completion_tokens
-      )
-      text_output = "".join(
-          item.get("text", "")
-          for item in response.get("content", [])
-          if item.get("type") == "text"
-      )
+      ):
+        if chunk.get("channels"):
+          reasoning_tokens += 1
+        for item in chunk.get("content", []):
+          if item.get("type") == "text":
+            text_parts.append(item.get("text", ""))
+        if chunk.get("tool_calls"):
+          tool_calls.extend(chunk.get("tool_calls", []))
 
-      tool_calls = response.get("tool_calls", [])
+      text_output = "".join(text_parts)
+
       openai_tool_calls = [
           {
               "id": f"call_{now_str}_{i}",
@@ -759,7 +774,9 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
               },
               "finish_reason": "tool_calls" if openai_tool_calls else "stop",
           }],
-          "usage": _compute_token_usage(conv),
+          "usage": _compute_token_usage(
+              conv, reasoning_tokens=reasoning_tokens
+          ),
       }
       setattr(self, "_headers_sent", True)
       self.send_response(200)
