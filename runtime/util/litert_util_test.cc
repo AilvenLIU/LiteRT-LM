@@ -81,6 +81,11 @@ class FakeModelResources : public ModelResources {
     return absl::UnimplementedError("Unimplemented");
   }
 
+  absl::StatusOr<const proto::ExecutorMetadata*> GetExecutorMetadata()
+      override {
+    return absl::UnimplementedError("Unimplemented");
+  }
+
   absl::StatusOr<FileRegion> GetTFLiteModelSectionFileRegion(
       ModelType model_type) override {
     return absl::UnimplementedError("Unimplemented");

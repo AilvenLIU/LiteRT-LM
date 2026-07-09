@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LM_RUNTIME_EXECUTOR_LITERT_KV_CACHE_H_
-#define THIRD_PARTY_ODML_LITERT_LM_RUNTIME_EXECUTOR_LITERT_KV_CACHE_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LM_RUNTIME_EXECUTOR_LITERT_STATE_H_
+#define THIRD_PARTY_ODML_LITERT_LM_RUNTIME_EXECUTOR_LITERT_STATE_H_
 
 #include <memory>
 #include <optional>
@@ -28,13 +28,13 @@
 #include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_model.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
-#include "runtime/executor/kv_cache_interface.h"
+#include "runtime/executor/state_interface.h"
 
 namespace litert::lm {
 
-class LitertKVCache : public KVCacheInterface {
+class LitertState : public StateInterface {
  public:
-  static absl::StatusOr<std::unique_ptr<LitertKVCache>> Create(
+  static absl::StatusOr<std::unique_ptr<LitertState>> Create(
       Environment& env, const Model& model, absl::string_view signature_name,
       CompiledModel& compiled_model, bool inplace_update);
 
@@ -50,12 +50,12 @@ class LitertKVCache : public KVCacheInterface {
     return absl::UnimplementedError("Not implemented");
   }
 
-  absl::Status SelectAndCopyFrom(KVCacheInterface& other,
+  absl::Status SelectAndCopyFrom(StateInterface& other,
                                  int batch_index) override;
 
-  absl::Status BroadcastAndCopyFrom(KVCacheInterface& other) override;
+  absl::Status BroadcastAndCopyFrom(StateInterface& other) override;
 
-  absl::StatusOr<std::unique_ptr<KVCacheInterface>> DeepCopy() const override;
+  absl::StatusOr<std::unique_ptr<StateInterface>> DeepCopy() const override;
 
   // Resizes the KV cache to the given number of entries (sequence length).
   // Note: Resize is a no-op if the requested size is smaller than the current
@@ -76,7 +76,7 @@ class LitertKVCache : public KVCacheInterface {
   absl::StatusOr<KVCacheBuffers> GetKVCacheBuffers();
 
  private:
-  LitertKVCache(
+  LitertState(
       int batch_size, int num_entries, std::optional<int> k_dynamic_dim,
       std::optional<int> v_dynamic_dim, Environment& env,
       absl::flat_hash_map<std::string, TensorBuffer> bank_1_key_cache_buffers,
@@ -119,4 +119,4 @@ class LitertKVCache : public KVCacheInterface {
 
 }  // namespace litert::lm
 
-#endif  // THIRD_PARTY_ODML_LITERT_LM_RUNTIME_EXECUTOR_LITERT_KV_CACHE_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LM_RUNTIME_EXECUTOR_LITERT_STATE_H_

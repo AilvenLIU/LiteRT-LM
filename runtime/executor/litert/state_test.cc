@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "runtime/executor/litert/kv_cache.h"
+#include "runtime/executor/litert/state.h"
 
 #include <filesystem>  // NOLINT
 #include <memory>
@@ -59,7 +59,7 @@ class CompiledModelTest : public CompiledModel {
   using CompiledModel::Create;
 };
 
-class LitertKVCacheTest : public ::testing::Test {
+class LitertStateTest : public ::testing::Test {
  protected:
   void SetUpKV(const std::string& model_path, bool inplace_update) {
     auto path = std::filesystem::path(::testing::SrcDir()) /
@@ -83,58 +83,58 @@ class LitertKVCacheTest : public ::testing::Test {
     compiled_model_ = std::move(compiled_model);
     ASSERT_OK_AND_ASSIGN(
         kv_cache_,
-        LitertKVCache::Create(*env_, *litert_model_, kDecodeSignatureRunner,
-                              *compiled_model_, inplace_update));
+        LitertState::Create(*env_, *litert_model_, kDecodeSignatureRunner,
+                            *compiled_model_, inplace_update));
   }
 
   std::unique_ptr<ModelResources> resources_;
   const litert::Model* litert_model_;
   std::optional<Environment> env_;
   std::optional<CompiledModel> compiled_model_;
-  std::unique_ptr<LitertKVCache> kv_cache_;
+  std::unique_ptr<LitertState> kv_cache_;
 };
 
 #ifndef _WIN32
-TEST_F(LitertKVCacheTest, CanCreateKVWithDynamicModel) {
+TEST_F(LitertStateTest, CanCreateKVWithDynamicModel) {
   ASSERT_NO_FATAL_FAILURE(
       SetUpKV(kTestDynamicModelPath, /*inplace_update=*/false));
   EXPECT_EQ(kv_cache_->GetNumEntries(), 1);
 }
 #endif  // !_WIN32
 
-TEST_F(LitertKVCacheTest, CanCreateKVWithStaticModelOutOfPlace) {
+TEST_F(LitertStateTest, CanCreateKVWithStaticModelOutOfPlace) {
   ASSERT_NO_FATAL_FAILURE(
       SetUpKV(kTestStaticModelPath, /*inplace_update=*/false));
   EXPECT_EQ(kv_cache_->GetNumEntries(), 160);
 }
 
-TEST_F(LitertKVCacheTest, CanCreateKVWithStaticModelInPlace) {
+TEST_F(LitertStateTest, CanCreateKVWithStaticModelInPlace) {
   ASSERT_NO_FATAL_FAILURE(
       SetUpKV(kTestStaticModelPath, /*inplace_update=*/true));
   EXPECT_EQ(kv_cache_->GetNumEntries(), 160);
 }
 
-TEST_F(LitertKVCacheTest, SerializeNotSupported) {
+TEST_F(LitertStateTest, SerializeNotSupported) {
   ASSERT_NO_FATAL_FAILURE(
       SetUpKV(kTestStaticModelPath, /*inplace_update=*/true));
   EXPECT_THAT(kv_cache_->Serialize(),
               StatusIs(absl::StatusCode::kUnimplemented));
 }
 
-TEST_F(LitertKVCacheTest, LoadNotSupported) {
+TEST_F(LitertStateTest, LoadNotSupported) {
   ASSERT_NO_FATAL_FAILURE(
       SetUpKV(kTestStaticModelPath, /*inplace_update=*/true));
   EXPECT_THAT(kv_cache_->Load(""), StatusIs(absl::StatusCode::kUnimplemented));
 }
 
-TEST_F(LitertKVCacheTest, StaticKVNotResizeable) {
+TEST_F(LitertStateTest, StaticKVNotResizeable) {
   ASSERT_NO_FATAL_FAILURE(
       SetUpKV(kTestStaticModelPath, /*inplace_update=*/true));
   EXPECT_THAT(kv_cache_->Resize(100),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST_F(LitertKVCacheTest, InplaceDynamicKVResizeable) {
+TEST_F(LitertStateTest, InplaceDynamicKVResizeable) {
   ASSERT_NO_FATAL_FAILURE(
       SetUpKV(kTestDynamicModelPath, /*inplace_update=*/true));
   EXPECT_EQ(kv_cache_->GetNumEntries(), 1);
@@ -142,7 +142,7 @@ TEST_F(LitertKVCacheTest, InplaceDynamicKVResizeable) {
   EXPECT_EQ(kv_cache_->GetNumEntries(), 100);
 }
 
-TEST_F(LitertKVCacheTest, OutOfPlaceDynamicKVNotResizeable) {
+TEST_F(LitertStateTest, OutOfPlaceDynamicKVNotResizeable) {
   ASSERT_NO_FATAL_FAILURE(
       SetUpKV(kTestDynamicModelPath, /*inplace_update=*/false));
   EXPECT_THAT(kv_cache_->Resize(100),

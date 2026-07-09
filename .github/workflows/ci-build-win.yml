@@ -140,7 +140,7 @@ jobs:
             test --disk_cache=~/.cache/bazel-windows --test_output=errors `
             --deleted_packages=swift `
             --test_tag_filters='-requires-mac-inputs:hard,-nowindows' `
-            '--' //... -//runtime/executor/litert:kv_cache_test
+            '--' //... -//runtime/executor/litert:state_test
 
 
 

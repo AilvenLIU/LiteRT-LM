@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "runtime/executor/litert/kv_cache.h"
+#include "runtime/executor/litert/state.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -41,8 +41,8 @@
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer_types.h"  // from @litert
 #include "runtime/executor/common_utils.h"
-#include "runtime/executor/kv_cache_interface.h"
 #include "runtime/executor/litert_compiled_model_executor_utils.h"
+#include "runtime/executor/state_interface.h"
 #include "runtime/util/status_macros.h"
 #include "runtime/util/tensor_buffer_util.h"
 
@@ -201,7 +201,7 @@ absl::Status BroadcastAndCopyBuffer(TensorBuffer& dst, int dst_batch_size,
 
 }  // namespace
 
-absl::StatusOr<std::unique_ptr<LitertKVCache>> LitertKVCache::Create(
+absl::StatusOr<std::unique_ptr<LitertState>> LitertState::Create(
     Environment& env, const Model& model, absl::string_view signature_name,
     CompiledModel& compiled_model, bool inplace_update) {
   std::string kv_cache_k_root_name;
@@ -314,17 +314,17 @@ absl::StatusOr<std::unique_ptr<LitertKVCache>> LitertKVCache::Create(
   }
 
   return absl::WrapUnique(
-      new LitertKVCache(batch_size, context_size, k_dynamic_dim, v_dynamic_dim,
-                        env, std::move(bank_1_key_cache_buffers),
-                        std::move(bank_1_value_cache_buffers),
-                        std::move(bank_2_key_cache_buffers),
-                        std::move(bank_2_value_cache_buffers)));
+      new LitertState(batch_size, context_size, k_dynamic_dim, v_dynamic_dim,
+                      env, std::move(bank_1_key_cache_buffers),
+                      std::move(bank_1_value_cache_buffers),
+                      std::move(bank_2_key_cache_buffers),
+                      std::move(bank_2_value_cache_buffers)));
 }
 
-absl::Status LitertKVCache::SelectAndCopyFrom(KVCacheInterface& other,
-                                              int batch_index) {
-  auto other_litert = dynamic_cast<LitertKVCache*>(&other);
-  RET_CHECK(other_litert != nullptr) << "Only support LitertKVCache.";
+absl::Status LitertState::SelectAndCopyFrom(StateInterface& other,
+                                            int batch_index) {
+  auto other_litert = dynamic_cast<LitertState*>(&other);
+  RET_CHECK(other_litert != nullptr) << "Only support LitertState.";
   RET_CHECK(!bank_2_key_cache_buffers_.has_value());
   RET_CHECK(!other_litert->bank_2_key_cache_buffers_.has_value());
   RET_CHECK_GT(other_litert->batch_size_, batch_size_);
@@ -350,9 +350,9 @@ absl::Status LitertKVCache::SelectAndCopyFrom(KVCacheInterface& other,
   return absl::OkStatus();
 }
 
-absl::Status LitertKVCache::BroadcastAndCopyFrom(KVCacheInterface& other) {
-  auto other_litert = dynamic_cast<LitertKVCache*>(&other);
-  RET_CHECK(other_litert != nullptr) << "Only support LitertKVCache.";
+absl::Status LitertState::BroadcastAndCopyFrom(StateInterface& other) {
+  auto other_litert = dynamic_cast<LitertState*>(&other);
+  RET_CHECK(other_litert != nullptr) << "Only support LitertState.";
   RET_CHECK(!bank_2_key_cache_buffers_.has_value());
   RET_CHECK(!other_litert->bank_2_key_cache_buffers_.has_value());
   RET_CHECK_EQ(other_litert->batch_size_, 1);
@@ -379,8 +379,7 @@ absl::Status LitertKVCache::BroadcastAndCopyFrom(KVCacheInterface& other) {
   return absl::OkStatus();
 }
 
-absl::StatusOr<std::unique_ptr<KVCacheInterface>> LitertKVCache::DeepCopy()
-    const {
+absl::StatusOr<std::unique_ptr<StateInterface>> LitertState::DeepCopy() const {
   absl::flat_hash_map<std::string, TensorBuffer> bank_1_key_cache_buffers;
   for (const auto& [name, buffer] : bank_1_key_cache_buffers_) {
     LITERT_ASSIGN_OR_RETURN(bank_1_key_cache_buffers[name],
@@ -412,18 +411,18 @@ absl::StatusOr<std::unique_ptr<KVCacheInterface>> LitertKVCache::DeepCopy()
     }
   }
 
-  auto copy = absl::WrapUnique(new LitertKVCache(
-      batch_size_, num_entries_, k_dynamic_dim_, v_dynamic_dim_, env_,
-      std::move(bank_1_key_cache_buffers),
-      std::move(bank_1_value_cache_buffers),
-      std::move(bank_2_key_cache_buffers),
-      std::move(bank_2_value_cache_buffers)));
+  auto copy = absl::WrapUnique(
+      new LitertState(batch_size_, num_entries_, k_dynamic_dim_, v_dynamic_dim_,
+                      env_, std::move(bank_1_key_cache_buffers),
+                      std::move(bank_1_value_cache_buffers),
+                      std::move(bank_2_key_cache_buffers),
+                      std::move(bank_2_value_cache_buffers)));
   copy->bank_1_is_input_ = bank_1_is_input_;
 
   return copy;
 }
 
-absl::Status LitertKVCache::Resize(int num_entries) {
+absl::Status LitertState::Resize(int num_entries) {
   RET_CHECK(!bank_2_key_cache_buffers_.has_value())
           .SetCode(absl::StatusCode::kInvalidArgument)
       << "Out of place KV cache cannot be resized.";
@@ -453,8 +452,7 @@ absl::Status LitertKVCache::Resize(int num_entries) {
   return absl::OkStatus();
 }
 
-absl::StatusOr<LitertKVCache::KVCacheBuffers>
-LitertKVCache::GetKVCacheBuffers() {
+absl::StatusOr<LitertState::KVCacheBuffers> LitertState::GetKVCacheBuffers() {
   auto* input_bank_key = &bank_1_key_cache_buffers_;
   auto* input_bank_value = &bank_1_value_cache_buffers_;
   auto* output_bank_key = &bank_1_key_cache_buffers_;

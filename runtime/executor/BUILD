@@ -283,6 +283,7 @@ cc_library(
         "//runtime/components:sampler_factory",
         "//runtime/components/embedding_lookup:embedding_lookup_manager",
         "//runtime/components/logits_processor",
+        "//runtime/proto:executor_metadata_cc_proto",
         "//runtime/util:convert_tensor_buffer",
         "//runtime/util:litert_status_util",
         "//runtime/util:log_tensor_buffer",
@@ -1046,8 +1047,8 @@ cc_library(
 # Interfaces
 # ==================================================================================================
 cc_library(
-    name = "kv_cache_interface",
-    hdrs = ["kv_cache_interface.h"],
+    name = "state_interface",
+    hdrs = ["state_interface.h"],
     deps = [
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
@@ -1060,8 +1061,8 @@ cc_library(
     hdrs = ["llm_executor_interface.h"],
     deps = [
         ":executor_settings_base",
-        ":kv_cache_interface",
         ":llm_executor_io_types",
+        ":state_interface",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@litert//litert/cc:litert_tensor_buffer",

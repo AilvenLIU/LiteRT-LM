@@ -86,6 +86,10 @@ class FakeModelResources : public ModelResources {
   absl::StatusOr<const proto::LlmMetadata*> GetLlmMetadata() override {
     return absl::UnimplementedError("");
   }
+  absl::StatusOr<const proto::ExecutorMetadata*> GetExecutorMetadata()
+      override {
+    return absl::UnimplementedError("");
+  }
   absl::StatusOr<FileRegion> GetTFLiteModelSectionFileRegion(
       ModelType model_type) override {
     return absl::UnimplementedError("");
@@ -97,10 +101,9 @@ class FakeModelResources : public ModelResources {
 };
 
 TEST(AudioExecutorUtilsTest, GetPropertiesWithAdapter) {
-  const std::string model_path =
-      (std::filesystem::path(::testing::SrcDir()) /
-       std::string(kTestAudioModelPath))
-          .string();
+  const std::string model_path = (std::filesystem::path(::testing::SrcDir()) /
+                                  std::string(kTestAudioModelPath))
+                                     .string();
 
   ASSERT_OK_AND_ASSIGN(auto model_file, ScopedFile::Open(model_path));
   auto model_file_ptr = std::make_shared<ScopedFile>(std::move(model_file));
@@ -120,10 +123,9 @@ TEST(AudioExecutorUtilsTest, GetPropertiesWithAdapter) {
 }
 
 TEST(AudioExecutorUtilsTest, GetPropertiesWithoutAdapter) {
-  const std::string model_path =
-      (std::filesystem::path(::testing::SrcDir()) /
-       std::string(kTestAudioModelPath))
-          .string();
+  const std::string model_path = (std::filesystem::path(::testing::SrcDir()) /
+                                  std::string(kTestAudioModelPath))
+                                     .string();
 
   ASSERT_OK_AND_ASSIGN(auto model_file, ScopedFile::Open(model_path));
   auto model_file_ptr = std::make_shared<ScopedFile>(std::move(model_file));
