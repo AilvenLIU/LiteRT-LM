@@ -47,6 +47,11 @@ class SessionState:
   def __init__(self):
     self.active_channel = None
 
+  def close_channel(self):
+    if self.active_channel is not None:
+      click.echo(click.style(f" [/{self.active_channel}]", fg="blue"))
+      self.active_channel = None
+
 
 class LoggingToolEventHandler(litert_lm.ToolEventHandler):
   """Log tool call and tool response events."""
@@ -56,9 +61,7 @@ class LoggingToolEventHandler(litert_lm.ToolEventHandler):
 
   def approve_tool_call(self, tool_call):
     """Logs a tool call."""
-    if self.state.active_channel is not None:
-      click.echo("\n", nl=False)
-      self.state.active_channel = None
+    self.state.close_channel()
     click.echo(
         click.style(
             f"[tool_call] {json.dumps(tool_call['function'])}", fg="green"
@@ -106,28 +109,25 @@ def _execute_prompt(
       content_list = chunk.get("content", [])
       for item in content_list:
         if item.get("type") == "text":
-          if state.active_channel is not None:
-            click.echo()
-            state.active_channel = None
+          state.close_channel()
           click.echo(click.style(item.get("text", ""), fg="yellow"), nl=False)
 
       channels = chunk.get("channels", {})
       for channel_name, channel_content in channels.items():
         if state.active_channel != channel_name:
-          if state.active_channel is not None:
-            click.echo()
+          state.close_channel()
           click.echo(click.style(f"[{channel_name}] ", fg="blue"), nl=False)
           state.active_channel = channel_name
-        color = "blue" if channel_name.lower() == "thought" else "yellow"
-        click.echo(click.style(channel_content, fg=color), nl=False)
+        click.echo(click.style(channel_content, fg="blue"), nl=False)
     if state.active_channel is not None:
-      click.echo()
+      state.close_channel()
     else:
       click.echo()
   except KeyboardInterrupt:
     conversation.cancel_process()
     for _ in stream:
       pass
+    state.close_channel()
     click.echo(click.style("\n[Generation cancelled]", dim=True))
 
 
