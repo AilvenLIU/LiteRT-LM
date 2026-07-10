@@ -255,31 +255,85 @@ absl::StatusOr<SortedPrefillSignatureMap> GetPrefillRunnerSetFromModel(
 absl::StatusOr<std::vector<std::pair<std::string, int>>>
 GetOptimizedPrefillWorkGroups(
     const SortedPrefillSignatureMap& prefill_runner_set, int input_length) {
+  // A simple greedy approach can cause performance cliffs for devices that
+  // perform much better with longer sequence lengths See
+  // go/smarter-prefill-chunking for more details.
+  //
+  // Instead, we use a "cautious greedy" approach. We greedily fill with the
+  // largest sequence length possible. For the remainder, we evaluate whether to
+  // pack it into smaller chunks or "cautiously" upgrade it. If the remainder is
+  // at least half of the current sequence length, it is upgraded to use an
+  // extra full-sized chunk to prevent excessive fragmentation.
+  //
+  // An exception is made for models that have sequence lengths that are within
+  // a factor of 2 of each other (e.g. 128 and 256). In these cases, we will
+  // default back to standard greedy stacking, provided the remainder
+  // comfortably fits into the smaller sequence length. Otherwise the smaller
+  // sequence length will not be used.
+  //
+  // Examples:
+  // 1. input_length = 640, prefill_runner_set = {512, 128, 32}
+  //    work_groups = {{"sig_512", 512}, {"sig_128", 128}}
+  // 2. input_length = 768, prefill_runner_set = {512, 128, 32}
+  //    work_groups = {{"sig_512", 512}, {"sig_512", 256}}
+  // 3. input_length = 592, prefill_runner_set = {512, 128, 32}
+  //    work_groups = {{"sig_512", 512}, {"sig_128", 80}}
+  // 4. input_length = 130, prefill_runner_set = {512, 128}
+  //    work_groups = {{"sig_128", 128}, {"sig_128", 2}}
+  // 5. input_length = 599, prefill_runner_set = {600, 500}
+  //    work_groups = {{"sig_600", 599}}
+
   std::vector<std::pair<std::string, int>> work_groups;
-  // Current strategy:
-  // 1. Use the prefill runner with the largest sequence length, until the
-  // remaining length is less than its sequence length.
-  // 2. Finish the remaining length with one prefill call, using the runner with
-  // the sequence length as small as possible.
-  // TODO: b/378772479 - Improve this strategy once we have benchmarked costs.
-  int max_seq_len = prefill_runner_set.begin()->first;
-  while (input_length >= max_seq_len) {
-    work_groups.push_back(
-        std::make_pair(prefill_runner_set.begin()->second, max_seq_len));
-    input_length -= max_seq_len;
-  }
-  if (input_length > 0) {
-    for (auto it = prefill_runner_set.begin(); it != prefill_runner_set.end();
-         ++it) {
-      // If the next smaller runner can handle the remaining length, skip the
-      // current runner.
-      if (std::next(it) != prefill_runner_set.end() &&
-          std::next(it)->first >= input_length) {
-        continue;
-      }
+
+  // Starting with the largest sequence length and working our way down, we will
+  // add work groups to cover the input length.
+  for (auto it = prefill_runner_set.begin(); it != prefill_runner_set.end();
+       ++it) {
+    if (input_length <= 0) {
+      break;
+    }
+
+    int cur_seq_len = it->first;
+    int full_chunks = input_length / cur_seq_len;
+    int remainder = input_length % cur_seq_len;
+
+    // 1. Greedily add any full chunks of the current sequence length.
+    for (int i = 0; i < full_chunks; ++i) {
+      work_groups.push_back(std::make_pair(it->second, cur_seq_len));
+    }
+    input_length = remainder;
+
+    if (input_length == 0) {
+      break;
+    }
+
+    // 2. If there's no smaller sequence length available, we must cover the
+    // remainder with this runner.
+    auto next_it = std::next(it);
+    if (next_it == prefill_runner_set.end()) {
       work_groups.push_back(std::make_pair(it->second, input_length));
       break;
     }
+
+    int next_seq_len = next_it->first;
+
+    // 3. We need to decide whether to use the current sequence length
+    // runner to cover the remainder, or let the smaller runners take care of
+    // the remainder.
+    if (next_seq_len * 2 >= cur_seq_len && input_length <= next_seq_len) {
+      // Check fallback: if next_seq_len >= cur_seq_len / 2 AND remainder <=
+      // next_seq_len
+      //   Our sequence lengths are too close, AND the remainder fits
+      //   comfortably in the next sequence length, so let the smaller runners
+      //   handle it.
+      continue;
+    } else if (input_length * 2 >= cur_seq_len) {
+      // Check cautious threshold rule: if remainder >= cur_seq_len / 2
+      //   Cover with the current sequence length runner.
+      work_groups.push_back(std::make_pair(it->second, input_length));
+      break;
+    }
+    // Threshold not met: let smaller runners handle the remainder.
   }
   return work_groups;
 }
