@@ -1401,7 +1401,7 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::InitializeSampler(
       (!executor_settings_.GetAdvancedSettings().has_value() ||
        executor_settings_.GetAdvancedSettings()->sampler_handles_input) &&
       sampler_->CanHandleInput() && !signatures_.input_tokens.empty() &&
-      !runs_embedding_on_gpu;
+      runs_embedding_on_gpu;
   if (sampler_handles_input_) {
     ABSL_LOG(INFO) << "Sampler will handle decode input tensors.";
     if (!decode_prev_input_pos_) {
