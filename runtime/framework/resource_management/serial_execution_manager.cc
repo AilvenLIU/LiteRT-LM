@@ -239,6 +239,9 @@ absl::Status SerialExecutionManager::ReleaseSession(SessionId session_id) {
     return kv.second.session_id == session_id;
   });
   session_lookup_.erase(session_id);
+  if (session_lookup_.empty()) {
+    resource_manager_->ResetCurrentHandler();
+  }
   return absl::OkStatus();
 }
 

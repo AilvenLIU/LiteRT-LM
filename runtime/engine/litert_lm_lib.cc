@@ -649,6 +649,8 @@ absl::StatusOr<EngineSettings> CreateEngineSettings(
     benchmark_params.set_num_prefill_tokens(settings.benchmark_prefill_tokens);
     benchmark_params.set_num_decode_tokens(settings.benchmark_decode_tokens);
     engine_settings.GetMutableBenchmarkParams() = benchmark_params;
+    // Set the single threaded execution for benchmarking.
+    engine_settings.SetSingleThreadedExecution(true);
   }
 
   return engine_settings;

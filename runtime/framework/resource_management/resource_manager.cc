@@ -897,4 +897,12 @@ ResourceManager::GetVisionExecutorProperties() {
   return vision_executor_->GetVisionExecutorProperties();
 }
 
+void ResourceManager::ResetCurrentHandler() {
+  absl::MutexLock lock(executor_mutex_);
+  if (llm_executor_ != nullptr) {
+    llm_executor_->Reset().IgnoreError();
+  }
+  current_handler_ = nullptr;
+}
+
 }  // namespace litert::lm
