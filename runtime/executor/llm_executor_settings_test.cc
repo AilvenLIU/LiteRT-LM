@@ -273,6 +273,7 @@ TEST(LlmExecutorConfigTest, LlmExecutorSettingsWithAdvancedSettings) {
       .clear_kv_cache_before_prefill = false,
       .num_logits_to_print_after_decode = 10,
       .gpu_madvise_original_shared_tensors = true,
+      .gpu_enable_metal_residency_set = false,
       .is_benchmark = true,
       .preferred_device_substr = "nvidia",
       .num_threads_to_upload = 4,
@@ -327,6 +328,7 @@ verify_magic_numbers: 1
 clear_kv_cache_before_prefill: 0
 num_logits_to_print_after_decode: 10
 gpu_madvise_original_shared_tensors: 1
+gpu_enable_metal_residency_set: 0
 is_benchmark: 1
 preferred_device_substr: nvidia
 num_threads_to_upload: 4
@@ -344,7 +346,7 @@ enable_speculative_decoding: 0
 disable_delegate_clustering: 0
 hint_kernel_batch_size: 10
 
-)");  // Original output string.
+)");                                                 // Original output string.
   EXPECT_EQ(oss.str(), expected_output);
 }
 

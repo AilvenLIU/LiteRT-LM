@@ -76,6 +76,10 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
 
   switch (executor_settings.GetBackend()) {
     case Backend::GPU: {
+      AdvancedSettings advanced_settings;
+      if (executor_settings.GetAdvancedSettings()) {
+        advanced_settings = *executor_settings.GetAdvancedSettings();
+      }
       // TODO: b/403132820 - Add accelerator compilation options for ML_DRIFT.
       LITERT_ASSIGN_OR_RETURN(auto& gpu_compilation_options,
                               compilation_options.GetGpuOptions());
@@ -88,6 +92,8 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
 #if defined(__APPLE__)
       gpu_compilation_options.SetPreferTextureWeights(false);
       gpu_compilation_options.SetUseMetalArgumentBuffers(true);
+      gpu_compilation_options.EnableMetalResidencySet(
+          advanced_settings.gpu_enable_metal_residency_set);
 #else   // !__APPLE__
       gpu_compilation_options.SetPreferTextureWeights(true);
 #endif  // !__APPLE__
@@ -133,11 +139,6 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
       if (cache_suffix.has_value() && !cache_suffix->empty() &&
           !cache_key.empty()) {
         absl::StrAppend(&cache_key, *cache_suffix);
-      }
-
-      AdvancedSettings advanced_settings;
-      if (executor_settings.GetAdvancedSettings()) {
-        advanced_settings = *executor_settings.GetAdvancedSettings();
       }
 
       LITERT_RETURN_IF_ERROR(SetGpuCacheOptions(

@@ -87,6 +87,8 @@ std::ostream& operator<<(std::ostream& os, const AdvancedSettings& settings) {
      << settings.num_logits_to_print_after_decode << "\n";
   os << "gpu_madvise_original_shared_tensors: "
      << settings.gpu_madvise_original_shared_tensors << "\n";
+  os << "gpu_enable_metal_residency_set: "
+     << settings.gpu_enable_metal_residency_set << "\n";
   os << "is_benchmark: " << settings.is_benchmark << "\n";
   os << "preferred_device_substr: " << settings.preferred_device_substr << "\n";
   os << "num_threads_to_upload: " << settings.num_threads_to_upload << "\n";

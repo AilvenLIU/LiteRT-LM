@@ -188,6 +188,10 @@ struct AdvancedSettings {
   // use.
   bool gpu_madvise_original_shared_tensors = true;
 
+  // If true, the GPU backend will use MTLResidencySet to prevent memory
+  // swapping on macOS.
+  bool gpu_enable_metal_residency_set = false;
+
   // If true, the executor is running a benchmark.
   bool is_benchmark = false;
 
@@ -285,6 +289,8 @@ struct AdvancedSettings {
                other.num_logits_to_print_after_decode &&
            gpu_madvise_original_shared_tensors ==
                other.gpu_madvise_original_shared_tensors &&
+           gpu_enable_metal_residency_set ==
+               other.gpu_enable_metal_residency_set &&
            is_benchmark == other.is_benchmark &&
            preferred_device_substr == other.preferred_device_substr &&
            num_threads_to_upload == other.num_threads_to_upload &&
@@ -377,9 +383,9 @@ class LlmExecutorSettings : public ExecutorSettingsBase {
     } else if (!lora_ranks.empty()) {
       // If lora_ranks is not empty, but the backend is not GpuArtisanConfig,
       // we log a warning and ignore the lora ranks.
-      LOG(ERROR) << "supported_lora_ranks is only supported for "
-                    "GpuArtisanConfig. The provided lora ranks will be "
-                    "ignored.";
+      ABSL_LOG(ERROR) << "supported_lora_ranks is only supported for "
+                         "GpuArtisanConfig. The provided lora ranks will be "
+                         "ignored.";
     }
     return absl::OkStatus();
   }
