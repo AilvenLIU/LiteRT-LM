@@ -95,6 +95,8 @@ struct LiteRtLmSettings {
   bool force_f32 = false;
   bool multi_turns = false;
   int num_cpu_threads = 0;
+  // Delegate supported CPU operations to YNNPACK before XNNPACK.
+  bool enable_ynnpack = false;
   // Set external tensor mode false by default since it runs slightly faster
   // during decode as the layout changes optimized for GPU inference is done by
   // GPU, not by CPU.

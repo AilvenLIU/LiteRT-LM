@@ -60,6 +60,7 @@ std::ostream& operator<<(std::ostream& os, const CpuConfig& config) {
   os << "kv_increment_size: " << config.kv_increment_size << "\n";
   os << "prefill_chunk_size: " << config.prefill_chunk_size << "\n";
   os << "number_of_threads: " << config.number_of_threads << "\n";
+  os << "enable_ynnpack: " << config.enable_ynnpack << "\n";
   return os;
 }
 

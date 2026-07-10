@@ -118,6 +118,9 @@ struct CpuConfig {
 
   // Number of threads. The default value is 4.
   uint32_t number_of_threads = 4;
+
+  // Whether YNNPACK should delegate supported operations before XNNPACK.
+  bool enable_ynnpack = false;
 };
 std::ostream& operator<<(std::ostream& os, const CpuConfig& config);
 

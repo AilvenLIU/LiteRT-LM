@@ -208,6 +208,7 @@ absl::Status MainHelper(int argc, char** argv) {
            "[--async=<true|false>] [--force_f32=<true|false] "
            "[--report_peak_memory_footprint] [--multi_turns=<true|false>] "
            "[--num_cpu_threads=<num_cpu_threads>] "
+           "[--enable_ynnpack=<true|false>] "
            "[--gpu_external_tensor_mode=<true|false>] "
            "[--configure_magic_numbers=<true|false>] "
            "[--verify_magic_numbers=<true|false>] "
@@ -279,6 +280,7 @@ absl::Status MainHelper(int argc, char** argv) {
   settings.force_f32 = absl::GetFlag(FLAGS_force_f32);
   settings.multi_turns = absl::GetFlag(FLAGS_multi_turns);
   settings.num_cpu_threads = absl::GetFlag(FLAGS_num_cpu_threads);
+  settings.enable_ynnpack = absl::GetFlag(FLAGS_enable_ynnpack);
   settings.gpu_external_tensor_mode =
       absl::GetFlag(FLAGS_gpu_external_tensor_mode);
   settings.configure_magic_numbers =

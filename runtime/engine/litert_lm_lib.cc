@@ -555,6 +555,7 @@ absl::StatusOr<EngineSettings> CreateEngineSettings(
     if (settings.num_cpu_threads > 0) {
       cpu_settings.number_of_threads = settings.num_cpu_threads;
     }
+    cpu_settings.enable_ynnpack = settings.enable_ynnpack;
     cpu_settings.prefill_chunk_size = settings.prefill_chunk_size;
     executor_settings.SetBackendConfig(cpu_settings);
   }

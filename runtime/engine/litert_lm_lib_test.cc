@@ -392,6 +392,7 @@ TEST(LiteRtLmLibTest, CreateEngineSettings_CpuConfig) {
   settings.model_path = model_path.string();
   settings.backend = "cpu";
   settings.num_cpu_threads = 8;
+  settings.enable_ynnpack = true;
   settings.prefill_chunk_size = 512;
 
   auto engine_settings_or = CreateEngineSettings(settings);
@@ -400,6 +401,7 @@ TEST(LiteRtLmLibTest, CreateEngineSettings_CpuConfig) {
                            .GetBackendConfig<CpuConfig>();
   ASSERT_OK(cpu_config_or.status());
   EXPECT_EQ(cpu_config_or->number_of_threads, 8);
+  EXPECT_TRUE(cpu_config_or->enable_ynnpack);
   EXPECT_EQ(cpu_config_or->prefill_chunk_size, 512);
 }
 

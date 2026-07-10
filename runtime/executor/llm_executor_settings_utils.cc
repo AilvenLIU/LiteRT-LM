@@ -236,6 +236,7 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
                             executor_settings.GetBackendConfig<CpuConfig>());
       const uint32_t num_threads = cpu_config.number_of_threads;
       cpu_compilation_options.SetNumThreads(num_threads);
+      cpu_compilation_options.SetEnableYNNPack(cpu_config.enable_ynnpack);
       auto weight_cache_file = executor_settings.GetWeightCacheFile(
           cache_suffix.value_or("") +
               std::string(ExecutorSettingsBase::kXnnpackCacheSuffix),
