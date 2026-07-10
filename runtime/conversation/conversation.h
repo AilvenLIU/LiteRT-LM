@@ -669,6 +669,18 @@ class Conversation {
   absl::StatusOr<std::string> GetSingleTurnTextFromSingleTurnTemplate(
       const Message& message, const OptionalArgs& optional_args);
 
+  // Creates a `DecodeConfig` from the session/conversation parameters and
+  // optional runtime overrides.
+  //
+  // `open_channel_name`: Indicates the name of an open channel tag right at the
+  // end of the prefilled prompt text (if any), as determined by checking
+  // whether the rendered prompt ends after a channel start tag (e.g.
+  // `<think>\n`) without a matching end tag. When sending a message where the
+  // thinking channel is prefilled (`open_channel_name ==
+  // thinking_channel->channel_name`), this should be passed so that
+  // `SetThinkingStartTokenIds` is configured empty (`{}`) and the constrained
+  // decoder starts immediately in active thinking state without waiting for
+  // duplicate start tokens.
   absl::StatusOr<DecodeConfig> CreateDecodeConfig(
       std::optional<RepetitionPenaltyConfig> repetition_penalty_config =
           std::nullopt,
@@ -676,7 +688,8 @@ class Conversation {
       std::optional<SuppressTokensConfig> suppress_tokens_config = std::nullopt,
       std::optional<ConstraintArg> decoding_constraint = std::nullopt,
       std::optional<int> max_output_tokens = std::nullopt,
-      std::optional<ThinkingConfig> thinking_config = std::nullopt);
+      std::optional<ThinkingConfig> thinking_config = std::nullopt,
+      std::optional<absl::string_view> open_channel_name = std::nullopt);
 
   // Adds a task controller to the task_controllers_ map if task_group_id is
   // provided.

@@ -346,7 +346,8 @@ absl::StatusOr<DecodeConfig> Conversation::CreateDecodeConfig(
     std::optional<SuppressTokensConfig> suppress_tokens_config,
     std::optional<ConstraintArg> decoding_constraint,
     std::optional<int> max_output_tokens,
-    std::optional<ThinkingConfig> thinking_config) {
+    std::optional<ThinkingConfig> thinking_config,
+    std::optional<absl::string_view> open_channel_name) {
   auto decode_config = DecodeConfig::CreateDefault();
 
   if (repetition_penalty_config.has_value()) {
@@ -369,22 +370,26 @@ absl::StatusOr<DecodeConfig> Conversation::CreateDecodeConfig(
     decode_config.SetThinkingTokenBudget(
         thinking_config->thinking_token_budget());
     const Channel* thinking_channel = nullptr;
-    // TODO(b/521921341): Support dynamically configuring the thinking channel
-    // name via LlmMetadata. Use "thought" as the default name for now.
-    for (const auto& channel : config_.GetChannels()) {
-      if (channel.channel_name == "thought") {
-        thinking_channel = &channel;
-        break;
-      }
+    // We assume the thinking channel is the first channel configured for the
+    // conversation.
+    // TODO(b/521921341): Support dynamically identifying or specifying the
+    // thinking channel when multiple channels are present.
+    if (!config_.GetChannels().empty()) {
+      thinking_channel = &config_.GetChannels().front();
     }
     if (thinking_channel != nullptr) {
-      ASSIGN_OR_RETURN(auto start_token_ids,
-                       const_cast<Tokenizer&>(engine_.GetTokenizer())
-                           .TextToTokenIds(thinking_channel->start));
-      decode_config.SetThinkingStartTokenIds(std::move(start_token_ids));
-      ASSIGN_OR_RETURN(auto end_token_ids,
-                       const_cast<Tokenizer&>(engine_.GetTokenizer())
-                           .TextToTokenIds(thinking_channel->end));
+      if (open_channel_name.has_value() &&
+          *open_channel_name == thinking_channel->channel_name) {
+        decode_config.SetThinkingStartTokenIds({});
+      } else {
+        ABSL_ASSIGN_OR_RETURN(auto start_token_ids,
+                              const_cast<Tokenizer&>(engine_.GetTokenizer())
+                                  .TextToTokenIds(thinking_channel->start));
+        decode_config.SetThinkingStartTokenIds(std::move(start_token_ids));
+      }
+      ABSL_ASSIGN_OR_RETURN(auto end_token_ids,
+                            const_cast<Tokenizer&>(engine_.GetTokenizer())
+                                .TextToTokenIds(thinking_channel->end));
       decode_config.SetThinkingEndTokenIds(std::move(end_token_ids));
     }
   } else {
@@ -561,7 +566,7 @@ absl::Status Conversation::SendMessageAsync(
     const Message& message,
     absl::AnyInvocable<void(absl::StatusOr<Message>)> user_callback,
     OptionalArgs optional_args) {
-  ABSL_ASSIGN_OR_RETURN(const std::string& single_turn_text,
+  ABSL_ASSIGN_OR_RETURN(std::string single_turn_text,
                         GetSingleTurnText(message, optional_args));
   auto open_channel_name =
       GetOpenChannelName(single_turn_text, config_.GetChannels());
@@ -697,7 +702,8 @@ absl::Status Conversation::SendMessageAsync(
                          std::move(optional_args.suppress_tokens_config),
                          std::move(optional_args.decoding_constraint),
                          optional_args.max_output_tokens,
-                         ResolveThinkingConfig(config_, optional_args)));
+                         ResolveThinkingConfig(config_, optional_args),
+                         open_channel_name));
 
   std::optional<std::string> task_group_id = optional_args.task_group_id;
 
