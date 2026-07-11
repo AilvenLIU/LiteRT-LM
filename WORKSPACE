@@ -2,14 +2,14 @@
 
 workspace(name = "litert_lm")
 
-# UPDATED = 2026-06-29
-LITERT_REF = "622f1f3c1352f4bc2925061b8cb72e9ce52874fe"
+# UPDATED = 2026-07-10
+LITERT_REF = "2911db74a14654bd6038deae76177383e54f2cc1"
 
-LITERT_SHA256 = "f3fd51d1e1eb33472ba425462bf53b05ad02bddca9cd58c61209d4a8be7829d0"
+LITERT_SHA256 = "7aa34abf62f10df571eb3521acde4790dd2885138b4da2ce5a1106e119936f1f"
 
-TENSORFLOW_REF = "f197d45528bb1dcf6e2d5409907c1352c30c0e5e"
+TENSORFLOW_REF = "7661ec4773f78d537ddec226a787185dc74f0cdb"
 
-TENSORFLOW_SHA256 = "0a877fd2a217030441a316a6a3404ba9d3e56d420fe80d9a9a5724f7781d1cc0"
+TENSORFLOW_SHA256 = "3221ed281124b7ada27c2aa46a472f57310d2ac04942fabfe58b7d6f557133c2"
 
 # buildifier: disable=load-on-top
 
@@ -455,6 +455,10 @@ http_jar(
 http_archive(
     name = "skia",
     patch_args = ["-p1"],
+    patch_cmds = [
+        # Replace <jpeglib.h> with "jpeglib.h".
+        "sed -i -e 's|#include <jpeglib.h>|#include \"jpeglib.h\"|g' */*.cpp */*.h */*/*.cpp */*/*.h",
+    ],
     patches = ["@//:PATCH.skia"],
     repo_mapping = {
         "@libpng": "@png",
