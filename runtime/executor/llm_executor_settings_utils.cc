@@ -150,13 +150,15 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
                             executor_settings.GetBackendConfig<GpuConfig>());
       bool external_tensor_mode = gpu_config.external_tensor_mode;
       gpu_compilation_options.EnableExternalTensorsMode(external_tensor_mode);
+      bool single_kv_cache_buffer =
+          signatures.has_value() &&
+          signatures.value()->input_int32_param.has_value();
       if (!external_tensor_mode) {
         // This option prevents KVCache handling from being affected by
         // BHWC conversion in NoExternalTensorsMode.
         gpu_compilation_options.AddExternalTensorPattern("kv_cache_");
         gpu_compilation_options.AddBufferStorageTensorPattern("kv_cache_c_");
-        if (signatures.has_value() &&
-            signatures.value()->input_int32_param.has_value()) {
+        if (single_kv_cache_buffer) {
           gpu_compilation_options.AddBufferStorageTensorPattern("kv_cache_");
           gpu_compilation_options.AddExternalTensorPattern("param_tensor");
           gpu_compilation_options.AddBufferStorageTensorPattern("param_tensor");
@@ -209,10 +211,13 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
       gpu_compilation_options.SetBackend(GpuOptions::Backend::kWebGpu);
 #endif  // defined(LITERT_USE_WEBGPU_ACCELERATOR)
       // Prepare WebGPU or Vulkan command buffers ahead to reduce the overhead
-      // of command buffer preparation. 2 steps ahead because KV cache is
-      // swapped and the GPU resource bindings are the same as the previous
-      // previous step.
-      gpu_compilation_options.SetNumStepsOfCommandBufferPreparations(2);
+      // of command buffer preparation.
+      // If single KV cache buffer is used, one step ahead is needed as all the
+      // inputs for each decode step is identical.
+      // Otherwise, 2 steps ahead are needed because KV cache is swapped and the
+      // GPU resource bindings are the same as the previous previous step.
+      gpu_compilation_options.SetNumStepsOfCommandBufferPreparations(
+          single_kv_cache_buffer ? 1 : 2);
       gpu_compilation_options.SetNumThreadsToUpload(
           advanced_settings.num_threads_to_upload >= 0
               ? advanced_settings.num_threads_to_upload
