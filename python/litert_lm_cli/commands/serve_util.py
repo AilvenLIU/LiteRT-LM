@@ -21,6 +21,7 @@ import click
 
 import litert_lm
 from litert_lm_builder import litertlm_builder
+from litert_lm_cli import common
 from litert_lm_cli import model
 
 
@@ -136,7 +137,12 @@ def get_or_initialize_server_engine(
       },
       label="audio",
   )
-  max_num_tokens = None
+  max_num_tokens = model.resolve_config_option(None, m, "max_num_tokens")
+  cache = model.resolve_config_option(None, m, "cache")
+  cache_dir_val = common.cache_dir_value_from_cache_mode(cache)
+  speculative_decoding = model.resolve_config_option(
+      None, m, "speculative_decoding"
+  )
 
   if server.litert_lm_engine is not None:
     if (
@@ -174,6 +180,8 @@ def get_or_initialize_server_engine(
       max_num_tokens=max_num_tokens,
       vision_backend=vision_backend,
       audio_backend=audio_backend,
+      cache_dir=cache_dir_val,
+      enable_speculative_decoding=speculative_decoding,
       enable_benchmark=True,
   )
   engine.__enter__()

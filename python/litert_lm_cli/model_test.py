@@ -335,11 +335,84 @@ class ParseBackendWithConfigTest(parameterized.TestCase):
     self.assertIsInstance(result, litert_lm.Backend.CPU)
     self.assertIsNone(result.thread_count)
 
+  @mock.patch.object(config, "get_model_config")
+  @mock.patch.object(model, "model_default_backend")
+  def test_parse_backend_auxiliary_uses_specific_config(
+      self, mock_model_default, mock_get_model_config
+  ):
+    mock_model = mock.Mock(spec=model.Model)
+    mock_model.model_path = "dummy_path"
+    mock_model.model_id = "dummy_model_id"
+
+    mock_get_model_config.return_value = config.ModelConfig(
+        vision_backend="gpu", audio_backend="cpu"
+    )
+
+    mock_model_default.return_value = "cpu"
+    vision_result = model.parse_backend(
+        backend=None,
+        model_obj=mock_model,
+        target_model_types={"vision_encoder"},
+        label="vision",
+    )
+    self.assertIsInstance(vision_result, litert_lm.Backend.GPU)
+
+    audio_result = model.parse_backend(
+        backend=None,
+        model_obj=mock_model,
+        target_model_types={"audio_encoder_hw"},
+        label="audio",
+    )
+    self.assertIsInstance(audio_result, litert_lm.Backend.CPU)
+
   def test_from_model_path(self):
     path = "/home/user/.litert-lm/models/gemma4--2b/model.litertlm"
     m1 = model.Model.from_model_path(path)
     self.assertEqual(m1.model_id, "gemma4/2b")
     self.assertEqual(m1.model_path, path)
+
+  @mock.patch.object(config, "get_model_config")
+  def test_resolve_config_option(self, mock_get_model_config):
+    mock_model = mock.Mock(spec=model.Model)
+    mock_model.model_id = "dummy_model_id"
+
+    mock_get_model_config.return_value = config.ModelConfig(
+        cache="memory",
+        max_num_tokens=1024,
+        temperature=0.7,
+        top_p=0.9,
+        top_k=40,
+        seed=42,
+        speculative_decoding=True,
+    )
+
+    # Explicit value provided by user
+    self.assertEqual(
+        model.resolve_config_option("disk", mock_model, "cache"), "disk"
+    )
+
+    # Fallback to config
+    self.assertEqual(
+        model.resolve_config_option(None, mock_model, "cache"), "memory"
+    )
+    self.assertEqual(
+        model.resolve_config_option(None, mock_model, "max_num_tokens"), 1024
+    )
+    self.assertEqual(
+        model.resolve_config_option(None, mock_model, "temperature"), 0.7
+    )
+    self.assertEqual(
+        model.resolve_config_option(None, mock_model, "top_p"), 0.9
+    )
+    self.assertEqual(model.resolve_config_option(None, mock_model, "top_k"), 40)
+    self.assertEqual(model.resolve_config_option(None, mock_model, "seed"), 42)
+    self.assertTrue(
+        model.resolve_config_option(None, mock_model, "speculative_decoding")
+    )
+
+    # Unset field returns None
+    mock_get_model_config.return_value = config.ModelConfig()
+    self.assertIsNone(model.resolve_config_option(None, mock_model, "cache"))
 
     path3 = "/home/user/.litert-lm/models/google--gemma3-1b-it/model.litertlm"
     m3 = model.Model.from_model_path(path3)

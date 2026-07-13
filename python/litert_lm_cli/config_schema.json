@@ -25,6 +25,41 @@
         "cpu_thread_count": {
           "type": "integer",
           "minimum": 1
+        },
+        "audio_backend": {
+          "type": "string",
+          "enum": ["cpu", "gpu", "npu"]
+        },
+        "vision_backend": {
+          "type": "string",
+          "enum": ["cpu", "gpu", "npu"]
+        },
+        "cache": {
+          "type": "string",
+          "enum": ["disk", "memory", "no"]
+        },
+        "max_num_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0.0
+        },
+        "top_p": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "top_k": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "speculative_decoding": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false

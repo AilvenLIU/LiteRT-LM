@@ -28,12 +28,32 @@ KEY_DEFAULT = "default"
 KEY_MODELS = "models"
 KEY_BACKEND = "backend"
 KEY_CPU_THREAD_COUNT = "cpu_thread_count"
+KEY_AUDIO_BACKEND = "audio_backend"
+KEY_VISION_BACKEND = "vision_backend"
+KEY_CACHE = "cache"
+KEY_MAX_NUM_TOKENS = "max_num_tokens"
+KEY_TEMPERATURE = "temperature"
+KEY_TOP_P = "top_p"
+KEY_TOP_K = "top_k"
+KEY_SEED = "seed"
+KEY_SPECULATIVE_DECODING = "speculative_decoding"
 
 
 @dataclasses.dataclass
 class ModelConfig:
+  """Configuration settings for a LiteRT-LM model or default settings."""
+
   backend: str | None = None
   cpu_thread_count: int | None = None
+  audio_backend: str | None = None
+  vision_backend: str | None = None
+  cache: str | None = None
+  max_num_tokens: int | None = None
+  temperature: float | None = None
+  top_p: float | None = None
+  top_k: int | None = None
+  seed: int | None = None
+  speculative_decoding: bool | None = None
 
   def merge_from(self, other: ModelConfig) -> None:
     """Merges values from another config, overwriting if set."""
@@ -41,10 +61,30 @@ class ModelConfig:
       self.backend = other.backend
     if other.cpu_thread_count is not None:
       self.cpu_thread_count = other.cpu_thread_count
+    if other.audio_backend is not None:
+      self.audio_backend = other.audio_backend
+    if other.vision_backend is not None:
+      self.vision_backend = other.vision_backend
+    if other.cache is not None:
+      self.cache = other.cache
+    if other.max_num_tokens is not None:
+      self.max_num_tokens = other.max_num_tokens
+    if other.temperature is not None:
+      self.temperature = other.temperature
+    if other.top_p is not None:
+      self.top_p = other.top_p
+    if other.top_k is not None:
+      self.top_k = other.top_k
+    if other.seed is not None:
+      self.seed = other.seed
+    if other.speculative_decoding is not None:
+      self.speculative_decoding = other.speculative_decoding
 
 
 @dataclasses.dataclass
 class AppConfig:
+  """Top-level application configuration containing default and per-model configs."""
+
   default: ModelConfig = dataclasses.field(default_factory=ModelConfig)
   models: dict[str, ModelConfig] = dataclasses.field(default_factory=dict)
 
@@ -94,6 +134,15 @@ def _parse_model_config(data: dict[str, Any]) -> ModelConfig:
   return ModelConfig(
       backend=data.get(KEY_BACKEND),
       cpu_thread_count=data.get(KEY_CPU_THREAD_COUNT),
+      audio_backend=data.get(KEY_AUDIO_BACKEND),
+      vision_backend=data.get(KEY_VISION_BACKEND),
+      cache=data.get(KEY_CACHE),
+      max_num_tokens=data.get(KEY_MAX_NUM_TOKENS),
+      temperature=data.get(KEY_TEMPERATURE),
+      top_p=data.get(KEY_TOP_P),
+      top_k=data.get(KEY_TOP_K),
+      seed=data.get(KEY_SEED),
+      speculative_decoding=data.get(KEY_SPECULATIVE_DECODING),
   )
 
 

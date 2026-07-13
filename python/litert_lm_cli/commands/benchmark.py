@@ -63,6 +63,11 @@ def run_benchmark(
     return
 
   try:
+    speculative_decoding = model.resolve_config_option(
+        speculative_decoding, model_obj, "speculative_decoding"
+    )
+    cache = model.resolve_config_option(cache, model_obj, "cache")
+
     backend_val = model.parse_backend(
         backend, model_obj=model_obj, cpu_thread_count=cpu_thread_count
     )
@@ -229,6 +234,9 @@ def benchmark(
   else:
     model_obj = model.Model.from_model_reference(model_reference)
 
+  max_num_tokens = model.resolve_config_option(
+      max_num_tokens, model_obj, "max_num_tokens"
+  )
   if max_num_tokens is None:
     # Replicates the logic from
     # runtime/engine/engine_settings.cc

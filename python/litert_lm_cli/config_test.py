@@ -66,6 +66,30 @@ class ConfigTest(parameterized.TestCase):
         ),
     )
 
+  def test_get_config_valid_all_fields(self):
+    self._write_config(
+        '{"default": {"audio_backend": "cpu", "vision_backend": "gpu",'
+        ' "cache": "memory", "max_num_tokens": 1024, "temperature": 0.7,'
+        ' "top_p": 0.9, "top_k": 40, "seed": 12345,'
+        ' "speculative_decoding": true}}'
+    )
+    self.assertEqual(
+        config.load_config(),
+        config.AppConfig(
+            default=config.ModelConfig(
+                audio_backend="cpu",
+                vision_backend="gpu",
+                cache="memory",
+                max_num_tokens=1024,
+                temperature=0.7,
+                top_p=0.9,
+                top_k=40,
+                seed=12345,
+                speculative_decoding=True,
+            )
+        ),
+    )
+
   def test_get_config_invalid_json(self):
     self._write_config("invalid json")
     with self.assertRaises(click.ClickException) as ctx:
@@ -123,6 +147,49 @@ class ConfigTest(parameterized.TestCase):
           "model_cpu_thread_count_invalid",
           '{"models": {"m": {"cpu_thread_count": 0}}}',
           "models.m.cpu_thread_count: 0 is less than the minimum of 1",
+      ),
+      (
+          "audio_backend_invalid",
+          '{"default": {"audio_backend": "invalid"}}',
+          (
+              "default.audio_backend: 'invalid' is not one of ['cpu', 'gpu',"
+              " 'npu']"
+          ),
+      ),
+      (
+          "vision_backend_invalid",
+          '{"default": {"vision_backend": "tpu"}}',
+          "default.vision_backend: 'tpu' is not one of ['cpu', 'gpu', 'npu']",
+      ),
+      (
+          "cache_invalid",
+          '{"default": {"cache": "redis"}}',
+          "default.cache: 'redis' is not one of ['disk', 'memory', 'no']",
+      ),
+      (
+          "max_num_tokens_invalid",
+          '{"default": {"max_num_tokens": 0}}',
+          "default.max_num_tokens: 0 is less than the minimum of 1",
+      ),
+      (
+          "temperature_negative",
+          '{"default": {"temperature": -0.5}}',
+          "default.temperature: -0.5 is less than the minimum of 0.0",
+      ),
+      (
+          "top_p_out_of_range",
+          '{"default": {"top_p": 1.5}}',
+          "default.top_p: 1.5 is greater than the maximum of 1.0",
+      ),
+      (
+          "top_k_invalid",
+          '{"default": {"top_k": 0}}',
+          "default.top_k: 0 is less than the minimum of 1",
+      ),
+      (
+          "speculative_decoding_not_bool",
+          '{"default": {"speculative_decoding": "true"}}',
+          "default.speculative_decoding: 'true' is not of type 'boolean'",
       ),
   )
   def test_get_config_invalid_schema(self, json_data, expected_error):
@@ -192,6 +259,16 @@ class ConfigTest(parameterized.TestCase):
 
     result3 = config.get_model_config("google/gemma3-1b-it")
     self.assertEqual(result3.backend, "npu")
+
+  def test_get_model_config_with_fallback_new_fields(self):
+    self._write_config(
+        '{"default": {"audio_backend": "cpu", "temperature": 0.7},'
+        ' "models": {"m1": {"vision_backend": "gpu", "temperature": 0.2}}}'
+    )
+    result = config.get_model_config("m1")
+    self.assertEqual(result.audio_backend, "cpu")
+    self.assertEqual(result.vision_backend, "gpu")
+    self.assertEqual(result.temperature, 0.2)
 
 
 if __name__ == "__main__":

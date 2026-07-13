@@ -25,14 +25,14 @@ import io
 import mimetypes
 import os
 import pathlib
+from typing import Any
 
 import click
 
 import litert_lm
 from litert_lm_builder import litertlm_builder
 from litert_lm_builder import litertlm_peek
-
-from . import config
+from litert_lm_cli import config
 
 # The default model types representing the main text model components.
 _DEFAULT_TARGET_MODEL_TYPES = frozenset({
@@ -223,6 +223,12 @@ def parse_backend(
     if is_main_model and model_cfg.backend is not None:
       resolved_backend = model_cfg.backend
       backend_from_config = True
+    elif label == "vision" and model_cfg.vision_backend is not None:
+      resolved_backend = model_cfg.vision_backend
+      backend_from_config = True
+    elif label == "audio" and model_cfg.audio_backend is not None:
+      resolved_backend = model_cfg.audio_backend
+      backend_from_config = True
     else:
       resolved_backend = model_default_backend(
           model_obj.model_path, target_model_types
@@ -270,6 +276,47 @@ def parse_backend(
     )
 
   return _create_backend_obj(resolved_backend.lower(), resolved_threads)
+
+
+def resolve_config_option(
+    value: Any,
+    model_obj: Model | None,
+    config_key: str,
+    label: str | None = None,
+) -> Any:
+  """Resolves an option value, falling back to config if value is None.
+
+  Args:
+    value: Explicit value passed by CLI/user (if any).
+    model_obj: Model instance (if available).
+    config_key: Attribute name on ModelConfig (e.g. "cache", "max_num_tokens").
+    label: Display label for logging (defaults to config_key).
+
+  Returns:
+    The explicit value if set, otherwise value from ModelConfig if set,
+    otherwise None.
+  """
+  if value is not None or model_obj is None:
+    return value
+
+  model_id = getattr(model_obj, "model_id", None)
+  if not model_id:
+    return value
+
+  model_cfg = config.get_model_config(model_id)
+  config_val = getattr(model_cfg, config_key, None)
+  if config_val is not None:
+    display_label = label or config_key
+    click.echo(
+        click.style(
+            f"Using {display_label} from config for model"
+            f" '{model_id}': {config_val}",
+            fg="bright_black",
+        )
+    )
+    return config_val
+
+  return None
 
 
 @dataclasses.dataclass

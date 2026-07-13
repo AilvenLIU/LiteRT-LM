@@ -69,11 +69,16 @@ from litert_lm import interfaces
 mock_litert_lm.Engine = mock_engine.Engine
 mock_litert_lm.set_min_log_severity = mock_ffi.set_min_log_severity
 
-mock_model_mod = mock.Mock(spec_set=["Model", "parse_backend"])
+mock_model_mod = mock.Mock(
+    spec_set=["Model", "parse_backend", "resolve_config_option"]
+)
 mock_model_mod.Model = mock.Mock(spec_set=["from_model_id", "get_all_models"])
 mock_model_mod.Model.from_model_id = mock.Mock()
 mock_model_mod.Model.get_all_models = mock.Mock()
 mock_model_mod.parse_backend = mock.Mock()
+mock_model_mod.resolve_config_option = mock.Mock(
+    side_effect=lambda value, model_obj, config_key, label=None: value
+)
 sys.modules["litert_lm_cli.model"] = (
     mock_model_mod
 )
@@ -101,6 +106,10 @@ class ServeTest(parameterized.TestCase):
     mock_model_mod.Model.get_all_models.side_effect = None
     mock_model_mod.parse_backend.reset_mock()
     mock_model_mod.parse_backend.return_value = interfaces.Backend.CPU()
+    mock_model_mod.resolve_config_option.reset_mock()
+    mock_model_mod.resolve_config_option.side_effect = (
+        lambda value, model_obj, config_key, label=None: value
+    )
 
   @parameterized.named_parameters(
       dict(
@@ -344,8 +353,6 @@ class ServeTest(parameterized.TestCase):
     self.assertEqual(engine2, mock_engine_b)
     self.assertEqual(server.model_id, "B")
     mock_engine_a.__exit__.assert_called_once_with(None, None, None)
-
-
 
   @parameterized.named_parameters(
       dict(

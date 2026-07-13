@@ -215,6 +215,20 @@ def run_interactive(
   state = SessionState()
 
   try:
+    speculative_decoding = model.resolve_config_option(
+        speculative_decoding, model_obj, "speculative_decoding"
+    )
+    max_num_tokens = model.resolve_config_option(
+        max_num_tokens, model_obj, "max_num_tokens"
+    )
+    cache = model.resolve_config_option(cache, model_obj, "cache")
+    top_k = model.resolve_config_option(top_k, model_obj, "top_k")
+    top_p = model.resolve_config_option(top_p, model_obj, "top_p")
+    temperature = model.resolve_config_option(
+        temperature, model_obj, "temperature"
+    )
+    seed = model.resolve_config_option(seed, model_obj, "seed")
+
     backend_val = model.parse_backend(
         backend, model_obj=model_obj, cpu_thread_count=cpu_thread_count
     )
