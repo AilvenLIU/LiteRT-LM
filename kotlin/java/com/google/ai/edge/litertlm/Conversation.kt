@@ -87,6 +87,7 @@ class Conversation(
    *
    * @param message The message to send to the model.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param repetitionPenaltyConfig Optional configuration for repetition penalty.
    * @param maxOutputToken Optional override for the maximum number of output tokens per decode
    *   step.
    * @param thinkingConfig Optional configuration for thinking/reasoning generation.
@@ -99,6 +100,7 @@ class Conversation(
   fun sendMessage(
     message: Message,
     extraContext: Map<String, Any> = emptyMap(),
+    repetitionPenaltyConfig: RepetitionPenaltyConfig? = null,
     maxOutputToken: Int? = null,
     thinkingConfig: ThinkingConfig? = null,
   ): Message {
@@ -115,6 +117,7 @@ class Conversation(
           currentMessageJson.toString(),
           extraContextJsonString,
           visualTokenBudget,
+          repetitionPenaltyConfig,
           maxOutputToken ?: -1,
           if (i == 0) thinkingConfig else null,
         )
@@ -136,7 +139,7 @@ class Conversation(
   }
 
   /**
-   * Sends a list of content to the model and returns the response. This is a synchronous call.
+   * Sends a list of contents to the model and returns the response. This is a synchronous call.
    *
    * This method handles potential tool calls returned by the model. If a tool call is detected, the
    * corresponding tool is executed, and the result is sent back to the model. This process is
@@ -145,6 +148,7 @@ class Conversation(
    *
    * @param contents The list of contents to send to the model.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param repetitionPenaltyConfig Optional configuration for repetition penalty.
    * @param maxOutputToken Optional override for the maximum number of output tokens per decode
    *   step.
    * @param thinkingConfig Optional configuration for thinking/reasoning generation.
@@ -157,10 +161,17 @@ class Conversation(
   fun sendMessage(
     contents: Contents,
     extraContext: Map<String, Any> = emptyMap(),
+    repetitionPenaltyConfig: RepetitionPenaltyConfig? = null,
     maxOutputToken: Int? = null,
     thinkingConfig: ThinkingConfig? = null,
   ): Message {
-    return sendMessage(Message.user(contents), extraContext, maxOutputToken, thinkingConfig)
+    return sendMessage(
+      Message.user(contents),
+      extraContext,
+      repetitionPenaltyConfig,
+      maxOutputToken,
+      thinkingConfig,
+    )
   }
 
   /**
@@ -173,6 +184,7 @@ class Conversation(
    *
    * @param text The text to send to the model.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param repetitionPenaltyConfig Optional configuration for repetition penalty.
    * @param maxOutputToken Optional override for the maximum number of output tokens per decode
    *   step.
    * @param thinkingConfig Optional configuration for thinking/reasoning generation.
@@ -185,9 +197,17 @@ class Conversation(
   fun sendMessage(
     text: String,
     extraContext: Map<String, Any> = emptyMap(),
+    repetitionPenaltyConfig: RepetitionPenaltyConfig? = null,
     maxOutputToken: Int? = null,
     thinkingConfig: ThinkingConfig? = null,
-  ): Message = sendMessage(Contents.of(text), extraContext, maxOutputToken, thinkingConfig)
+  ): Message =
+    sendMessage(
+      Contents.of(text),
+      extraContext,
+      repetitionPenaltyConfig,
+      maxOutputToken,
+      thinkingConfig,
+    )
 
   /**
    * Send a message to the model and returns the response async with a callback.
@@ -200,6 +220,7 @@ class Conversation(
    * @param message The message to send to the model.
    * @param callback The callback to receive the streaming responses.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param repetitionPenaltyConfig Optional configuration for repetition penalty.
    * @param maxOutputToken Optional override for the maximum number of output tokens per decode
    *   step.
    * @param thinkingConfig Optional configuration for thinking/reasoning generation.
@@ -211,6 +232,7 @@ class Conversation(
     message: Message,
     callback: MessageCallback,
     extraContext: Map<String, Any> = emptyMap(),
+    repetitionPenaltyConfig: RepetitionPenaltyConfig? = null,
     maxOutputToken: Int? = null,
     thinkingConfig: ThinkingConfig? = null,
   ) {
@@ -219,13 +241,14 @@ class Conversation(
     val extraContextJsonString = extraContext.toJsonObject().toString()
     val visualTokenBudget = @OptIn(ExperimentalApi::class) ExperimentalFlags.visualTokenBudget
 
-    val jniCallback = JniMessageCallbackImpl(callback, maxOutputToken)
+    val jniCallback = JniMessageCallbackImpl(callback, repetitionPenaltyConfig, maxOutputToken)
     LiteRtLmJni.nativeSendMessageAsync(
       handle,
       message.toJson().toString(),
       extraContextJsonString,
       jniCallback,
       visualTokenBudget,
+      repetitionPenaltyConfig,
       maxOutputToken ?: -1,
       thinkingConfig,
     )
@@ -242,6 +265,7 @@ class Conversation(
    * @param contents The list of contents to send to the model.
    * @param callback The callback to receive the streaming responses.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param repetitionPenaltyConfig Optional configuration for repetition penalty.
    * @param maxOutputToken Optional override for the maximum number of output tokens per decode
    *   step.
    * @param thinkingConfig Optional configuration for thinking/reasoning generation.
@@ -253,10 +277,18 @@ class Conversation(
     contents: Contents,
     callback: MessageCallback,
     extraContext: Map<String, Any> = emptyMap(),
+    repetitionPenaltyConfig: RepetitionPenaltyConfig? = null,
     maxOutputToken: Int? = null,
     thinkingConfig: ThinkingConfig? = null,
   ) =
-    sendMessageAsync(Message.user(contents), callback, extraContext, maxOutputToken, thinkingConfig)
+    sendMessageAsync(
+      Message.user(contents),
+      callback,
+      extraContext,
+      repetitionPenaltyConfig,
+      maxOutputToken,
+      thinkingConfig,
+    )
 
   /**
    * Send a text to the model and returns the response async with a callback.
@@ -269,6 +301,7 @@ class Conversation(
    * @param text The text to send to the model.
    * @param callback The callback to receive the streaming responses.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param repetitionPenaltyConfig Optional configuration for repetition penalty.
    * @param maxOutputToken Optional override for the maximum number of output tokens per decode
    *   step.
    * @param thinkingConfig Optional configuration for thinking/reasoning generation.
@@ -280,9 +313,18 @@ class Conversation(
     text: String,
     callback: MessageCallback,
     extraContext: Map<String, Any> = emptyMap(),
+    repetitionPenaltyConfig: RepetitionPenaltyConfig? = null,
     maxOutputToken: Int? = null,
     thinkingConfig: ThinkingConfig? = null,
-  ) = sendMessageAsync(Contents.of(text), callback, extraContext, maxOutputToken, thinkingConfig)
+  ) =
+    sendMessageAsync(
+      Contents.of(text),
+      callback,
+      extraContext,
+      repetitionPenaltyConfig,
+      maxOutputToken,
+      thinkingConfig,
+    )
 
   /**
    * Sends a message to the model and returns the response async as a [Flow].
@@ -294,6 +336,7 @@ class Conversation(
    *
    * @param message The message to send to the model.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param repetitionPenaltyConfig Optional configuration for repetition penalty.
    * @param maxOutputToken Optional override for the maximum number of output tokens per decode
    *   step.
    * @param thinkingConfig Optional configuration for thinking/reasoning generation.
@@ -305,6 +348,7 @@ class Conversation(
   fun sendMessageAsync(
     message: Message,
     extraContext: Map<String, Any> = emptyMap(),
+    repetitionPenaltyConfig: RepetitionPenaltyConfig? = null,
     maxOutputToken: Int? = null,
     thinkingConfig: ThinkingConfig? = null,
   ): Flow<Message> = callbackFlow {
@@ -324,6 +368,7 @@ class Conversation(
         }
       },
       extraContext,
+      repetitionPenaltyConfig,
       maxOutputToken,
       thinkingConfig,
     )
@@ -340,6 +385,7 @@ class Conversation(
    *
    * @param contents The list of contents to send to the model.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param repetitionPenaltyConfig Optional configuration for repetition penalty.
    * @param maxOutputToken Optional override for the maximum number of output tokens per decode
    *   step.
    * @param thinkingConfig Optional configuration for thinking/reasoning generation.
@@ -351,10 +397,17 @@ class Conversation(
   fun sendMessageAsync(
     contents: Contents,
     extraContext: Map<String, Any> = emptyMap(),
+    repetitionPenaltyConfig: RepetitionPenaltyConfig? = null,
     maxOutputToken: Int? = null,
     thinkingConfig: ThinkingConfig? = null,
   ): Flow<Message> =
-    sendMessageAsync(Message.user(contents), extraContext, maxOutputToken, thinkingConfig)
+    sendMessageAsync(
+      Message.user(contents),
+      extraContext,
+      repetitionPenaltyConfig,
+      maxOutputToken,
+      thinkingConfig,
+    )
 
   /**
    * Sends a text to the model and returns the response async as a [Flow].
@@ -366,6 +419,7 @@ class Conversation(
    *
    * @param text The text to send to the model.
    * @param extraContext Optional context used for prompt template rendering.
+   * @param repetitionPenaltyConfig Optional configuration for repetition penalty.
    * @param maxOutputToken Optional override for the maximum number of output tokens per decode
    *   step.
    * @param thinkingConfig Optional configuration for thinking/reasoning generation.
@@ -377,10 +431,17 @@ class Conversation(
   fun sendMessageAsync(
     text: String,
     extraContext: Map<String, Any> = emptyMap(),
+    repetitionPenaltyConfig: RepetitionPenaltyConfig? = null,
     maxOutputToken: Int? = null,
     thinkingConfig: ThinkingConfig? = null,
   ): Flow<Message> =
-    sendMessageAsync(Contents.of(text), extraContext, maxOutputToken, thinkingConfig)
+    sendMessageAsync(
+      Contents.of(text),
+      extraContext,
+      repetitionPenaltyConfig,
+      maxOutputToken,
+      thinkingConfig,
+    )
 
   private fun handleToolCalls(toolCallsJsonObject: JsonObject): JsonObject {
     val toolCallsJSONArray = toolCallsJsonObject.getAsJsonArray("tool_calls")
@@ -412,6 +473,7 @@ class Conversation(
 
   private inner class JniMessageCallbackImpl(
     private val callback: MessageCallback,
+    private val repetitionPenaltyConfig: RepetitionPenaltyConfig? = null,
     private val maxOutputToken: Int? = null,
   ) : LiteRtLmJni.JniMessageCallback {
 
@@ -452,6 +514,7 @@ class Conversation(
           "{}",
           this@JniMessageCallbackImpl,
           @OptIn(ExperimentalApi::class) ExperimentalFlags.visualTokenBudget,
+          repetitionPenaltyConfig,
           maxOutputToken ?: -1,
           null,
         )

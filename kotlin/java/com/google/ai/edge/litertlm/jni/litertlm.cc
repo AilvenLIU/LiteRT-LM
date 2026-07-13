@@ -30,6 +30,7 @@
 #include "absl/time/time.h"  // from @com_google_absl
 #include "nlohmann/json_fwd.hpp"  // from @nlohmann_json
 #include "litert/cc/internal/scoped_file.h"  // from @litert
+#include "runtime/components/logits_processor/repetition_penalty_config.h"
 #include "runtime/components/prompt_template.h"
 #include "runtime/conversation/conversation.h"
 #include "runtime/conversation/io_types.h"
@@ -334,6 +335,73 @@ litert::lm::ThinkingConfig CreateThinkingConfigFromJni(
   env->DeleteLocalRef(thinking_config_cls);
 
   return litert::lm::ThinkingConfig(enable_thinking, thinking_token_budget);
+}
+
+std::optional<float> GetOptionalFloatFieldFromJni(JNIEnv* env, jobject obj,
+                                                  jclass cls,
+                                                  const char* method_name) {
+  jmethodID mid = env->GetMethodID(cls, method_name, "()Ljava/lang/Float;");
+  if (mid == nullptr) {
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    return std::nullopt;
+  }
+  jobject float_obj = env->CallObjectMethod(obj, mid);
+  if (float_obj == nullptr) {
+    return std::nullopt;
+  }
+  jclass float_cls = env->FindClass("java/lang/Float");
+  jmethodID float_val_mid = env->GetMethodID(float_cls, "floatValue", "()F");
+  float val = env->CallFloatMethod(float_obj, float_val_mid);
+  env->DeleteLocalRef(float_cls);
+  env->DeleteLocalRef(float_obj);
+  return val;
+}
+
+std::optional<int> GetOptionalIntFieldFromJni(JNIEnv* env, jobject obj,
+                                              jclass cls,
+                                              const char* method_name) {
+  jmethodID mid = env->GetMethodID(cls, method_name, "()Ljava/lang/Integer;");
+  if (mid == nullptr) {
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    return std::nullopt;
+  }
+  jobject int_obj = env->CallObjectMethod(obj, mid);
+  if (int_obj == nullptr) {
+    return std::nullopt;
+  }
+  jclass int_cls = env->FindClass("java/lang/Integer");
+  jmethodID int_val_mid = env->GetMethodID(int_cls, "intValue", "()I");
+  int val = env->CallIntMethod(int_obj, int_val_mid);
+  env->DeleteLocalRef(int_cls);
+  env->DeleteLocalRef(int_obj);
+  return val;
+}
+
+litert::lm::RepetitionPenaltyConfig CreateRepetitionPenaltyConfigFromJni(
+    JNIEnv* env, jobject repetition_penalty_config_obj) {
+  jclass cls = env->GetObjectClass(repetition_penalty_config_obj);
+
+  auto repetition_penalty_opt = GetOptionalFloatFieldFromJni(
+      env, repetition_penalty_config_obj, cls, "getRepetitionPenalty");
+  auto presence_penalty_opt = GetOptionalFloatFieldFromJni(
+      env, repetition_penalty_config_obj, cls, "getPresencePenalty");
+  auto frequency_penalty_opt = GetOptionalFloatFieldFromJni(
+      env, repetition_penalty_config_obj, cls, "getFrequencyPenalty");
+  auto window_size_opt = GetOptionalIntFieldFromJni(
+      env, repetition_penalty_config_obj, cls, "getWindowSize");
+
+  env->DeleteLocalRef(cls);
+
+  auto default_config = litert::lm::RepetitionPenaltyConfig::Default();
+  return litert::lm::RepetitionPenaltyConfig(
+      repetition_penalty_opt.has_value() ? *repetition_penalty_opt
+                                         : default_config.repetition_penalty(),
+      presence_penalty_opt.has_value() ? *presence_penalty_opt
+                                       : default_config.presence_penalty(),
+      frequency_penalty_opt.has_value() ? *frequency_penalty_opt
+                                        : default_config.frequency_penalty(),
+      window_size_opt.has_value() ? *window_size_opt
+                                  : default_config.window_size());
 }
 
 nlohmann::ordered_json GetExtraContextJson(JNIEnv* env,
@@ -1074,8 +1142,8 @@ LITERTLM_JNIEXPORT void JNICALL JNI_METHOD(nativeDeleteConversation)(
 LITERTLM_JNIEXPORT void JNICALL JNI_METHOD(nativeSendMessageAsync)(
     JNIEnv* env, jclass thiz, jlong conversation_pointer,
     jstring messageJSONString, jstring extraContextJsonString, jobject callback,
-    jobject visual_token_budget, jint max_output_token,
-    jobject thinking_config_obj) {
+    jobject visual_token_budget, jobject repetition_penalty_config_obj,
+    jint max_output_token, jobject thinking_config_obj) {
   JavaVM* jvm = nullptr;
   if (env->GetJavaVM(&jvm) != JNI_OK) {
     ThrowLiteRtLmJniException(env, "Failed to get JavaVM");
@@ -1090,9 +1158,6 @@ LITERTLM_JNIEXPORT void JNICALL JNI_METHOD(nativeSendMessageAsync)(
   env->ReleaseStringUTFChars(messageJSONString, json_chars);
 
   litert::lm::OptionalArgs optional_args;
-  if (max_output_token > 0) {
-    optional_args.max_output_tokens = max_output_token;
-  }
   nlohmann::ordered_json extra_context =
       GetExtraContextJson(env, extraContextJsonString);
   if (!extra_context.is_null() && !extra_context.empty()) {
@@ -1102,6 +1167,16 @@ LITERTLM_JNIEXPORT void JNICALL JNI_METHOD(nativeSendMessageAsync)(
   auto args = GetDataProcessorArguments(env, conversation, visual_token_budget);
   if (args.has_value()) {
     optional_args.args = std::move(args);
+  }
+
+  if (repetition_penalty_config_obj != nullptr) {
+    optional_args.repetition_penalty_config =
+        CreateRepetitionPenaltyConfigFromJni(env,
+                                             repetition_penalty_config_obj);
+  }
+
+  if (max_output_token > 0) {
+    optional_args.max_output_tokens = max_output_token;
   }
 
   if (thinking_config_obj != nullptr) {
@@ -1192,8 +1267,8 @@ LITERTLM_JNIEXPORT void JNICALL JNI_METHOD(nativeSendMessageAsync)(
 LITERTLM_JNIEXPORT jstring JNICALL JNI_METHOD(nativeSendMessage)(
     JNIEnv* env, jclass thiz, jlong conversation_pointer,
     jstring messageJSONString, jstring extraContextJsonString,
-    jobject visual_token_budget, jint max_output_token,
-    jobject thinking_config_obj) {
+    jobject visual_token_budget, jobject repetition_penalty_config_obj,
+    jint max_output_token, jobject thinking_config_obj) {
   Conversation* conversation =
       reinterpret_cast<Conversation*>(conversation_pointer);
 
@@ -1202,9 +1277,6 @@ LITERTLM_JNIEXPORT jstring JNICALL JNI_METHOD(nativeSendMessage)(
   env->ReleaseStringUTFChars(messageJSONString, json_chars);
 
   litert::lm::OptionalArgs optional_args;
-  if (max_output_token > 0) {
-    optional_args.max_output_tokens = max_output_token;
-  }
   nlohmann::ordered_json extra_context =
       GetExtraContextJson(env, extraContextJsonString);
   if (!extra_context.is_null() && !extra_context.empty()) {
@@ -1214,6 +1286,16 @@ LITERTLM_JNIEXPORT jstring JNICALL JNI_METHOD(nativeSendMessage)(
   auto args = GetDataProcessorArguments(env, conversation, visual_token_budget);
   if (args.has_value()) {
     optional_args.args = std::move(args);
+  }
+
+  if (repetition_penalty_config_obj != nullptr) {
+    optional_args.repetition_penalty_config =
+        CreateRepetitionPenaltyConfigFromJni(env,
+                                             repetition_penalty_config_obj);
+  }
+
+  if (max_output_token > 0) {
+    optional_args.max_output_tokens = max_output_token;
   }
 
   if (thinking_config_obj != nullptr) {

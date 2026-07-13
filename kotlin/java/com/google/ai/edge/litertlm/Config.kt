@@ -35,6 +35,49 @@ data class Channel(val channelName: String, val start: String, val end: String) 
 }
 
 /**
+ * Configuration for repetition penalty.
+ *
+ * When multiple penalties are configured and active, the order of application to output logits
+ * during decoding is:
+ * 1. Multiplicative penalty ([repetitionPenalty])
+ * 2. Subtractive penalties ([presencePenalty] and [frequencyPenalty])
+ *
+ * @property repetitionPenalty A multiplicative penalty applied to a token's logit if that token has
+ *   appeared at least once inside the generated window history (e.g., 1.0 = no penalty, 1.2 =
+ *   moderate penalty). Positive logits are divided by this parameter, and negative logits are
+ *   multiplied (HuggingFace style). Must be >= 1.0f; values less than 1.0f are automatically
+ *   clamped to 1.0f during execution. Defaults to 1.0f when `null`.
+ * @property presencePenalty A scalar subtracted from a token's logit if that token has appeared at
+ *   least once inside the generated window history. Positive values discourage repetition, while
+ *   negative values reward repeating tokens (OpenAI style). Defaults to 0.0f when `null`.
+ * @property frequencyPenalty A scalar subtracted from a token's logit, scaled linearly by the
+ *   number of times that token has previously appeared inside the generated window history.
+ *   Positive values discourage repetition, while negative values reward repeating tokens (OpenAI
+ *   style). Defaults to 0.0f when `null`.
+ * @property windowSize The maximum number of recent tokens in generation history to consider when
+ *   computing penalization. Tokens generated prior to this window are forgotten. A value of 0 means
+ *   tracking all infinite generation history. Must be >= 0; negative values are clamped to 0 during
+ *   execution. Defaults to 0 when `null`.
+ */
+data class RepetitionPenaltyConfig
+@JvmOverloads
+constructor(
+  val repetitionPenalty: Float? = null,
+  val presencePenalty: Float? = null,
+  val frequencyPenalty: Float? = null,
+  val windowSize: Int? = null,
+) {
+  init {
+    require(repetitionPenalty == null || repetitionPenalty >= 1.0f) {
+      "repetitionPenalty should be >= 1.0, but got $repetitionPenalty."
+    }
+    require(windowSize == null || windowSize >= 0) {
+      "windowSize should be >= 0, but got $windowSize."
+    }
+  }
+}
+
+/**
  * Configuration for thinking/reasoning generation.
  *
  * @property enableThinking Whether thinking/reasoning generation is enabled.

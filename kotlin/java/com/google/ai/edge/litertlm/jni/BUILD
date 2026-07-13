@@ -38,6 +38,7 @@ cc_binary(
         "@litert//litert/cc/internal:scoped_file",
         "//runtime/components:model_resources",
         "//runtime/components:prompt_template",
+        "//runtime/components/logits_processor:repetition_penalty_config",
         "//runtime/conversation",
         "//runtime/conversation:io_types",
         "//runtime/conversation:thinking_config",

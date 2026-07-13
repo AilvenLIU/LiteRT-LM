@@ -206,6 +206,7 @@ internal object LiteRtLmJni {
    *   decoding.
    * @param filterChannelContentFromKvCache Whether to filter channel content from the KV cache.
    * @param prefillPrefaceOnInit Whether to prefill the preface when initializing the conversation.
+   * @param repetitionPenaltyConfig Configuration for repetition penalty.
    * @param maxOutputToken The maximum number of output tokens. When non-positive, use the default.
    * @param thinkingConfig Configuration for thinking/reasoning generation.
    * @return A pointer to the native conversation instance.
@@ -246,6 +247,7 @@ internal object LiteRtLmJni {
    * @param callback The callback to receive the streaming responses.
    * @param visualTokenBudget The visual token budget. Only supported by Gemma4 currently. Null for
    *   default.
+   * @param repetitionPenaltyConfig Configuration for repetition penalty.
    * @param maxOutputToken The maximum number of output tokens. When non-positive, use the default.
    * @param thinkingConfig Configuration for thinking/reasoning generation.
    */
@@ -255,6 +257,7 @@ internal object LiteRtLmJni {
     extraContextJsonString: String,
     callback: JniMessageCallback,
     visualTokenBudget: Int?,
+    repetitionPenaltyConfig: RepetitionPenaltyConfig?,
     maxOutputToken: Int,
     thinkingConfig: ThinkingConfig?,
   )
@@ -268,6 +271,7 @@ internal object LiteRtLmJni {
    *   format.
    * @param visualTokenBudget The visual token budget. Only supported by Gemma4 currently. Null for
    *   default.
+   * @param repetitionPenaltyConfig Configuration for repetition penalty.
    * @param maxOutputToken The maximum number of output tokens. When non-positive, use the default.
    * @param thinkingConfig Configuration for thinking/reasoning generation.
    * @return The response message in JSON string format.
@@ -277,6 +281,7 @@ internal object LiteRtLmJni {
     messageJsonString: String,
     extraContextJsonString: String,
     visualTokenBudget: Int?,
+    repetitionPenaltyConfig: RepetitionPenaltyConfig?,
     maxOutputToken: Int,
     thinkingConfig: ThinkingConfig?,
   ): String
