@@ -65,6 +65,9 @@ typedef struct LiteRtLmRepetitionPenaltyConfig LiteRtLmRepetitionPenaltyConfig;
 // Opaque pointer for the LiteRT LM No Repeat Ngram Config.
 typedef struct LiteRtLmNoRepeatNgramConfig LiteRtLmNoRepeatNgramConfig;
 
+// Opaque pointer for the LiteRT LM Suppress Tokens Config.
+typedef struct LiteRtLmSuppressTokensConfig LiteRtLmSuppressTokensConfig;
+
 // Opaque pointer for the LiteRT LM Thinking Config.
 typedef struct LiteRtLmThinkingConfig LiteRtLmThinkingConfig;
 
@@ -428,6 +431,39 @@ LITERT_LM_C_API_EXPORT
 void litert_lm_no_repeat_ngram_config_set_window_size(
     LiteRtLmNoRepeatNgramConfig* config, int window_size);
 
+// Creates a LiteRT LM Suppress Tokens Config with default values (an empty set
+// of suppressed tokens, which means token suppression is disabled).
+//
+// When `suppress_tokens` is configured with one or more token IDs, the logits
+// corresponding to those exact token IDs will be set directly to -inf during
+// generation. This guarantees that those tokens can never be sampled by the
+// model.
+//
+// The caller is responsible for destroying the config using
+// `litert_lm_suppress_tokens_config_delete`.
+// @return A pointer to the created config, or NULL on failure.
+LITERT_LM_C_API_EXPORT
+LiteRtLmSuppressTokensConfig* litert_lm_suppress_tokens_config_create();
+
+// Destroys a LiteRT LM Suppress Tokens Config.
+// @param config The config to destroy.
+LITERT_LM_C_API_EXPORT
+void litert_lm_suppress_tokens_config_delete(
+    LiteRtLmSuppressTokensConfig* config);
+
+// Sets the list of token IDs to suppress for the suppress tokens config.
+// @param config The config to modify.
+// @param suppress_tokens An array of integer token IDs that should be banned
+// from generation. During every decode step, each listed token ID's candidate
+// logit will be forced to -inf. If `suppress_tokens` is NULL or `num_tokens` is
+// 0, any previously set suppressed tokens are cleared and token suppression is
+// disabled.
+// @param num_tokens The number of token IDs in the `suppress_tokens` array.
+LITERT_LM_C_API_EXPORT
+void litert_lm_suppress_tokens_config_set_suppress_tokens(
+    LiteRtLmSuppressTokensConfig* config, const int* suppress_tokens,
+    size_t num_tokens);
+
 // Creates a LiteRT LM Conversation Optional Args. The caller is responsible
 // for destroying the optional args using
 // `litert_lm_conversation_optional_args_delete`.
@@ -478,6 +514,25 @@ LITERT_LM_C_API_EXPORT
 void litert_lm_conversation_optional_args_set_no_repeat_ngram_config(
     LiteRtLmConversationOptionalArgs* optional_args,
     const LiteRtLmNoRepeatNgramConfig* no_repeat_ngram_config);
+
+// Sets the suppress tokens configuration for the per-turn conversation
+// optional arguments (`OptionalArgs`).
+//
+// The configured list of suppressed tokens applies exclusively to the output
+// sequence generated during the current `send_message` or
+// `send_message_async` call.
+//
+// @param optional_args The optional arguments structure (`OptionalArgs`) to
+// modify.
+// @param suppress_tokens_config The suppress tokens configuration struct
+// (`LiteRtLmSuppressTokensConfig`) created via
+// `litert_lm_suppress_tokens_config_create`. The contents are deep-copied when
+// set. If NULL or if the inner token set is disabled/empty, clears any
+// previously set suppress tokens config so no token suppression applies.
+LITERT_LM_C_API_EXPORT
+void litert_lm_conversation_optional_args_set_suppress_tokens_config(
+    LiteRtLmConversationOptionalArgs* optional_args,
+    const LiteRtLmSuppressTokensConfig* suppress_tokens_config);
 
 // Sets the visual token budget for the conversation optional args.
 // @param optional_args The optional args to modify.

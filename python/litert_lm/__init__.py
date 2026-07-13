@@ -37,6 +37,7 @@ from .interfaces import NoRepeatNgramConfig
 from .interfaces import RepetitionPenaltyConfig
 from .interfaces import Responses
 from .interfaces import SamplerConfig
+from .interfaces import SuppressTokensConfig
 from .interfaces import ThinkingConfig
 from .interfaces import Tool
 from .interfaces import ToolEventHandler
@@ -66,6 +67,7 @@ __all__ = (
     "Role",
     "SamplerConfig",
     "Session",
+    "SuppressTokensConfig",
     "ThinkingConfig",
     "Tool",
     "ToolCall",

@@ -382,6 +382,16 @@ def _setup_lib_signatures(lib):
       ctypes.c_int,
   ]
 
+  # Suppress Tokens Config
+  lib.litert_lm_suppress_tokens_config_create.restype = ctypes.c_void_p
+  lib.litert_lm_suppress_tokens_config_create.argtypes = []
+  lib.litert_lm_suppress_tokens_config_delete.argtypes = [ctypes.c_void_p]
+  lib.litert_lm_suppress_tokens_config_set_suppress_tokens.argtypes = [
+      ctypes.c_void_p,
+      ctypes.POINTER(ctypes.c_int),
+      ctypes.c_size_t,
+  ]
+
   # Thinking Config
   lib.litert_lm_thinking_config_create.restype = ctypes.c_void_p
   lib.litert_lm_thinking_config_create.argtypes = []
@@ -404,6 +414,10 @@ def _setup_lib_signatures(lib):
       ctypes.c_void_p,
   ]
   lib.litert_lm_conversation_optional_args_set_no_repeat_ngram_config.argtypes = [
+      ctypes.c_void_p,
+      ctypes.c_void_p,
+  ]
+  lib.litert_lm_conversation_optional_args_set_suppress_tokens_config.argtypes = [
       ctypes.c_void_p,
       ctypes.c_void_p,
   ]

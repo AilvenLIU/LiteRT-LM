@@ -33,6 +33,7 @@ exports_files([
 ENGINE_COMMON_DEPS = [
     "@com_google_absl//absl/base:core_headers",
     "@com_google_absl//absl/base:log_severity",
+    "@com_google_absl//absl/container:flat_hash_set",
     "@com_google_absl//absl/functional:any_invocable",
     "@com_google_absl//absl/log:absl_log",
     "@com_google_absl//absl/log:initialize",
@@ -46,6 +47,7 @@ ENGINE_COMMON_DEPS = [
     "@litert//support/tokenizer",
     "//runtime/components/logits_processor:no_repeat_ngram_config",
     "//runtime/components/logits_processor:repetition_penalty_config",
+    "//runtime/components/logits_processor:suppress_tokens_config",
     "//runtime/conversation",
     "//runtime/conversation:io_types",
     "//runtime/conversation:thinking_config",
@@ -117,6 +119,7 @@ cc_test(
         "@nlohmann_json//:json",
         "//runtime/components/logits_processor:no_repeat_ngram_config",
         "//runtime/components/logits_processor:repetition_penalty_config",
+        "//runtime/components/logits_processor:suppress_tokens_config",
         "//runtime/conversation",
         "//runtime/conversation:io_types",
         "//runtime/conversation:thinking_config",
