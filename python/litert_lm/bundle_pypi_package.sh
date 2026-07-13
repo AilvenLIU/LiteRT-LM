@@ -60,7 +60,7 @@ for PY_VER in "3.10" "3.11" "3.12" "3.13" "3.14"; do
   cd "${TEST_VENV}"
 
   # Execute our standalone checked-in verification script directly
-  ${PY_EXE} "${WORKSPACE_ROOT}/python/litert_lm/verify_api.py"
+  ${PY_EXE} "${WORKSPACE_ROOT}/python/litert_lm/api_test.py"
 
   # Return to workspace root for next step
   cd "${WORKSPACE_ROOT}"

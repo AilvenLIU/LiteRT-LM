@@ -16,8 +16,7 @@
 
 import pathlib
 import re
-import urllib.error
-import urllib.request
+import subprocess
 import litert_lm
 
 
@@ -208,12 +207,53 @@ def main():
   target_model = model_dir / "gemma-4-E2B-it.litertlm"
 
   if not target_model.exists():
-    model_url = (
+    gcs_url = "gs://litert-lm-api/models/gemma-4-E2B-it.litertlm"
+    print(f"⏬ Downloading verification model from {gcs_url}...")
+    gcs_http_url = (
+        "https://storage.googleapis.com/litert-lm-api/models/gemma-4-E2B-it.litertlm"
+    )
+    hf_url = (
         "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/"
         "resolve/main/gemma-4-E2B-it.litertlm"
     )
-    print(f"⏬ Downloading verification model from {model_url}...")
-    urllib.request.urlretrieve(model_url, target_model)
+    cmds = [
+        ("gcs url", ["gcloud", "storage", "cp", gcs_url, str(target_model)]),
+        (
+            "http url",
+            [
+                "curl",
+                "-fL",
+                "--retry",
+                "5",
+                gcs_http_url,
+                "-o",
+                str(target_model),
+            ],
+        ),
+        (
+            "hf url",
+            ["curl", "-fL", "--retry", "5", hf_url, "-o", str(target_model)],
+        ),
+    ]
+    for source_name, cmd in cmds:
+      print(f"Downloading model using {source_name}...")
+      if (
+          subprocess.run(
+              cmd,
+              check=False,
+              stdout=subprocess.DEVNULL,
+              stderr=subprocess.DEVNULL,
+          ).returncode
+          == 0
+      ):
+        break
+    else:
+      if target_model.exists():
+        target_model.unlink(missing_ok=True)
+      raise RuntimeError(
+          f"Failed to download verification model from GCS: {gcs_url}"
+      )
+
     size_mb = target_model.stat().st_size // (1024 * 1024)
     print(f"✅ Model downloaded successfully ({size_mb} MB)")
 
