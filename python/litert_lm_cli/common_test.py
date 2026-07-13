@@ -96,11 +96,24 @@ class CommonInferenceOptionsTest(parameterized.TestCase):
     result = runner.invoke(dummy_cmd, ['--enable-speculative-decoding', 'true'])
     self.assertEqual(result.exit_code, 0)
     self.assertIn('speculative_decoding: True', result.output)
+    self.assertIn(
+        "Warning: '--enable-speculative-decoding' is deprecated",
+        result.output,
+    )
 
     # Test uppercase (verifies case_sensitive=False)
     result = runner.invoke(dummy_cmd, ['--enable-speculative-decoding', 'TRUE'])
     self.assertEqual(result.exit_code, 0)
     self.assertIn('speculative_decoding: True', result.output)
+    self.assertIn(
+        "Warning: '--enable-speculative-decoding' is deprecated",
+        result.output,
+    )
+
+    # Test hidden from --help
+    result = runner.invoke(dummy_cmd, ['--help'])
+    self.assertEqual(result.exit_code, 0)
+    self.assertNotIn('--enable-speculative-decoding', result.output)
 
     # Test invalid value
     result = runner.invoke(
@@ -109,6 +122,47 @@ class CommonInferenceOptionsTest(parameterized.TestCase):
     self.assertNotEqual(result.exit_code, 0)
     self.assertIn(
         "Error: Invalid value for '--enable-speculative-decoding'",
+        result.output,
+    )
+
+  def test_speculative_decoding_options(self):
+    @click.command()
+    @common.common_inference_options
+    def dummy_cmd(**kwargs):
+      click.echo(f"speculative_decoding: {kwargs.get('speculative_decoding')}")
+
+    runner = CliRunner()
+
+    # Flag mode (no value)
+    result = runner.invoke(dummy_cmd, ['--speculative-decoding'])
+    self.assertEqual(result.exit_code, 0)
+    self.assertIn('speculative_decoding: True', result.output)
+
+    # Choice true mode (lowercase)
+    result = runner.invoke(dummy_cmd, ['--speculative-decoding', 'true'])
+    self.assertEqual(result.exit_code, 0)
+    self.assertIn('speculative_decoding: True', result.output)
+
+    # Choice true mode (uppercase, case insensitive)
+    result = runner.invoke(dummy_cmd, ['--speculative-decoding', 'TRUE'])
+    self.assertEqual(result.exit_code, 0)
+    self.assertIn('speculative_decoding: True', result.output)
+
+    # Choice false mode
+    result = runner.invoke(dummy_cmd, ['--speculative-decoding', 'false'])
+    self.assertEqual(result.exit_code, 0)
+    self.assertIn('speculative_decoding: False', result.output)
+
+    # Not set mode (default is None)
+    result = runner.invoke(dummy_cmd, [])
+    self.assertEqual(result.exit_code, 0)
+    self.assertIn('speculative_decoding: None', result.output)
+
+    # Invalid value
+    result = runner.invoke(dummy_cmd, ['--speculative-decoding', 'invalid'])
+    self.assertNotEqual(result.exit_code, 0)
+    self.assertIn(
+        "Error: Invalid value for '--speculative-decoding'",
         result.output,
     )
 

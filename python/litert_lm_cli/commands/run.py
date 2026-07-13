@@ -179,6 +179,7 @@ def run_interactive(
     backend: str | None = None,
     preset: str | None = None,
     prompt: str | None = None,
+    speculative_decoding: bool | None = None,
     enable_speculative_decoding: bool | None = None,
     no_template: bool = False,
     max_num_tokens: int | None = None,
@@ -198,6 +199,9 @@ def run_interactive(
     activation_data_type: litert_lm.ActivationDataType | None = None,
 ) -> None:
   """Runs the model interactively or with a single prompt."""
+  if speculative_decoding is None:
+    speculative_decoding = enable_speculative_decoding
+
   if not model_obj.exists():
     click.echo(
         click.style(
@@ -262,7 +266,7 @@ def run_interactive(
       engine_cm = litert_lm.Engine(
           model_obj.model_path,
           backend=backend_val,
-          enable_speculative_decoding=enable_speculative_decoding,
+          enable_speculative_decoding=speculative_decoding,
           max_num_tokens=max_num_tokens,
           max_num_images=max_num_images,
           vision_backend=vision_backend_val,
@@ -430,9 +434,12 @@ def run_interactive(
     help="Whether to filter channel content from the KV cache.",
 )
 @click.option(
-    "--thinking/--no-thinking",
-    is_flag=True,
+    "--thinking",
+    is_flag=False,
+    flag_value="true",
+    type=click.Choice(["true", "false"], case_sensitive=False),
     default=None,
+    callback=common.parse_bool_opt,
     help=(
         "Whether to enable thinking/reasoning generation. If set to true"
         " without specifying --thinking-budget, the budget defaults to -1"
@@ -519,6 +526,7 @@ def run(
     preset: str | None = None,
     backend: str | None = None,
     android: bool = False,
+    speculative_decoding: bool | None = None,
     enable_speculative_decoding: bool | None = None,
     verbose: bool = False,
     no_template: bool = False,
@@ -550,6 +558,8 @@ def run(
       instructions.
     backend: The backend to use (cpu or gpu).
     android: Run on Android via ADB.
+    speculative_decoding: Speculative decoding mode (True, False, or None for
+      auto).
     enable_speculative_decoding: Speculative decoding mode (True, False, or None
       for auto).
     verbose: Whether to enable verbose logging.
@@ -574,6 +584,9 @@ def run(
     cpu_thread_count: The number of threads to use for CPU backend.
     activation_data_type: The activation data type to use for inference.
   """
+  if speculative_decoding is None:
+    speculative_decoding = enable_speculative_decoding
+
   if attachment and no_template:
     click.echo(
         click.style(
@@ -662,7 +675,7 @@ def run(
       is_android=android,
       backend=backend,
       preset=preset,
-      enable_speculative_decoding=enable_speculative_decoding,
+      enable_speculative_decoding=speculative_decoding,
       no_template=no_template,
       max_num_tokens=max_num_tokens,
       max_num_images=max_num_images,

@@ -23,8 +23,8 @@ import textwrap
 import click
 
 
-def parse_speculative_decoding(unused_ctx, unused_param, value):
-  """Click callback to parse speculative decoding mode strings into bool | None.
+def parse_bool_opt(unused_ctx, unused_param, value):
+  """Click callback to parse boolean option strings into bool | None.
 
   Args:
     unused_ctx: The click context.
@@ -36,12 +36,34 @@ def parse_speculative_decoding(unused_ctx, unused_param, value):
   """
   if value is None:
     return None
-  value_lower = value.lower()
+  if isinstance(value, bool):
+    return value
+  value_lower = str(value).lower()
   if value_lower == "true":
     return True
   elif value_lower == "false":
     return False
   return value
+
+
+def parse_deprecated_speculative_decoding(unused_ctx, unused_param, value):
+  """Click callback for deprecated --enable-speculative-decoding option."""
+  if value is not None and (
+      unused_ctx is None or not unused_ctx.resilient_parsing
+  ):
+    click.echo(
+        click.style(
+            "Warning: '--enable-speculative-decoding' is deprecated and will"
+            " be removed in the future. Please use '--speculative-decoding'"
+            " instead.",
+            fg="yellow",
+        ),
+        err=True,
+    )
+  return parse_bool_opt(unused_ctx, unused_param, value)
+
+
+parse_speculative_decoding = parse_bool_opt
 
 
 def cache_dir_value_from_cache_mode(cache: str | None) -> str:
@@ -114,6 +136,22 @@ def common_inference_options(f):
       "--enable-speculative-decoding",
       type=click.Choice(["true", "false"], case_sensitive=False),
       default=None,
+      deprecated=True,
+      hidden=True,
+      callback=parse_deprecated_speculative_decoding,
+      help=textwrap.dedent("""\
+          \b
+          Speculative decoding mode ("true", "false"). If not set, use the model's configured value.
+            - true: Force enable speculative decoding. It will throw an error if the model does not support it.
+            - false: Force disable speculative decoding.
+          """),
+  )(f)
+  f = click.option(
+      "--speculative-decoding",
+      is_flag=False,
+      flag_value="true",
+      type=click.Choice(["true", "false"], case_sensitive=False),
+      default=None,
       callback=parse_speculative_decoding,
       help=textwrap.dedent("""\
           \b
@@ -122,6 +160,7 @@ def common_inference_options(f):
             - false: Force disable speculative decoding.
           """),
   )(f)
+
   f = click.option(
       "--backend",
       type=click.Choice(["cpu", "gpu", "npu"], case_sensitive=False),

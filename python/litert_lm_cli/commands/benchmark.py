@@ -41,6 +41,7 @@ def run_benchmark(
     decode_tokens: int = 256,
     is_android: bool = False,
     backend: str | None = None,
+    speculative_decoding: bool | None = None,
     enable_speculative_decoding: bool | None = None,
     max_num_tokens: int | None = None,
     cache: str | None = None,
@@ -48,6 +49,9 @@ def run_benchmark(
     activation_data_type: litert_lm.ActivationDataType | None = None,
 ) -> None:
   """Benchmarks the model."""
+  if speculative_decoding is None:
+    speculative_decoding = enable_speculative_decoding
+
   if not model_obj.exists():
     click.echo(
         click.style(
@@ -83,7 +87,7 @@ def run_benchmark(
           prefill_tokens=prefill_tokens,
           decode_tokens=decode_tokens,
           cache_dir=cache_dir_val,
-          enable_speculative_decoding=enable_speculative_decoding,
+          enable_speculative_decoding=speculative_decoding,
           max_num_tokens=max_num_tokens,
           activation_data_type=activation_data_type,
       )
@@ -99,10 +103,8 @@ def run_benchmark(
       click.echo(f"Max number of tokens       : {max_num_tokens}")
 
     spec_dec_str = "auto"
-    if enable_speculative_decoding is True:
-      spec_dec_str = "true"
-    elif enable_speculative_decoding is False:
-      spec_dec_str = "false"
+    if speculative_decoding is not None:
+      spec_dec_str = "true" if speculative_decoding else "false"
     click.echo(f"Cache                      : {cache or 'disk'}")
     click.echo(f"Speculative decoding       : {spec_dec_str}")
     if is_android:
@@ -174,6 +176,7 @@ def benchmark(
     decode_tokens: int = 256,
     backend: str | None = None,
     android: bool = False,
+    speculative_decoding: bool | None = None,
     enable_speculative_decoding: bool | None = None,
     verbose: bool = False,
     from_huggingface_repo: str | None = None,
@@ -193,6 +196,8 @@ def benchmark(
     decode_tokens: The number of tokens to decode.
     backend: The backend to use (cpu, gpu or npu).
     android: Run on Android via ADB.
+    speculative_decoding: Speculative decoding mode (True, False, or None for
+      auto).
     enable_speculative_decoding: Speculative decoding mode (True, False, or None
       for auto).
     verbose: Whether to enable verbose logging.
@@ -203,6 +208,9 @@ def benchmark(
     cpu_thread_count: The number of threads to use for CPU backend.
     activation_data_type: The activation data type to use for inference.
   """
+  if speculative_decoding is None:
+    speculative_decoding = enable_speculative_decoding
+
   if verbose:
     litert_lm.set_min_log_severity(litert_lm.LogSeverity.VERBOSE)
 
@@ -232,7 +240,7 @@ def benchmark(
       decode_tokens=decode_tokens,
       is_android=android,
       backend=backend,
-      enable_speculative_decoding=enable_speculative_decoding,
+      enable_speculative_decoding=speculative_decoding,
       max_num_tokens=max_num_tokens,
       cache=cache,
       cpu_thread_count=cpu_thread_count,
