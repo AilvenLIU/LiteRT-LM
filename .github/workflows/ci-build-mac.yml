@@ -42,8 +42,8 @@ jobs:
       actions: write  # For gh cache delete.
       contents: write  # For gh release upload.
     env:
-      MODEL_KEY: gemma-4-E2B-it-litert-lm
-      MODEL_PATH: ./models/gemma-4-E2B-it-litert-lm.litertlm
+      MODEL_KEY: gemma-4-E2B-it.litertlm
+      MODEL_PATH: ./models/gemma4
       MODEL_URL: https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm
 
       GH_TOKEN: ${{ github.token }}  # For gh release upload.
@@ -103,10 +103,9 @@ jobs:
         run: |
           mkdir -p ./models
           echo "Downloading model from Hugging Face..."
-          curl -L --retry 5 -f \
-            -H "Authorization: Bearer $HF_TOKEN" \
-            -o ${{ env.MODEL_PATH }} \
-            "${{ env.MODEL_URL }}"
+          wget -nv --header="Authorization: Bearer $HF_TOKEN" \
+               -O ${{ env.MODEL_PATH }} \
+               "${{ env.MODEL_URL }}"
           ls -lh ${{ env.MODEL_PATH }}
 
       - name: Install Rust
@@ -146,14 +145,15 @@ jobs:
           cp bazel-bin/runtime/engine/litert_lm_main litert_lm_main.macos_arm64
           gh release upload ${GITHUB_REF_NAME} litert_lm_main.macos_arm64 --clobber
 
-
       - name: Install pytest
         run: python3 -m pip install --break-system-packages pytest==8.3.4
 
       - name: Run pytest
-        run: pytest tools/pytest/ --model-path=${{ env.MODEL_PATH }} --build-system=bazel
+        run: pytest tools/pytest/ \
+          --model-path=${{ env.MODEL_PATH }}/${{ env.MODEL_KEY }}/${{ env.MODEL_KEY }} \
+          --build-system=bazel
 
-      # TODO(totero): Re-enable this step once the bug is fixed.
+      # TODO(b/534469170): Re-enable this step once Download model is integrated with GCP.
       # - name: Run bazel build for iOS Simulator.
       #   run: |
 

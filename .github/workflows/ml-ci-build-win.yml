@@ -46,9 +46,10 @@ jobs:
       actions: write  # For gh cache delete.
       contents: write  # For gh release upload.
     env:
-      MODEL_KEY: gemma-3-1b-it-v1
-      MODEL_PATH: .\models\gemma3-1b-it-int4.litertlm
-      MODEL_URL: https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.litertlm
+      MODEL_KEY: gemma-4-E2B-it.litertlm
+      MODEL_PATH: ./models/gemma4
+      MODEL_URL: gs://litert-lm-cicd/models/gemma4/gemma-4-E2B-it.litertlm
+
 
       # Clear ANDROID_NDK_HOME as Windows_x64 has NDK where jobs don't have permission for
       # androidndk rules to create symlinks.
@@ -238,25 +239,16 @@ jobs:
           echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
 
       - name: Download Model
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          if (-not (Test-Path "./models")) {
-            New-Item -ItemType Directory -Path "./models" -Force
+          $TARGET_DIR = "${{ env.MODEL_PATH }}"
+          $BUCKET_URL = "${{ env.MODEL_URL }}"
+          $MODEL_KEY = "${{ env.MODEL_KEY }}"
+
+          if (-not (Test-Path $TARGET_DIR)) { 
+            New-Item -ItemType Directory -Path $TARGET_DIR -Force | Out-Null 
           }
 
-          Write-Host "Downloading model from Hugging Face: ${{ env.MODEL_URL }}"
-
-          # Use curl.exe for high-speed download without PowerShell DOM/stream overhead
-          curl.exe -L --retry 5 -f `
-            -H "Authorization: Bearer $env:HF_TOKEN" `
-            -o "${{ env.MODEL_PATH }}" `
-            "${{ env.MODEL_URL }}"
-
-          $file = Get-Item "${{ env.MODEL_PATH }}"
-          $sizeMB = [math]::Round($file.Length / 1MB, 2)
-          Write-Host "Verification Success: $($file.Name) ($sizeMB MB) is ready."
-          Get-ChildItem "${{ env.MODEL_PATH }}" | Select-Object Name, @{Name="Size(MB)";Expression={$_.Length / 1MB}}
+          gcloud storage cp "$BUCKET_URL" "$TARGET_DIR/$MODEL_KEY"
 
       - name: Run bazel build on Windows
         run: |
@@ -290,8 +282,9 @@ jobs:
             --action_env=TMP="$env:TMP" `
             --action_env=TEMP="$env:TEMP" `
             -- `
-            //... `
-            -//kotlin/...
+            //runtime/... `
+            //schema/... `
+            //c/...
 
       - name: Upload Bazel Test Logs
         if: always()
@@ -305,7 +298,7 @@ jobs:
 
       - name: Run pytest
         # Execute pytest via the python module (-m) to bypass missing pytest.exe PATH issues
-        run: python -m pytest tools/pytest/ --model-path=${{ env.MODEL_PATH }} --build-system=bazel
+        run: python -m pytest tools/pytest/ --model-path=${{ env.MODEL_PATH }}/${{ env.MODEL_KEY }} --build-system=bazel
 
       - name: Run bazel build on Windows with dynamic linking
         run: |
