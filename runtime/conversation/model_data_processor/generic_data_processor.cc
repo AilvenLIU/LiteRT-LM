@@ -15,6 +15,7 @@
 #include "runtime/conversation/model_data_processor/generic_data_processor.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -31,6 +32,7 @@
 #include "runtime/conversation/model_data_processor/generic_data_processor_config.h"
 #include "runtime/conversation/model_data_processor/model_data_processor.h"
 #include "runtime/conversation/model_data_processor/multimodal_processor_helper.h"
+#include "runtime/conversation/prompt_utils.h"
 #include "runtime/engine/io_types.h"
 #include "runtime/util/status_macros.h"
 
@@ -111,6 +113,18 @@ GenericDataProcessor::MessageToTemplateInput(
   } else {
     return message;
   }
+}
+
+absl::StatusOr<ModelDataProcessor::SingleTurnTemplateRenderResult>
+GenericDataProcessor::RenderSingleTurnTemplate(
+    std::vector<Message>& history, const Preface& preface,
+    const Message& message, const PromptTemplate& prompt_template,
+    bool current_is_appending_message, bool append_message,
+    std::optional<nlohmann::ordered_json> extra_context) const {
+  return RenderSingleTurnTemplateCommon(
+      *this, history, preface, message, prompt_template,
+      current_is_appending_message, append_message, extra_context,
+      /*push_dummy_user_message_to_preface=*/false);
 }
 
 absl::Status GenericDataProcessor::CloneStateImpl(
