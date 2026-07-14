@@ -102,7 +102,11 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           mkdir -p ./models
-          echo "Downloading model from Hugging Face..."
+          if [ -z "$HF_TOKEN" ]; then
+            echo "Warning: HF_TOKEN is empty (unauthenticated external PR or missing secret). Skipping gated model download on macOS..."
+            exit 0
+          fi
+          echo "Downloading model across Hugging Face..."
           curl --http1.1 -L -C - --retry 5 --retry-delay 3 --retry-all-errors -f \
             --oauth2-bearer "$HF_TOKEN" \
             -o ${{ env.MODEL_PATH }} \
@@ -151,7 +155,12 @@ jobs:
         run: python3 -m pip install --break-system-packages pytest==8.3.4
 
       - name: Run pytest
-        run: pytest tools/pytest/ --model-path=${{ env.MODEL_PATH }} --build-system=bazel
+        run: |
+          if [ -f "${{ env.MODEL_PATH }}" ]; then
+            pytest tools/pytest/ --model-path=${{ env.MODEL_PATH }} --build-system=bazel
+          else
+            echo "Skipping pytest on macOS because model file ${{ env.MODEL_PATH }} is not downloaded (unauthenticated PR)."
+          fi
 
       # TODO(totero): Re-enable this step once the bug is fixed.
       # - name: Run bazel build for iOS Simulator.
