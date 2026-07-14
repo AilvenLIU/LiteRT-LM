@@ -51,15 +51,17 @@ public class Conversation {
 
   private var handle: CConversationHandle?
   private let toolManager: ToolManager
+  private let engine: Engine
 
   /// Whether the conversation is alive and ready to be used.
   public var isAlive: Bool {
     return handle != nil
   }
 
-  init(handle: CConversationHandle, toolManager: ToolManager) {
+  init(handle: CConversationHandle, toolManager: ToolManager, engine: Engine) {
     self.handle = handle
     self.toolManager = toolManager
+    self.engine = engine
   }
 
   deinit {
