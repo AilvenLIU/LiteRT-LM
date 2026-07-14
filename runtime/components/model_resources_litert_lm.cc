@@ -216,4 +216,17 @@ ModelResourcesLitertLm::GetWeightsSectionOffset(ModelType model_type) {
       BufferKey(schema::AnySectionDataType_TFLiteWeights, model_type));
 }
 
+absl::StatusOr<FileRegion>
+ModelResourcesLitertLm::GetTFLiteModelSectionFileRegion(
+    ModelType model_type) {
+  LITERT_ASSIGN_OR_RETURN(
+      auto location,
+      litert_lm_loader_->GetSectionLocation(
+          BufferKey(schema::AnySectionDataType_TFLiteModel, model_type)));
+  return FileRegion{
+      .offset = location.first,
+      .size = location.second - location.first,
+  };
+}
+
 }  // namespace litert::lm

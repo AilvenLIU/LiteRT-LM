@@ -498,6 +498,12 @@ class TfLiteModelResources : public ModelResources {
     return absl::UnimplementedError("GetWeightsSectionOffset not implemented.");
   }
 
+  absl::StatusOr<FileRegion> GetTFLiteModelSectionFileRegion(
+      ModelType model_type) override {
+    return absl::UnimplementedError(
+        "GetTFLiteModelSectionFileRegion not implemented.");
+  }
+
  private:
   Model model_;
   bool with_mtp_drafter_;

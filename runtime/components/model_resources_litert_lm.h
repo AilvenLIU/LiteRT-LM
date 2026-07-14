@@ -65,6 +65,10 @@ class ModelResourcesLitertLm : public ModelResources {
   absl::StatusOr<std::pair<size_t, size_t>> GetWeightsSectionOffset(
       ModelType model_type) override;
 
+  // Returns the TFLite model section files region.
+  absl::StatusOr<FileRegion>
+  GetTFLiteModelSectionFileRegion(ModelType model_type) override;
+
  protected:
   explicit ModelResourcesLitertLm(
       std::unique_ptr<LitertLmLoader> litert_lm_loader,

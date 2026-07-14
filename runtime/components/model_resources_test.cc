@@ -202,6 +202,39 @@ TEST(ModelResourcesTest, GetTFLiteModelNotFoundTask) {
 }
 #endif  // ENABLE_SENTENCEPIECE_TOKENIZER
 
+TEST(ModelResourcesTest, GetTFLiteModelSectionFileRegion) {
+  const auto model_path =
+      std::filesystem::path(::testing::SrcDir()) /
+      "litert_lm/runtime/testdata/test_lm.litertlm";
+  ASSERT_OK_AND_ASSIGN(auto model_file, ScopedFile::Open(model_path.string()));
+  ASSERT_OK_AND_ASSIGN(auto loader,
+                       LitertLmLoader::Create(std::move(model_file)));
+
+  ASSERT_OK_AND_ASSIGN(auto model_resources,
+                       ModelResourcesLitertLm::Create(std::move(loader)));
+
+  // Success case: model is present.
+  ASSERT_OK_AND_ASSIGN(
+      auto file_region,
+      model_resources->GetTFLiteModelSectionFileRegion(
+          ModelType::kTfLitePrefillDecode));
+  EXPECT_GT(file_region.offset, 0);
+  EXPECT_GT(file_region.size, 0);
+
+  // Compare with the size from GetTFLiteModelBuffer.
+  ASSERT_OK_AND_ASSIGN(
+      auto model_buffer,
+      model_resources->GetTFLiteModelBuffer(
+          ModelType::kTfLitePrefillDecode));
+  EXPECT_EQ(file_region.size, model_buffer.size());
+
+  // Error case: model type not found in the loader.
+  EXPECT_THAT(
+      model_resources->GetTFLiteModelSectionFileRegion(
+          ModelType::kTfLiteEmbedder),
+      testing::status::StatusIs(absl::StatusCode::kNotFound));
+}
+
 TEST(ModelTypeConversionTest, StringToModelType) {
   auto result = StringToModelType("tf_lite_prefill_decode");
   ASSERT_OK(result);

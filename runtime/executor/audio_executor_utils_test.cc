@@ -86,6 +86,10 @@ class FakeModelResources : public ModelResources {
   absl::StatusOr<const proto::LlmMetadata*> GetLlmMetadata() override {
     return absl::UnimplementedError("");
   }
+  absl::StatusOr<FileRegion> GetTFLiteModelSectionFileRegion(
+      ModelType model_type) override {
+    return absl::UnimplementedError("");
+  }
 
  private:
   const litert::Model* encoder_;

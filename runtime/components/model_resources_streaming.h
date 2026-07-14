@@ -60,6 +60,9 @@ class ModelResourcesStreaming : public ModelResources {
   absl::StatusOr<std::unique_ptr<Tokenizer>> GetTokenizer() override;
 
   absl::StatusOr<const proto::LlmMetadata*> GetLlmMetadata() override;
+
+  absl::StatusOr<FileRegion> GetTFLiteModelSectionFileRegion(
+      ModelType model_type) override;
 };
 
 }  // namespace litert::lm

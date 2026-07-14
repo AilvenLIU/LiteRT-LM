@@ -67,6 +67,13 @@ class ModelResourcesTask : public ModelResources {
     return absl::UnimplementedError(
         "GetWeightsSectionOffset is not implemented for Task model.");
   }
+  absl::StatusOr<FileRegion> GetTFLiteModelSectionFileRegion(
+      ModelType model_type) override {
+    return absl::UnimplementedError(
+        "GetTFLiteModelSectionFileRegion is not implemented for Task "
+        "model.");
+  }
+
 
  private:
   explicit ModelResourcesTask(

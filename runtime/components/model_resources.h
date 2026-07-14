@@ -147,6 +147,13 @@ inline std::string ModelTypeToString(ModelType model_type) {
   }
 }
 
+
+// Describes the location of a contiguous region of bytes in a file.
+struct FileRegion {
+  size_t offset;
+  size_t size;
+};
+
 // ModelResources is an interface that manages all the loaded model resources
 // that need to be hold to avoid the model being destroyed. It provides a way
 // to load the models in a lazy way.
@@ -182,6 +189,10 @@ class ModelResources {
   // Returns the section start offset and end offset.
   virtual absl::StatusOr<std::pair<size_t, size_t>> GetWeightsSectionOffset(
       ModelType model_type) = 0;
+
+  // Returns the region of the requested ModelType in the ModelResources.
+  virtual absl::StatusOr<FileRegion>
+  GetTFLiteModelSectionFileRegion(ModelType model_type) = 0;
 
   // Returns the TFLite model backend constraint. When there is no constraint
   // for the given model type, it will return an nullopt.
