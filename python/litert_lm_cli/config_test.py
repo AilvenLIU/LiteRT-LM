@@ -270,6 +270,19 @@ class ConfigTest(parameterized.TestCase):
     self.assertEqual(result.vision_backend, "gpu")
     self.assertEqual(result.temperature, 0.2)
 
+  def test_get_config_unknown_key_ignored(self):
+    self._write_config(
+        '{"unknown_top_level": 999, "default": {"backend": "gpu",'
+        ' "unknown_field": 123}}'
+    )
+    app_cfg = config.load_config()
+    self.assertEqual(
+        app_cfg,
+        config.AppConfig(
+            default=config.ModelConfig(backend="gpu"),
+        ),
+    )
+
 
 if __name__ == "__main__":
   absltest.main()

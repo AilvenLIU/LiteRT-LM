@@ -13,7 +13,7 @@
       }
     }
   },
-  "additionalProperties": false,
+  "additionalProperties": true,
   "definitions": {
     "ModelConfig": {
       "type": "object",
@@ -62,7 +62,7 @@
           "type": "boolean"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     }
   }
 }
