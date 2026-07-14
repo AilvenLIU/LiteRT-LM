@@ -737,6 +737,41 @@ class MainTest(absltest.TestCase):
   @unittest.mock.patch(
       "litert_lm_cli.model.Model.from_model_reference"
   )
+  def test_unpack_command_with_chat_template(
+      self, mock_from_model_ref, mock_builder_unpack
+  ):
+    mock_model = unittest.mock.MagicMock()
+    mock_from_model_ref.return_value = mock_model
+    mock_model.exists.return_value = True
+    mock_model.model_path = "/path/to/my-model/model.litertlm"
+    mock_builder_unpack.return_value = "/path/to/unpacked/model.toml"
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      result = runner.invoke(
+          main.cli,
+          [
+              "unpack",
+              "my-model",
+              "--output-dir",
+              "unpacked",
+              "--chat-template",
+              "out.jinja",
+          ],
+      )
+      self.assertEqual(result.exit_code, 0)
+      mock_builder_unpack.assert_called_once_with(
+          "/path/to/my-model/model.litertlm",
+          "unpacked",
+          jinja_prompt_template_path="out.jinja",
+      )
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.unpack"
+  )
+  @unittest.mock.patch(
+      "litert_lm_cli.model.Model.from_model_reference"
+  )
   def test_unpack_command_with_file_output_dir_fails(
       self, mock_from_model_ref, mock_builder_unpack
   ):
@@ -905,6 +940,37 @@ class MainTest(absltest.TestCase):
       expected_config = os.path.join(".", "model.toml")
       expected_out = os.path.abspath("out.litertlm")
       mock_builder_pack.assert_called_once_with(expected_config, expected_out)
+
+  @unittest.mock.patch(
+      "litert_lm_builder.litertlm_builder.pack"
+  )
+  def test_pack_command_with_chat_template(self, mock_builder_pack):
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+      with open("model.toml", "w") as f:
+        f.write('[[section]]\nsection_type = "TFLiteModel"')
+      with open("template.jinja", "w") as f:
+        f.write("custom jinja")
+      result = runner.invoke(
+          main.cli,
+          [
+              "pack",
+              ".",
+              "--output",
+              "out.litertlm",
+              "--chat-template",
+              "template.jinja",
+          ],
+      )
+      self.assertEqual(result.exit_code, 0)
+      expected_config = os.path.join(".", "model.toml")
+      expected_out = os.path.abspath("out.litertlm")
+      expected_jinja = "template.jinja"
+      mock_builder_pack.assert_called_once_with(
+          expected_config,
+          expected_out,
+          jinja_prompt_template_path=expected_jinja,
+      )
 
   @unittest.mock.patch(
       "litert_lm_builder.litertlm_builder.pack"

@@ -57,10 +57,21 @@ def _is_interactive() -> bool:
         " exists."
     ),
 )
+@click.option(
+    "--chat-template",
+    default=None,
+    type=click.Path(file_okay=True, dir_okay=False, path_type=str),
+    help=(
+        "Path to save the extracted jinja_prompt_template from LlmMetadata as"
+        " a Jinja file. Raises an error if jinja_prompt_template is missing in"
+        " the model."
+    ),
+)
 def unpack(
     model_reference: str,
     output_dir: str | None = None,
     allow_overwrite: bool = False,
+    chat_template: str | None = None,
 ):
   """Unpacks a LiteRT-LM file into an output directory.
 
@@ -72,10 +83,13 @@ def unpack(
       model_reference is a model file path.
     allow_overwrite: Whether to allow overwriting existing files inside
       output_dir.
+    chat_template: Optional path to save the unpacked jinja_prompt_template.
   """
   model_reference = os.path.expanduser(model_reference)
   if output_dir is not None:
     output_dir = os.path.expanduser(output_dir)
+  if chat_template is not None:
+    chat_template = os.path.expanduser(chat_template)
 
   is_local_file = os.path.exists(model_reference)
   model_obj = model.Model.from_model_reference(model_reference)
@@ -136,7 +150,14 @@ def unpack(
 
   try:
     os.makedirs(output_dir, exist_ok=True)
-    toml_path = litertlm_builder.unpack(model_obj.model_path, output_dir)
+    if chat_template is not None:
+      toml_path = litertlm_builder.unpack(
+          model_obj.model_path,
+          output_dir,
+          jinja_prompt_template_path=chat_template,
+      )
+    else:
+      toml_path = litertlm_builder.unpack(model_obj.model_path, output_dir)
     click.echo(
         click.style(
             f"Successfully unpacked {model_reference} into {output_dir}\n"

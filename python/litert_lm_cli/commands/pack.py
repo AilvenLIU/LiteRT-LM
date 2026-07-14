@@ -32,7 +32,6 @@ def _is_interactive() -> bool:
 @click.command(
     cls=help_formatter.ColorCommand,
     help=textwrap.dedent("""\
-        \b
         Packs a LiteRT-LM file using a TOML configuration file or a directory.
 
         Default output behaviors:
@@ -72,10 +71,20 @@ def _is_interactive() -> bool:
     default=False,
     help="Allow overwriting the output file if it already exists.",
 )
+@click.option(
+    "--chat-template",
+    default=None,
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=str),
+    help=(
+        "Path to a Jinja file. If provided, overwrites the"
+        " jinja_prompt_template field in LlmMetadata."
+    ),
+)
 def pack(
     config_or_dir: str = "model.toml",
     output: str | None = None,
     allow_overwrite: bool = False,
+    chat_template: str | None = None,
 ):
   """Packs a TOML configuration file or directory into a LiteRT-LM file.
 
@@ -85,8 +94,12 @@ def pack(
     output: Optional path to output .litertlm file. Defaults to inferred path
       from config file name or directory name.
     allow_overwrite: Whether to allow overwriting an existing output file.
+    chat_template: Optional path to a Jinja file to overwrite
+      jinja_prompt_template.
   """
   config_or_dir = os.path.expanduser(config_or_dir)
+  if chat_template is not None:
+    chat_template = os.path.expanduser(chat_template)
 
   if os.path.isfile(config_or_dir):
     config_path = config_or_dir
@@ -154,7 +167,12 @@ def pack(
       return
 
   try:
-    litertlm_builder.pack(config_path, output_path)
+    if chat_template is not None:
+      litertlm_builder.pack(
+          config_path, output_path, jinja_prompt_template_path=chat_template
+      )
+    else:
+      litertlm_builder.pack(config_path, output_path)
     click.echo(
         click.style(
             f"Successfully packed LiteRT-LM file to {output_path}", fg="green"

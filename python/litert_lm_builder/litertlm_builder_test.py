@@ -735,6 +735,73 @@ class LitertlmBuilderTest(parameterized.TestCase):
     self.assertEqual(res_path, packed_litertlm_path)
     self.assertTrue(os.path.exists(packed_litertlm_path))
 
+  def test_pack_and_unpack_with_jinja_path(self):
+    """Tests packing with jinja_prompt_template_path overwrites jinja_prompt_template and unpacking with jinja_prompt_template_path extracts it."""
+    llm_metadata_content = 'jinja_prompt_template: "original template"\n'
+    meta_path = self._create_dummy_file(
+        "metadata.pbtext", llm_metadata_content.encode()
+    )
+    jinja_input_path = self._create_dummy_file(
+        "input.jinja", b"overwritten jinja template"
+    )
+
+    builder = litertlm_builder.LitertLmFileBuilder()
+    self._add_system_metadata(builder)
+    tflite_path = self._create_dummy_file("model.tflite", b"dummy content")
+    builder.add_tflite_model(
+        tflite_path, litertlm_builder.TfLiteModelType.PREFILL_DECODE
+    )
+    builder.add_llm_metadata(meta_path)
+    orig_litertlm_path = os.path.join(self.temp_dir, "orig.litertlm")
+    with litertlm_core.open_file(orig_litertlm_path, "wb") as f:
+      builder.build(f)
+
+    unpack_dir = os.path.join(self.temp_dir, "unpacked_for_jinja")
+    toml_path = litertlm_builder.unpack(orig_litertlm_path, unpack_dir)
+
+    packed_path = os.path.join(self.temp_dir, "packed_custom_jinja.litertlm")
+    litertlm_builder.pack(
+        toml_path, packed_path, jinja_prompt_template_path=jinja_input_path
+    )
+
+    extracted_jinja_path = os.path.join(self.temp_dir, "extracted.jinja")
+    unpack_dir_2 = os.path.join(self.temp_dir, "unpacked_custom_jinja")
+    litertlm_builder.unpack(
+        packed_path,
+        unpack_dir_2,
+        jinja_prompt_template_path=extracted_jinja_path,
+    )
+    self.assertTrue(os.path.exists(extracted_jinja_path))
+    with open(extracted_jinja_path, "r") as f:
+      content = f.read()
+    self.assertEqual(content, "overwritten jinja template")
+
+  def test_unpack_raises_error_when_jinja_template_missing(self):
+    """Tests unpacking with jinja_prompt_template_path raises error when missing."""
+    llm_metadata_content = "max_num_tokens: 100\n"
+    meta_path = self._create_dummy_file(
+        "metadata_no_jinja.pbtext", llm_metadata_content.encode()
+    )
+    builder = litertlm_builder.LitertLmFileBuilder()
+    self._add_system_metadata(builder)
+    tflite_path = self._create_dummy_file(
+        "model_no_jinja.tflite", b"dummy content"
+    )
+    builder.add_tflite_model(
+        tflite_path, litertlm_builder.TfLiteModelType.PREFILL_DECODE
+    )
+    builder.add_llm_metadata(meta_path)
+    model_path = os.path.join(self.temp_dir, "no_jinja.litertlm")
+    with litertlm_core.open_file(model_path, "wb") as f:
+      builder.build(f)
+
+    unpack_dir = os.path.join(self.temp_dir, "unpacked_no_jinja")
+    target_jinja = os.path.join(self.temp_dir, "should_fail.jinja")
+    with self.assertRaises(ValueError):
+      litertlm_builder.unpack(
+          model_path, unpack_dir, jinja_prompt_template_path=target_jinja
+      )
+
   def test_pack_invalid_toml_does_not_truncate_output_file(self):
     """Tests that packing with an invalid TOML does not truncate existing output file."""
     output_path = os.path.join(self.temp_dir, "existing_model.litertlm")
@@ -751,6 +818,26 @@ class LitertlmBuilderTest(parameterized.TestCase):
 
     with open(output_path, "rb") as f:
       self.assertEqual(f.read(), original_content)
+
+  def test_pack_raises_error_when_llm_metadata_missing_for_jinja(self):
+    """Tests packing with jinja_prompt_template_path raises error when TOML lacks LlmMetadata."""
+    tflite_path = self._create_dummy_file("model_for_error.tflite", b"dummy")
+    tflite_name = os.path.basename(tflite_path)
+    toml_content = f"""
+[[section]]
+section_type = "TFLiteModel"
+model_type = "prefill_decode"
+data_path = "{tflite_name}"
+"""
+    toml_path = self._create_dummy_file(
+        "no_llm_meta.toml", toml_content.encode()
+    )
+    jinja_path = self._create_dummy_file("temp.jinja", b"template")
+    output_path = os.path.join(self.temp_dir, "out.litertlm")
+    with self.assertRaises(ValueError):
+      litertlm_builder.pack(
+          toml_path, output_path, jinja_prompt_template_path=jinja_path
+      )
 
 
 if __name__ == "__main__":
