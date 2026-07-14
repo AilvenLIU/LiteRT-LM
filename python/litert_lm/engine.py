@@ -227,6 +227,7 @@ class Engine(interfaces.AbstractEngine):
       enable_constrained_decoding: bool = False,
       lora_config: interfaces.LoraConfig | None = None,
       max_output_tokens: int | None = None,
+      chat_template: str | None = None,
   ) -> Conversation:
     session_config = self._lib.litert_lm_session_config_create()
     if sampler_config:
@@ -286,6 +287,11 @@ class Engine(interfaces.AbstractEngine):
       if extra_context:
         self._lib.litert_lm_conversation_config_set_extra_context(
             conv_config, json.dumps(extra_context)
+        )
+
+      if chat_template:
+        self._lib.litert_lm_conversation_config_set_prompt_template(
+            conv_config, chat_template.encode("utf-8")
         )
 
       tools_map = {}
@@ -353,6 +359,7 @@ class Engine(interfaces.AbstractEngine):
         sampler_config=sampler_config,
         lora_config=lora_config,
         max_output_tokens=max_output_tokens,
+        chat_template=chat_template,
     )
 
   def create_session(
