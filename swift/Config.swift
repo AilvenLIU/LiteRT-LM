@@ -183,6 +183,7 @@ public struct ConversationConfig {
   public let audioLoraPath: String?
   public let enableToolCallStreaming: Bool
   public let thinkingConfig: ThinkingConfig?
+  public let automaticToolCalling: Bool
 
   /// - Parameters:
   ///   - systemMessage: The system message to be used in the conversation.
@@ -194,6 +195,7 @@ public struct ConversationConfig {
   ///   - audioLoraPath: The file path to the Audio LoRA weights file.
   ///   - enableToolCallStreaming: Whether to enable conversation tool call streaming.
   ///   - thinkingConfig: Optional configuration for thinking/reasoning generation.
+  ///   - automaticToolCalling: Whether to enable automatic tool calling. Default is true.
   public init(
     systemMessage: Message? = nil,
     initialMessages: [Message] = [],
@@ -202,7 +204,8 @@ public struct ConversationConfig {
     loraPath: String? = nil,
     audioLoraPath: String? = nil,
     enableToolCallStreaming: Bool = false,
-    thinkingConfig: ThinkingConfig? = nil
+    thinkingConfig: ThinkingConfig? = nil,
+    automaticToolCalling: Bool = true
   ) {
     self.systemMessage = systemMessage.flatMap { msg in
       if msg.toString.isEmpty {
@@ -218,5 +221,6 @@ public struct ConversationConfig {
     self.audioLoraPath = audioLoraPath
     self.enableToolCallStreaming = enableToolCallStreaming
     self.thinkingConfig = thinkingConfig
+    self.automaticToolCalling = automaticToolCalling
   }
 }

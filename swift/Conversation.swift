@@ -51,6 +51,7 @@ public class Conversation {
 
   private var handle: CConversationHandle?
   private let toolManager: ToolManager
+  private let automaticToolCalling: Bool
   private let engine: Engine
 
   /// Whether the conversation is alive and ready to be used.
@@ -58,9 +59,13 @@ public class Conversation {
     return handle != nil
   }
 
-  init(handle: CConversationHandle, toolManager: ToolManager, engine: Engine) {
+  init(
+    handle: CConversationHandle, toolManager: ToolManager, automaticToolCalling: Bool = true,
+    engine: Engine
+  ) {
     self.handle = handle
     self.toolManager = toolManager
+    self.automaticToolCalling = automaticToolCalling
     self.engine = engine
   }
 
@@ -96,6 +101,9 @@ public class Conversation {
         } else {
           throw LiteRTLMError.conversation(.invalidResponse(responseString))
         }
+      }
+      if !automaticToolCalling {
+        return try Conversation.jsonToMessage(responseString)
       }
       currentMessageJson = try await handleToolCalls(toolCalls)
     }
@@ -410,8 +418,31 @@ public class Conversation {
     var contents: [Content] = []
     if let contentArray = jsonObject["content"] as? [[String: Any]] {
       for item in contentArray {
-        if let type = item["type"] as? String, type == "text", let text = item["text"] as? String {
-          contents.append(.text(text))
+        if let type = item["type"] as? String {
+          switch type {
+          case "text":
+            if let text = item["text"] as? String {
+              contents.append(.text(text))
+            }
+          case "tool_response":
+            if let name = item["name"] as? String, let response = item["response"] {
+              let id = item["id"] as? String ?? ""
+              contents.append(.toolResponse(name: name, response: response, id: id))
+            }
+          case "image":
+            if let path = item["path"] as? String {
+              contents.append(.imageFile(path))
+            } else if let blob = item["blob"] as? String, let data = Data(base64Encoded: blob) {
+              contents.append(.imageData(data))
+            }
+          case "audio":
+            if let path = item["path"] as? String {
+              contents.append(.audioFile(path))
+            } else if let blob = item["blob"] as? String, let data = Data(base64Encoded: blob) {
+              contents.append(.audioData(data))
+            }
+          default: break
+          }
         }
       }
     }
@@ -425,11 +456,38 @@ public class Conversation {
       }
     }
 
-    if contents.isEmpty && channels.isEmpty {
+    var toolCalls: [ToolCall] = []
+    if let toolCallsArray = jsonObject["tool_calls"] as? [[String: Any]] {
+      for item in toolCallsArray {
+        if let function = item["function"] as? [String: Any],
+          let name = function["name"] as? String,
+          let args = function["arguments"] as? [String: Any]
+        {
+          let id = item["id"] as? String ?? ""
+          toolCalls.append(ToolCall(name: name, id: id, arguments: args))
+        }
+      }
+    }
+
+    if contents.isEmpty && channels.isEmpty && toolCalls.isEmpty {
       throw LiteRTLMError.message(.invalidContent)
     }
 
-    return Message(contents: contents, channels: channels)
+    let roleRaw = jsonObject["role"] as? String ?? "user"
+    let role: Role
+    switch roleRaw {
+    case "assistant", "model":
+      role = .model
+    default:
+      role = Role(rawValue: roleRaw) ?? .user
+    }
+
+    return Message(
+      contents: Contents(contents: contents),
+      role: role,
+      channels: channels,
+      toolCalls: toolCalls
+    )
   }
 
   /// Context object to bridge the C callback to the Swift AsyncThrowingStream.
