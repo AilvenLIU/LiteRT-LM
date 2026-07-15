@@ -85,6 +85,11 @@ struct GpuArtisanConfig {
 
   // Performs f32 convolutions instead of any 8 bit convolutions.
   bool disallow_8bit_convs = true;
+
+  // For low GPU memory with long contexts, use minimally sized ringbuffers for
+  // local attention. Prevents instantaneous rewinding, but saves a lot of
+  // memory, especially for large models.
+  bool use_autosized_ringbuffers = false;
 };
 
 std::ostream& operator<<(std::ostream& os, const GpuArtisanConfig& config);
