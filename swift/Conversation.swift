@@ -80,12 +80,18 @@ public class Conversation {
   ///
   /// - Parameter message: The message to send to the model.
   /// - Parameter extraContext: The extra context to send to the model.
+  /// - Parameter repetitionPenaltyConfig: Optional configuration for repetition penalty.
+  /// - Parameter maxOutputTokens: Optional maximum number of output tokens.
   /// - Parameter thinkingConfig: Optional configuration for thinking/reasoning generation.
   /// - Returns: The model's response message.
   /// - Throws: A `LiteRTLMError` if sending the message fails or the model
   ///   returns an invalid response.
   public func sendMessage(
-    _ message: Message, extraContext: [String: Any]? = nil, thinkingConfig: ThinkingConfig? = nil
+    _ message: Message,
+    extraContext: [String: Any]? = nil,
+    repetitionPenaltyConfig: RepetitionPenaltyConfig? = nil,
+    maxOutputTokens: Int? = nil,
+    thinkingConfig: ThinkingConfig? = nil
   ) async throws -> Message {
     let handle = try checkIsAlive()
 
@@ -93,8 +99,13 @@ public class Conversation {
 
     for i in 0..<recurringToolCallLimit {
       let (responseJson, responseString) = try attemptSendMessage(
-        handle: handle, messageJson: currentMessageJson, extraContext: extraContext,
-        thinkingConfig: i == 0 ? thinkingConfig : nil)
+        handle: handle,
+        messageJson: currentMessageJson,
+        extraContext: extraContext,
+        repetitionPenaltyConfig: repetitionPenaltyConfig,
+        maxOutputTokens: maxOutputTokens,
+        thinkingConfig: i == 0 ? thinkingConfig : nil
+      )
 
       guard let toolCalls = responseJson["tool_calls"] as? [[String: Any]] else {
         if responseJson["content"] != nil || responseJson["channels"] != nil {
@@ -113,7 +124,11 @@ public class Conversation {
   }
 
   private func attemptSendMessage(
-    handle: CConversationHandle, messageJson: [String: Any], extraContext: [String: Any]?,
+    handle: CConversationHandle,
+    messageJson: [String: Any],
+    extraContext: [String: Any]?,
+    repetitionPenaltyConfig: RepetitionPenaltyConfig? = nil,
+    maxOutputTokens: Int? = nil,
     thinkingConfig: ThinkingConfig? = nil
   ) throws
     -> (responseJson: [String: Any], responseString: String)
@@ -134,6 +149,36 @@ public class Conversation {
     if let visualTokenBudget = ExperimentalFlags.visualTokenBudget {
       litert_lm_conversation_optional_args_set_visual_token_budget(
         optionalArgs, Int32(visualTokenBudget))
+    }
+    if let repetitionPenaltyConfig = repetitionPenaltyConfig {
+      guard let cRepetitionPenaltyConfig = litert_lm_repetition_penalty_config_create() else {
+        throw LiteRTLMError.conversation(
+          .invalidResponse("Failed to create native repetition penalty config."))
+      }
+      defer { litert_lm_repetition_penalty_config_delete(cRepetitionPenaltyConfig) }
+
+      if let repetitionPenalty = repetitionPenaltyConfig.repetitionPenalty {
+        litert_lm_repetition_penalty_config_set_repetition_penalty(
+          cRepetitionPenaltyConfig, repetitionPenalty)
+      }
+      if let presencePenalty = repetitionPenaltyConfig.presencePenalty {
+        litert_lm_repetition_penalty_config_set_presence_penalty(
+          cRepetitionPenaltyConfig, presencePenalty)
+      }
+      if let frequencyPenalty = repetitionPenaltyConfig.frequencyPenalty {
+        litert_lm_repetition_penalty_config_set_frequency_penalty(
+          cRepetitionPenaltyConfig, frequencyPenalty)
+      }
+      if let windowSize = repetitionPenaltyConfig.windowSize {
+        litert_lm_repetition_penalty_config_set_window_size(
+          cRepetitionPenaltyConfig, Int32(windowSize))
+      }
+      litert_lm_conversation_optional_args_set_repetition_penalty_config(
+        optionalArgs, cRepetitionPenaltyConfig)
+    }
+    if let maxOutputTokens = maxOutputTokens {
+      litert_lm_conversation_optional_args_set_max_output_tokens(
+        optionalArgs, Int32(maxOutputTokens))
     }
     if let thinkingConfig = thinkingConfig {
       guard let cThinkingConfig = litert_lm_thinking_config_create() else {
@@ -214,21 +259,37 @@ public class Conversation {
   ///
   /// - Parameter message: The message to send.
   /// - Parameter extraContext: The extra context to send to the model.
+  /// - Parameter repetitionPenaltyConfig: Optional configuration for repetition penalty.
+  /// - Parameter maxOutputTokens: Optional maximum number of output tokens.
   /// - Parameter thinkingConfig: Optional configuration for thinking/reasoning generation.
   /// - Returns: An async throwing stream of `Message` chunks.
   public func sendMessageStream(
-    _ message: Message, extraContext: [String: Any]? = nil, thinkingConfig: ThinkingConfig? = nil
+    _ message: Message,
+    extraContext: [String: Any]? = nil,
+    repetitionPenaltyConfig: RepetitionPenaltyConfig? = nil,
+    maxOutputTokens: Int? = nil,
+    thinkingConfig: ThinkingConfig? = nil
   ) -> AsyncThrowingStream<Message, Error> {
     return AsyncThrowingStream { continuation in
       do {
         let handle = try self.checkIsAlive()
         let messageJson: [String: Any] = message.toJson
         let context = StreamContext(
-          continuation: continuation, conversation: self)
+          continuation: continuation,
+          conversation: self,
+          repetitionPenaltyConfig: repetitionPenaltyConfig,
+          maxOutputTokens: maxOutputTokens
+        )
 
         try self.sendToStream(
-          handle: handle, messageJson: messageJson, extraContext: extraContext,
-          thinkingConfig: thinkingConfig, context: context)
+          handle: handle,
+          messageJson: messageJson,
+          extraContext: extraContext,
+          repetitionPenaltyConfig: repetitionPenaltyConfig,
+          maxOutputTokens: maxOutputTokens,
+          thinkingConfig: thinkingConfig,
+          context: context
+        )
       } catch {
         continuation.finish(throwing: error)
       }
@@ -244,6 +305,9 @@ public class Conversation {
   ///   - handle: The `CConversationHandle` for the current conversation.
   ///   - messageJson: The message to send, represented as a JSON dictionary.
   ///   - extraContext: The extra context to send to the model.
+  ///   - repetitionPenaltyConfig: Optional configuration for repetition penalty.
+  ///   - thinkingConfig: Optional configuration for thinking/reasoning generation.
+  ///   - maxOutputTokens: Optional maximum number of output tokens.
   ///   - context: The `StreamContext` containing the `AsyncThrowingStream.Continuation`
   ///     and other state for the streaming process.
   /// - Throws: A `LiteRTLMError` if the message fails to send or the response is invalid.
@@ -252,6 +316,8 @@ public class Conversation {
     handle: CConversationHandle,
     messageJson: [String: Any],
     extraContext: [String: Any]? = nil,
+    repetitionPenaltyConfig: RepetitionPenaltyConfig? = nil,
+    maxOutputTokens: Int? = nil,
     thinkingConfig: ThinkingConfig? = nil,
     context: StreamContext
   ) throws {
@@ -272,6 +338,36 @@ public class Conversation {
     if let visualTokenBudget = ExperimentalFlags.visualTokenBudget {
       litert_lm_conversation_optional_args_set_visual_token_budget(
         optionalArgs, Int32(visualTokenBudget))
+    }
+    if let repetitionPenaltyConfig = repetitionPenaltyConfig {
+      guard let cRepetitionPenaltyConfig = litert_lm_repetition_penalty_config_create() else {
+        throw LiteRTLMError.conversation(
+          .invalidResponse("Failed to create native repetition penalty config."))
+      }
+      defer { litert_lm_repetition_penalty_config_delete(cRepetitionPenaltyConfig) }
+
+      if let repetitionPenalty = repetitionPenaltyConfig.repetitionPenalty {
+        litert_lm_repetition_penalty_config_set_repetition_penalty(
+          cRepetitionPenaltyConfig, repetitionPenalty)
+      }
+      if let presencePenalty = repetitionPenaltyConfig.presencePenalty {
+        litert_lm_repetition_penalty_config_set_presence_penalty(
+          cRepetitionPenaltyConfig, presencePenalty)
+      }
+      if let frequencyPenalty = repetitionPenaltyConfig.frequencyPenalty {
+        litert_lm_repetition_penalty_config_set_frequency_penalty(
+          cRepetitionPenaltyConfig, frequencyPenalty)
+      }
+      if let windowSize = repetitionPenaltyConfig.windowSize {
+        litert_lm_repetition_penalty_config_set_window_size(
+          cRepetitionPenaltyConfig, Int32(windowSize))
+      }
+      litert_lm_conversation_optional_args_set_repetition_penalty_config(
+        optionalArgs, cRepetitionPenaltyConfig)
+    }
+    if let maxOutputTokens = maxOutputTokens {
+      litert_lm_conversation_optional_args_set_max_output_tokens(
+        optionalArgs, Int32(maxOutputTokens))
     }
     if let thinkingConfig = thinkingConfig {
       guard let cThinkingConfig = litert_lm_thinking_config_create() else {
@@ -497,13 +593,19 @@ public class Conversation {
     let conversation: Conversation
     var toolCallCount: Int = 0
     var pendingToolCalls: [[String: Any]] = []
+    let repetitionPenaltyConfig: RepetitionPenaltyConfig?
+    let maxOutputTokens: Int?
 
     init(
       continuation: AsyncThrowingStream<Message, Error>.Continuation,
-      conversation: Conversation
+      conversation: Conversation,
+      repetitionPenaltyConfig: RepetitionPenaltyConfig? = nil,
+      maxOutputTokens: Int? = nil
     ) {
       self.continuation = continuation
       self.conversation = conversation
+      self.repetitionPenaltyConfig = repetitionPenaltyConfig
+      self.maxOutputTokens = maxOutputTokens
     }
   }
 }
@@ -574,6 +676,8 @@ private func streamCallback(
           try context.conversation.sendToStream(
             handle: context.conversation.checkIsAlive(),
             messageJson: toolResponseJson,
+            repetitionPenaltyConfig: context.repetitionPenaltyConfig,
+            maxOutputTokens: context.maxOutputTokens,
             context: context
           )
         } catch {

@@ -224,3 +224,56 @@ public struct ConversationConfig {
     self.automaticToolCalling = automaticToolCalling
   }
 }
+
+/// Configuration for penalizing repetitive tokens during generation.
+public struct RepetitionPenaltyConfig {
+
+  /// A multiplicative penalty applied to a token's logit if that token has appeared at least once
+  /// inside the generated window history (e.g., 1.0 = no penalty, 1.2 = moderate penalty).
+  ///
+  /// Positive logits are divided by this parameter, and negative logits are multiplied
+  /// (HuggingFace style). The parameter must be >= 1.0. Values less than 1.0 are automatically
+  /// clamped to 1.0 during execution.
+  public let repetitionPenalty: Float?
+
+  /// A scalar subtracted from a logit if that token has appeared at least once inside the
+  /// generated window history.
+  ///
+  /// Positive values discourage repetition, while negative values reward repeating tokens
+  /// (OpenAI style). Defaults to 0.0.
+  public let presencePenalty: Float?
+
+  /// A scalar subtracted from a logit, scaled linearly by the number of times that token has
+  /// previously appeared inside the generated window history.
+  ///
+  /// Positive values discourage repetition, while negative values reward repeating tokens
+  /// (OpenAI style). Defaults to 0.0.
+  public let frequencyPenalty: Float?
+
+  /// The maximum number of recent tokens in generation history to consider when computing
+  /// penalization.
+  ///
+  /// Tokens generated prior to this window are forgotten. A value of 0 means tracking all
+  /// infinite generation history. Must be >= 0. Negative values are clamped to 0 during execution.
+  public let windowSize: Int?
+
+  /// - Parameters:
+  ///   - repetitionPenalty: A multiplicative penalty applied to a token's logit if that token has
+  ///     appeared at least once inside the generated window history.
+  ///   - presencePenalty: A scalar subtracted from a logit if that token has appeared at least once
+  ///     inside the generated window history.
+  ///   - frequencyPenalty: A scalar subtracted from a logit, scaled linearly by the number of times
+  ///     that token has previously appeared inside the generated window history.
+  ///   - windowSize: The maximum number of recent tokens in generation history to consider.
+  public init(
+    repetitionPenalty: Float? = nil,
+    presencePenalty: Float? = nil,
+    frequencyPenalty: Float? = nil,
+    windowSize: Int? = nil
+  ) {
+    self.repetitionPenalty = repetitionPenalty
+    self.presencePenalty = presencePenalty
+    self.frequencyPenalty = frequencyPenalty
+    self.windowSize = windowSize
+  }
+}
