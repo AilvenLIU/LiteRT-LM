@@ -226,6 +226,7 @@ internal object LiteRtLmJni {
     prefillPrefaceOnInit: Boolean,
     maxOutputToken: Int,
     thinkingConfig: ThinkingConfig?,
+    enableResponseFormat: Boolean,
   ): Long
 
   /**
@@ -262,6 +263,8 @@ internal object LiteRtLmJni {
     noRepeatNgramConfig: NoRepeatNgramConfig?,
     maxOutputToken: Int,
     thinkingConfig: ThinkingConfig?,
+    constraintType: Int,
+    constraintString: String?,
   )
 
   /**
@@ -288,6 +291,8 @@ internal object LiteRtLmJni {
     noRepeatNgramConfig: NoRepeatNgramConfig?,
     maxOutputToken: Int,
     thinkingConfig: ThinkingConfig?,
+    constraintType: Int,
+    constraintString: String?,
   ): String
 
   /**

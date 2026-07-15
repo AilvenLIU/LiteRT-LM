@@ -93,6 +93,7 @@ fun benchmark(
         false, // prefillPrefaceOnInit
         -1, // maxOutputToken
         null, // thinkingConfig
+        false, // enableResponseFormat
       )
 
     Conversation(conversationHandle).use { conversation ->

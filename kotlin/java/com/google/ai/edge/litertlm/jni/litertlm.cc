@@ -30,6 +30,7 @@
 #include "absl/time/time.h"  // from @com_google_absl
 #include "nlohmann/json_fwd.hpp"  // from @nlohmann_json
 #include "litert/cc/internal/scoped_file.h"  // from @litert
+#include "runtime/components/logits_processor/constrained_decoding/llg_constraint_config.h"
 #include "runtime/components/logits_processor/no_repeat_ngram_config.h"
 #include "runtime/components/logits_processor/repetition_penalty_config.h"
 #include "runtime/components/prompt_template.h"
@@ -1008,7 +1009,8 @@ LITERTLM_JNIEXPORT jlong JNICALL JNI_METHOD(nativeCreateConversation)(
     jboolean filter_channel_content_from_kv_cache,
     jstring overwrite_prompt_template, jstring lora_path_str,
     jstring audio_lora_path_str, jboolean prefill_preface_on_init,
-    jint max_output_token, jobject thinking_config_obj) {
+    jint max_output_token, jobject thinking_config_obj,
+    jboolean enable_response_format) {
   Engine* engine = reinterpret_cast<Engine*>(engine_pointer);
 
   // Create a native SessionConfig
@@ -1096,6 +1098,11 @@ LITERTLM_JNIEXPORT jlong JNICALL JNI_METHOD(nativeCreateConversation)(
               filter_channel_content_from_kv_cache)
           .SetPrefillPrefaceOnInit(prefill_preface_on_init);
 
+  if (enable_response_format) {
+    conversation_config_builder.SetConstraintProviderConfig(
+        litert::lm::LlGuidanceConfig());
+  }
+
   // Set the channels, if provided.
   // If channels is nullptr, the Conversation will use the channels defined in
   // the LlmMetadata or the default channels for the model type.
@@ -1165,7 +1172,8 @@ LITERTLM_JNIEXPORT void JNICALL JNI_METHOD(nativeSendMessageAsync)(
     jstring messageJSONString, jstring extraContextJsonString, jobject callback,
     jobject visual_token_budget, jobject repetition_penalty_config_obj,
     jobject no_repeat_ngram_config_obj, jint max_output_token,
-    jobject thinking_config_obj) {
+    jobject thinking_config_obj, jint constraint_type,
+    jstring constraint_string) {
   JavaVM* jvm = nullptr;
   if (env->GetJavaVM(&jvm) != JNI_OK) {
     ThrowLiteRtLmJniException(env, "Failed to get JavaVM");
@@ -1209,6 +1217,23 @@ LITERTLM_JNIEXPORT void JNICALL JNI_METHOD(nativeSendMessageAsync)(
   if (thinking_config_obj != nullptr) {
     optional_args.thinking_config =
         CreateThinkingConfigFromJni(env, thinking_config_obj);
+  }
+
+  if (constraint_type != 0) {
+    litert::lm::LlGuidanceConstraintArg constraint_arg;
+    if (constraint_type == 1) {
+      constraint_arg.constraint_type = litert::lm::LlgConstraintType::kRegex;
+    } else if (constraint_type == 2) {
+      constraint_arg.constraint_type =
+          litert::lm::LlgConstraintType::kJsonSchema;
+    }
+    if (constraint_string != nullptr) {
+      const char* constraint_chars =
+          env->GetStringUTFChars(constraint_string, nullptr);
+      constraint_arg.constraint_string = constraint_chars;
+      env->ReleaseStringUTFChars(constraint_string, constraint_chars);
+    }
+    optional_args.decoding_constraint = constraint_arg;
   }
 
   jobject callback_global = env->NewGlobalRef(callback);
@@ -1296,7 +1321,8 @@ LITERTLM_JNIEXPORT jstring JNICALL JNI_METHOD(nativeSendMessage)(
     jstring messageJSONString, jstring extraContextJsonString,
     jobject visual_token_budget, jobject repetition_penalty_config_obj,
     jobject no_repeat_ngram_config_obj, jint max_output_token,
-    jobject thinking_config_obj) {
+    jobject thinking_config_obj, jint constraint_type,
+    jstring constraint_string) {
   Conversation* conversation =
       reinterpret_cast<Conversation*>(conversation_pointer);
 
@@ -1334,6 +1360,23 @@ LITERTLM_JNIEXPORT jstring JNICALL JNI_METHOD(nativeSendMessage)(
   if (thinking_config_obj != nullptr) {
     optional_args.thinking_config =
         CreateThinkingConfigFromJni(env, thinking_config_obj);
+  }
+
+  if (constraint_type != 0) {
+    litert::lm::LlGuidanceConstraintArg constraint_arg;
+    if (constraint_type == 1) {
+      constraint_arg.constraint_type = litert::lm::LlgConstraintType::kRegex;
+    } else if (constraint_type == 2) {
+      constraint_arg.constraint_type =
+          litert::lm::LlgConstraintType::kJsonSchema;
+    }
+    if (constraint_string != nullptr) {
+      const char* constraint_chars =
+          env->GetStringUTFChars(constraint_string, nullptr);
+      constraint_arg.constraint_string = constraint_chars;
+      env->ReleaseStringUTFChars(constraint_string, constraint_chars);
+    }
+    optional_args.decoding_constraint = constraint_arg;
   }
 
   auto response =

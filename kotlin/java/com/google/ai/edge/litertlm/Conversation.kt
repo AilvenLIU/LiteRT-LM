@@ -70,12 +70,25 @@ class Conversation(
   private val handle: Long,
   val toolManager: ToolManager = ToolManager(),
   val automaticToolCalling: Boolean = true,
+  val enableResponseFormat: Boolean = false,
 ) : AutoCloseable {
   private val _isAlive = AtomicBoolean(true)
 
   /** Whether the conversation is alive and ready to be used, */
   val isAlive: Boolean
     get() = _isAlive.get()
+
+  private fun resolveResponseFormat(
+    currentMessageJson: JsonObject,
+    responseFormat: ResponseFormat?,
+  ): ResponseFormat? {
+    if (responseFormat == null) return null
+    val isToolResponse = currentMessageJson.get("role")?.asString == "tool"
+    if (automaticToolCalling && toolManager.getToolsDescription().size() > 0 && !isToolResponse) {
+      return null
+    }
+    return responseFormat
+  }
 
   /**
    * Sends a message to the model and returns the response. This is a synchronous call.
@@ -104,7 +117,13 @@ class Conversation(
     noRepeatNgramConfig: NoRepeatNgramConfig? = null,
     maxOutputToken: Int? = null,
     thinkingConfig: ThinkingConfig? = null,
+    responseFormat: ResponseFormat? = null,
   ): Message {
+    if (responseFormat != null && !enableResponseFormat) {
+      throw IllegalArgumentException(
+        "response_format cannot be used unless enableResponseFormat=True was passed to ConversationConfig."
+      )
+    }
     checkIsAlive()
 
     var currentMessageJson = message.toJson()
@@ -112,6 +131,7 @@ class Conversation(
     val visualTokenBudget = @OptIn(ExperimentalApi::class) ExperimentalFlags.visualTokenBudget
 
     for (i in 0..<RECURRING_TOOL_CALL_LIMIT) {
+      val activeResponseFormat = resolveResponseFormat(currentMessageJson, responseFormat)
       val responseJsonString =
         LiteRtLmJni.nativeSendMessage(
           handle,
@@ -122,6 +142,8 @@ class Conversation(
           noRepeatNgramConfig,
           maxOutputToken ?: -1,
           if (i == 0) thinkingConfig else null,
+          activeResponseFormat?.type?.value ?: 0,
+          activeResponseFormat?.schemaOrPattern,
         )
       val responseJsonObject = JsonParser.parseString(responseJsonString).asJsonObject
 
@@ -167,6 +189,7 @@ class Conversation(
     noRepeatNgramConfig: NoRepeatNgramConfig? = null,
     maxOutputToken: Int? = null,
     thinkingConfig: ThinkingConfig? = null,
+    responseFormat: ResponseFormat? = null,
   ): Message {
     return sendMessage(
       Message.user(contents),
@@ -175,6 +198,7 @@ class Conversation(
       noRepeatNgramConfig,
       maxOutputToken,
       thinkingConfig,
+      responseFormat,
     )
   }
 
@@ -205,6 +229,7 @@ class Conversation(
     noRepeatNgramConfig: NoRepeatNgramConfig? = null,
     maxOutputToken: Int? = null,
     thinkingConfig: ThinkingConfig? = null,
+    responseFormat: ResponseFormat? = null,
   ): Message =
     sendMessage(
       Contents.of(text),
@@ -213,6 +238,7 @@ class Conversation(
       noRepeatNgramConfig,
       maxOutputToken,
       thinkingConfig,
+      responseFormat,
     )
 
   /**
@@ -243,17 +269,31 @@ class Conversation(
     noRepeatNgramConfig: NoRepeatNgramConfig? = null,
     maxOutputToken: Int? = null,
     thinkingConfig: ThinkingConfig? = null,
+    responseFormat: ResponseFormat? = null,
   ) {
+    if (responseFormat != null && !enableResponseFormat) {
+      throw IllegalArgumentException(
+        "response_format cannot be used unless enableResponseFormat=True was passed to ConversationConfig."
+      )
+    }
     checkIsAlive()
 
     val extraContextJsonString = extraContext.toJsonObject().toString()
     val visualTokenBudget = @OptIn(ExperimentalApi::class) ExperimentalFlags.visualTokenBudget
+    val currentMessageJson = message.toJson()
+    val activeResponseFormat = resolveResponseFormat(currentMessageJson, responseFormat)
 
     val jniCallback =
-      JniMessageCallbackImpl(callback, repetitionPenaltyConfig, noRepeatNgramConfig, maxOutputToken)
+      JniMessageCallbackImpl(
+        callback,
+        repetitionPenaltyConfig,
+        noRepeatNgramConfig,
+        maxOutputToken,
+        responseFormat,
+      )
     LiteRtLmJni.nativeSendMessageAsync(
       handle,
-      message.toJson().toString(),
+      currentMessageJson.toString(),
       extraContextJsonString,
       jniCallback,
       visualTokenBudget,
@@ -261,6 +301,8 @@ class Conversation(
       noRepeatNgramConfig,
       maxOutputToken ?: -1,
       thinkingConfig,
+      activeResponseFormat?.type?.value ?: 0,
+      activeResponseFormat?.schemaOrPattern,
     )
   }
 
@@ -291,6 +333,7 @@ class Conversation(
     noRepeatNgramConfig: NoRepeatNgramConfig? = null,
     maxOutputToken: Int? = null,
     thinkingConfig: ThinkingConfig? = null,
+    responseFormat: ResponseFormat? = null,
   ) =
     sendMessageAsync(
       Message.user(contents),
@@ -300,6 +343,7 @@ class Conversation(
       noRepeatNgramConfig,
       maxOutputToken,
       thinkingConfig,
+      responseFormat,
     )
 
   /**
@@ -329,6 +373,7 @@ class Conversation(
     noRepeatNgramConfig: NoRepeatNgramConfig? = null,
     maxOutputToken: Int? = null,
     thinkingConfig: ThinkingConfig? = null,
+    responseFormat: ResponseFormat? = null,
   ) =
     sendMessageAsync(
       Contents.of(text),
@@ -338,6 +383,7 @@ class Conversation(
       noRepeatNgramConfig,
       maxOutputToken,
       thinkingConfig,
+      responseFormat,
     )
 
   /**
@@ -366,6 +412,7 @@ class Conversation(
     noRepeatNgramConfig: NoRepeatNgramConfig? = null,
     maxOutputToken: Int? = null,
     thinkingConfig: ThinkingConfig? = null,
+    responseFormat: ResponseFormat? = null,
   ): Flow<Message> = callbackFlow {
     sendMessageAsync(
       message,
@@ -387,6 +434,7 @@ class Conversation(
       noRepeatNgramConfig,
       maxOutputToken,
       thinkingConfig,
+      responseFormat,
     )
     awaitClose {}
   }
@@ -417,6 +465,7 @@ class Conversation(
     noRepeatNgramConfig: NoRepeatNgramConfig? = null,
     maxOutputToken: Int? = null,
     thinkingConfig: ThinkingConfig? = null,
+    responseFormat: ResponseFormat? = null,
   ): Flow<Message> =
     sendMessageAsync(
       Message.user(contents),
@@ -425,6 +474,7 @@ class Conversation(
       noRepeatNgramConfig,
       maxOutputToken,
       thinkingConfig,
+      responseFormat,
     )
 
   /**
@@ -453,6 +503,7 @@ class Conversation(
     noRepeatNgramConfig: NoRepeatNgramConfig? = null,
     maxOutputToken: Int? = null,
     thinkingConfig: ThinkingConfig? = null,
+    responseFormat: ResponseFormat? = null,
   ): Flow<Message> =
     sendMessageAsync(
       Contents.of(text),
@@ -461,6 +512,7 @@ class Conversation(
       noRepeatNgramConfig,
       maxOutputToken,
       thinkingConfig,
+      responseFormat,
     )
 
   private fun handleToolCalls(toolCallsJsonObject: JsonObject): JsonObject {
@@ -496,6 +548,7 @@ class Conversation(
     private val repetitionPenaltyConfig: RepetitionPenaltyConfig? = null,
     private val noRepeatNgramConfig: NoRepeatNgramConfig? = null,
     private val maxOutputToken: Int? = null,
+    private val responseFormat: ResponseFormat? = null,
   ) : LiteRtLmJni.JniMessageCallback {
 
     /** The tool response to be returned back */
@@ -528,6 +581,7 @@ class Conversation(
     override fun onDone() {
       val localToolResponse = pendingToolResponseJSONMessage
       if (localToolResponse != null) {
+        val activeResponseFormat = resolveResponseFormat(localToolResponse, responseFormat)
         // If there is pending tool response message, send the message.
         LiteRtLmJni.nativeSendMessageAsync(
           handle,
@@ -539,6 +593,8 @@ class Conversation(
           noRepeatNgramConfig,
           maxOutputToken ?: -1,
           null,
+          activeResponseFormat?.type?.value ?: 0,
+          activeResponseFormat?.schemaOrPattern,
         )
         pendingToolResponseJSONMessage = null // Clear after sending
       } else {

@@ -161,9 +161,11 @@ class Engine(val engineConfig: EngineConfig) : AutoCloseable {
           conversationConfig.prefillPrefaceOnInit,
           conversationConfig.maxOutputToken ?: -1,
           conversationConfig.thinkingConfig,
+          conversationConfig.enableResponseFormat,
         ),
         toolManager,
         conversationConfig.automaticToolCalling,
+        conversationConfig.enableResponseFormat,
       )
     }
   }
