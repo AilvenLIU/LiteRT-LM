@@ -16,6 +16,7 @@
 
 import pathlib
 import re
+import shutil
 import subprocess
 import litert_lm
 
@@ -236,10 +237,14 @@ def main():
         ),
     ]
     for source_name, cmd in cmds:
+      executable = shutil.which(cmd[0])
+      if not executable:
+        continue
       print(f"Downloading model using {source_name}...")
+      full_cmd = [executable] + cmd[1:]
       if (
           subprocess.run(
-              cmd,
+              full_cmd,
               check=False,
               stdout=subprocess.DEVNULL,
               stderr=subprocess.DEVNULL,
