@@ -62,6 +62,27 @@ export const MODELS = [
     path:
         'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it-web.litertlm',
     size: '2.8 GB'
+  },
+  {
+    name: 'Gemma 4 12B',
+    filename: 'gemma-4-12B-it-web.litertlm',
+    path:
+        'https://huggingface.co/litert-community/gemma-4-12B-it-litert-lm/resolve/main/gemma-4-12B-it-web.litertlm',
+    size: '5.6 GB'
+  },
+  {
+    name: 'Gemma 4 26B A4B',
+    filename: 'gemma-4-26B-A4B-it-web.litertlm',
+    path:
+        'https://huggingface.co/litert-community/gemma-4-26B-A4B-it-litert-lm/resolve/main/gemma-4-26B-A4B-it-web.litertlm',
+    size: '14.7 GB'
+  },
+  {
+    name: 'Gemma 4 31B',
+    filename: 'gemma-4-31B-it-web.litertlm',
+    path:
+        'https://huggingface.co/litert-community/gemma-4-31B-it-litert-lm/resolve/main/gemma-4-31B-it-web.litertlm',
+    size: '17.9 GB'
   }
 ];
 
