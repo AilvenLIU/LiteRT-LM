@@ -436,10 +436,10 @@ void LogBenchmarkInfo(const litert::lm::BenchmarkInfo& benchmark_info,
     for (int i = 0; i < benchmark_info.GetTotalPrefillTurns(); ++i) {
       ABSL_LOG(INFO) << absl::StrFormat(
           "Prefill speed turn %d: %.2f tk/s", i,
-          benchmark_info.GetPrefillTokensPerSec(0));
+          benchmark_info.GetPrefillTokensPerSec(i));
       ABSL_LOG(INFO) << absl::StrFormat(
           "Decode speed turn %d: %.2f tk/s", i,
-          benchmark_info.GetDecodeTokensPerSec(0));
+          benchmark_info.GetDecodeTokensPerSec(i));
     }
   }
 }

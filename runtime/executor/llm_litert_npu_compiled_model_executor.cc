@@ -394,62 +394,74 @@ absl::Status ClearKVCacheToZero(
 std::ostream& operator<<(
     std::ostream& os,
     const LlmLiteRtNpuCompiledModelExecutor::LatencyStats& stats) {
+  auto safe_tokens_per_sec = [](uint32_t num_tokens,
+                                uint64_t latency_us) -> float {
+    if (latency_us == 0) return 0.0f;
+    return (static_cast<float>(num_tokens) * 1000000.0f) /
+           static_cast<float>(latency_us);
+  };
+  auto safe_percentage = [](uint64_t part_us, uint64_t total_us) -> float {
+    if (total_us == 0) return 0.0f;
+    return (static_cast<float>(part_us) * 100.0f) /
+           static_cast<float>(total_us);
+  };
+
   os << "\n" << "====== PREFILL STATS ======";
   os << "\n" << "Total prefill latency [us]: " << stats.prefill_e2e_latency_us;
   os << "\n" << "(e2e) Prefill num tokens: " << stats.prefill_num_tokens;
   os << "\n"
      << "(e2e) Prefill tokens per second: "
-     << ((stats.prefill_num_tokens * 1000 * 1000) /
-         (float)stats.prefill_e2e_latency_us);
+     << safe_tokens_per_sec(stats.prefill_num_tokens,
+                            stats.prefill_e2e_latency_us);
   os << "\n"
      << "(TransformerStackOnly) Prefill tokens per second: "
-     << ((stats.prefill_num_tokens * 1000 * 1000) /
-         (float)stats.prefill_llm_inference_latency_us);
+     << safe_tokens_per_sec(stats.prefill_num_tokens,
+                            stats.prefill_llm_inference_latency_us);
 
   os << "\n" << "------ Prefill breakdown ------";
   os << "\n"
      << "Total prefill prepare input tensors latency [us]: "
      << stats.prefill_prepare_input_latency_us << " ("
-     << ((stats.prefill_prepare_input_latency_us * 100) /
-         (float)stats.prefill_e2e_latency_us)
+     << safe_percentage(stats.prefill_prepare_input_latency_us,
+                        stats.prefill_e2e_latency_us)
      << "%)";
   os << "\n"
      << "Total prefill embedder inference latency [us]: "
      << stats.prefill_embedder_inference_latency_us << " ("
-     << ((stats.prefill_embedder_inference_latency_us * 100) /
-         (float)stats.prefill_e2e_latency_us)
+     << safe_percentage(stats.prefill_embedder_inference_latency_us,
+                        stats.prefill_e2e_latency_us)
      << "%)";
   if (stats.prefill_embedder_per_layer_inference_latency_us > 0) {
     os << "\n"
        << "Total prefill embedder per layer inference latency [us]: "
        << stats.prefill_embedder_per_layer_inference_latency_us << " ("
-       << ((stats.prefill_embedder_per_layer_inference_latency_us * 100) /
-           (float)stats.prefill_e2e_latency_us)
+       << safe_percentage(stats.prefill_embedder_per_layer_inference_latency_us,
+                          stats.prefill_e2e_latency_us)
        << "%)";
   }
   os << "\n"
      << "Total prefill rope inference latency [us]: "
      << stats.prefill_rope_inference_latency_us << " ("
-     << ((stats.prefill_rope_inference_latency_us * 100) /
-         (float)stats.prefill_e2e_latency_us)
+     << safe_percentage(stats.prefill_rope_inference_latency_us,
+                        stats.prefill_e2e_latency_us)
      << "%)";
   os << "\n"
      << "Total prefill mask inference latency [us]: "
      << stats.prefill_mask_inference_latency_us << " ("
-     << ((stats.prefill_mask_inference_latency_us * 100) /
-         (float)stats.prefill_e2e_latency_us)
+     << safe_percentage(stats.prefill_mask_inference_latency_us,
+                        stats.prefill_e2e_latency_us)
      << "%)";
   os << "\n"
      << "Total prefill llm inference latency [us]: "
      << stats.prefill_llm_inference_latency_us << " ("
-     << ((stats.prefill_llm_inference_latency_us * 100) /
-         (float)stats.prefill_e2e_latency_us)
+     << safe_percentage(stats.prefill_llm_inference_latency_us,
+                        stats.prefill_e2e_latency_us)
      << "%)";
   os << "\n"
      << "Total prefill cache update inference latency [us]: "
      << stats.prefill_cache_update_inference_latency_us << " ("
-     << ((stats.prefill_cache_update_inference_latency_us * 100) /
-         (float)stats.prefill_e2e_latency_us)
+     << safe_percentage(stats.prefill_cache_update_inference_latency_us,
+                        stats.prefill_e2e_latency_us)
      << "%)";
 
   os << "\n\n" << "====== DECODE STATS ======";
@@ -457,8 +469,8 @@ std::ostream& operator<<(
   os << "\n" << "(e2e) Decode num tokens: " << stats.decode_num_tokens;
   os << "\n"
      << "(e2e) Decode tokens per second (avg): "
-     << ((stats.decode_num_tokens * 1000 * 1000) /
-         (float)stats.decode_e2e_latency_us);
+     << safe_tokens_per_sec(stats.decode_num_tokens,
+                            stats.decode_e2e_latency_us);
   if (stats.mtp_num_draft_tokens > 0) {
     os << "\n"
        << "Speculative decoding acceptance rate [%]: "
@@ -467,81 +479,81 @@ std::ostream& operator<<(
   }
   os << "\n"
      << "(TransformerStackOnly) Decode tokens per second: "
-     << ((stats.decode_num_tokens * 1000 * 1000) /
-         (float)stats.decode_llm_inference_latency_us);
+     << safe_tokens_per_sec(stats.decode_num_tokens,
+                            stats.decode_llm_inference_latency_us);
 
   os << "\n" << "------ Decode breakdown ------";
   os << "\n"
      << "Total decode prepare input tensors latency [us]: "
      << stats.decode_prepare_input_latency_us << " ("
-     << ((stats.decode_prepare_input_latency_us * 100) /
-         (float)stats.decode_e2e_latency_us)
+     << safe_percentage(stats.decode_prepare_input_latency_us,
+                        stats.decode_e2e_latency_us)
      << "%)";
   os << "\n"
      << "Total decode embedder inference latency [us]: "
      << stats.decode_embedder_inference_latency_us << " ("
-     << ((stats.decode_embedder_inference_latency_us * 100) /
-         (float)stats.decode_e2e_latency_us)
+     << safe_percentage(stats.decode_embedder_inference_latency_us,
+                        stats.decode_e2e_latency_us)
      << "%)";
   if (stats.decode_embedder_per_layer_inference_latency_us > 0) {
     os << "\n"
        << "Total decode embedder per layer inference latency [us]: "
        << stats.decode_embedder_per_layer_inference_latency_us << " ("
-       << ((stats.decode_embedder_per_layer_inference_latency_us * 100) /
-           (float)stats.decode_e2e_latency_us)
+       << safe_percentage(stats.decode_embedder_per_layer_inference_latency_us,
+                          stats.decode_e2e_latency_us)
        << "%)";
   }
   os << "\n"
      << "Total decode rope inference latency [us]: "
      << stats.decode_rope_inference_latency_us << " ("
-     << ((stats.decode_rope_inference_latency_us * 100) /
-         (float)stats.decode_e2e_latency_us)
+     << safe_percentage(stats.decode_rope_inference_latency_us,
+                        stats.decode_e2e_latency_us)
      << "%)";
   os << "\n"
      << "Total decode mask inference latency [us]: "
      << stats.decode_mask_inference_latency_us << " ("
-     << ((stats.decode_mask_inference_latency_us * 100) /
-         (float)stats.decode_e2e_latency_us)
+     << safe_percentage(stats.decode_mask_inference_latency_us,
+                        stats.decode_e2e_latency_us)
      << "%)";
   os << "\n"
      << "Total decode llm inference latency [us]: "
      << stats.decode_llm_inference_latency_us << " ("
-     << ((stats.decode_llm_inference_latency_us * 100) /
-         (float)stats.decode_e2e_latency_us)
+     << safe_percentage(stats.decode_llm_inference_latency_us,
+                        stats.decode_e2e_latency_us)
      << "%)";
   os << "\n"
      << "Total decode cache update inference latency [us]: "
      << stats.decode_cache_update_inference_latency_us << " ("
-     << ((stats.decode_cache_update_inference_latency_us * 100) /
-         (float)stats.decode_e2e_latency_us)
+     << safe_percentage(stats.decode_cache_update_inference_latency_us,
+                        stats.decode_e2e_latency_us)
      << "%)";
   os << "\n"
      << "Total decode sampling latency [us]: "
      << stats.decode_sampling_latency_us << " ("
-     << ((stats.decode_sampling_latency_us * 100) /
-         (float)stats.decode_e2e_latency_us)
+     << safe_percentage(stats.decode_sampling_latency_us,
+                        stats.decode_e2e_latency_us)
      << "%)";
   if (stats.decode_mtp_rejection_sampling_latency_us > 0) {
     os << "\n"
        << "Total decode MTP rejection sampling latency [us]: "
        << stats.decode_mtp_rejection_sampling_latency_us << " ("
-       << ((stats.decode_mtp_rejection_sampling_latency_us * 100) /
-           (float)stats.decode_e2e_latency_us)
+       << safe_percentage(stats.decode_mtp_rejection_sampling_latency_us,
+                          stats.decode_e2e_latency_us)
        << "%)";
   }
   if (stats.decode_mtp_activation_copy_latency_us > 0) {
     os << "\n"
        << "Total decode MTP activation copy latency [us]: "
        << stats.decode_mtp_activation_copy_latency_us << " ("
-       << ((stats.decode_mtp_activation_copy_latency_us * 100) /
-           (float)stats.decode_e2e_latency_us)
+       << safe_percentage(stats.decode_mtp_activation_copy_latency_us,
+                          stats.decode_e2e_latency_us)
        << "%)";
   }
   os << "\n"
      << "Total decode token queue latency [us]: "
      << stats.decode_token_queue_latency_us << " ("
-     << ((stats.decode_token_queue_latency_us * 100) /
-         (float)stats.decode_e2e_latency_us)
+     << safe_percentage(stats.decode_token_queue_latency_us,
+                        stats.decode_e2e_latency_us)
      << "%)";
 
   return os;
