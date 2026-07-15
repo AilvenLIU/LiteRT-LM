@@ -360,6 +360,7 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
         embedding_lookup_manager_(std::move(embedding_lookup_manager)),
         per_layer_embedding_lookup_manager_(
             std::move(per_layer_embedding_lookup_manager)),
+        embedder_per_layer_model_(embedder_per_layer_model),
         embedder_per_layer_context_(std::move(embedder_per_layer_context)),
         llm_inference_context_(std::move(llm_inference_context)),
         cache_update_inference_context_(
@@ -379,7 +380,6 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
         speculative_decoding_type_(speculative_decoding_type),
         drafter_context_(std::move(drafter_context)),
         drafter_aux_context_(std::move(drafter_aux_context)),
-        embedder_per_layer_model_(embedder_per_layer_model),
         per_tensor_logits_scale_(quantization_params.scale),
         per_tensor_logits_zero_point_(quantization_params.zero_point),
         kv_cache_init_value_(kv_cache_init_value),
