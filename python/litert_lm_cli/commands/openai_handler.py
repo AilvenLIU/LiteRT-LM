@@ -120,6 +120,54 @@ def _parse_thinking_config(
   )
 
 
+def _parse_response_format(
+    body: dict[str, Any],
+) -> litert_lm.ResponseFormat | None:
+  """Parses and validates response_format parameters from the request body."""
+  rf = body.get("response_format")
+  if rf is None:
+    return None
+
+  if not isinstance(rf, dict):
+    raise ValueError(f"response_format must be a dict, got {type(rf).__name__}")
+
+  rf_type = rf.get("type")
+  if not rf_type or rf_type == "text":
+    return None
+
+  if rf_type == "json_object":
+    schema = rf.get("schema") or rf.get("json_schema") or {}
+    if isinstance(schema, dict) and "schema" in schema:
+      schema = schema["schema"]
+    if not isinstance(schema, (dict, str)):
+      raise ValueError("json_object schema must be a dict or str")
+    return litert_lm.ResponseFormat.json(schema)
+
+  if rf_type == "json_schema":
+    json_schema_obj = rf.get("json_schema")
+    schema = None
+    if isinstance(json_schema_obj, dict):
+      schema = json_schema_obj.get("schema", json_schema_obj)
+    elif "schema" in rf:
+      schema = rf.get("schema")
+
+    if schema is None or not isinstance(schema, (dict, str)):
+      raise ValueError(
+          "json_schema response_format requires a dict or str schema"
+      )
+    return litert_lm.ResponseFormat.json(schema)
+
+  if rf_type == "regex":
+    pattern = (
+        rf.get("regex") or rf.get("pattern") or rf.get("schema_or_pattern")
+    )
+    if not pattern or not isinstance(pattern, str):
+      raise ValueError("regex response_format requires a string pattern/regex")
+    return litert_lm.ResponseFormat.regex(pattern)
+
+  raise ValueError(f"Unsupported response_format type: {rf_type!r}")
+
+
 def _compute_token_usage(
     conv: litert_lm.Conversation,
     *,
@@ -621,6 +669,7 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       *,
       max_completion_tokens: int | None = None,
       include_usage: bool = False,
+      response_format: litert_lm.ResponseFormat | None = None,
   ) -> None:
     """Streams server-sent events using the provided formatter.
 
@@ -630,6 +679,7 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       formatter: The protocol-specific stream formatter.
       max_completion_tokens: The maximum number of tokens to generate.
       include_usage: Whether to emit a token usage chunk right before [DONE].
+      response_format: Optional response format for constrained decoding.
     """
     self._headers_sent = True
     self.send_response(200)
@@ -644,7 +694,9 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       has_tool_calls = False
       reasoning_tokens = 0
       for chunk in conv.send_message_async(
-          prompt, max_output_tokens=max_completion_tokens
+          prompt,
+          max_output_tokens=max_completion_tokens,
+          response_format=response_format,
       ):
         if chunk.get("channels"):
           reasoning_tokens += 1
@@ -701,6 +753,7 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       created_ts: int,
       max_completion_tokens: int | None = None,
       stream_options: dict[str, Any] | None = None,
+      response_format: litert_lm.ResponseFormat | None = None,
   ) -> None:
     """Generates responses for the OpenAI Chat Completions endpoint.
 
@@ -724,13 +777,16 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       created_ts: Epoch timestamp for creation metadata.
       max_completion_tokens: The maximum number of tokens to generate.
       stream_options: Options for streaming, such as include_usage.
+      response_format: Optional response format for constrained decoding.
     """
     if not stream:
       text_parts = []
       tool_calls = []
       reasoning_tokens = 0
       for chunk in conv.send_message_async(
-          prompt, max_output_tokens=max_completion_tokens
+          prompt,
+          max_output_tokens=max_completion_tokens,
+          response_format=response_format,
       ):
         if chunk.get("channels"):
           reasoning_tokens += 1
@@ -797,6 +853,7 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
         formatter,
         max_completion_tokens=max_completion_tokens,
         include_usage=include_usage,
+        response_format=response_format,
     )
 
   def _handle_responses(
@@ -808,6 +865,7 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       now_str: str,
       created_ts: int,
       model_id: str,
+      response_format: litert_lm.ResponseFormat | None = None,
   ) -> None:
     """Generates responses for the v1/responses endpoint.
 
@@ -827,9 +885,10 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       now_str: Timestamp string for unique identifier generation.
       created_ts: Epoch timestamp for creation metadata.
       model_id: The target model identifier.
+      response_format: Optional response format for constrained decoding.
     """
     if not stream:
-      response = conv.send_message(prompt)
+      response = conv.send_message(prompt, response_format=response_format)
       text_output = "".join(
           item.get("text", "")
           for item in response.get("content", [])
@@ -865,7 +924,9 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       return
 
     formatter = _OpenAIV1ResponsesFormatter(now_str, created_ts, model_id)
-    self._stream_response(conv, prompt, formatter)
+    self._stream_response(
+        conv, prompt, formatter, response_format=response_format
+    )
 
   def do_GET(self) -> None:  # pylint: disable=invalid-name
     """Handles GET requests for OpenAI API compatible endpoints."""
@@ -1059,6 +1120,16 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       )
       return
 
+    try:
+      response_format = _parse_response_format(body)
+    except ValueError as e:
+      self.send_error(
+          400,
+          "Invalid response_format parameters: "
+          + "".join(traceback.format_exception_only(e)),
+      )
+      return
+
     # Parse tools if this is a chat completions request.
     tools_data = body.get("tools")
     tools = (
@@ -1075,6 +1146,7 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
           automatic_tool_calling=False,
           sampler_config=sampler_config,
           thinking_config=thinking_config,
+          enable_response_format=response_format is not None,
       ) as conv:
         now = datetime.datetime.now(datetime.timezone.utc)
         now_str = now.strftime("%Y%m%d%H%M%S%f")
@@ -1093,6 +1165,7 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
             created_ts=created_ts,
             max_completion_tokens=max_completion_tokens,
             stream_options=stream_options,
+            response_format=response_format,
         )
     except Exception as e:  # pylint: disable=broad-exception-caught
       self._handle_inference_error(e, model_id, prompt)
@@ -1131,6 +1204,16 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       )
       return
 
+    try:
+      response_format = _parse_response_format(body)
+    except ValueError as e:
+      self.send_error(
+          400,
+          "Invalid response_format parameters: "
+          + "".join(traceback.format_exception_only(e)),
+      )
+      return
+
     stream = body.get("stream", False)
 
     try:
@@ -1139,6 +1222,7 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
           automatic_tool_calling=False,
           sampler_config=None,
           thinking_config=thinking_config,
+          enable_response_format=response_format is not None,
       ) as conv:
         now = datetime.datetime.now(datetime.timezone.utc)
         now_str = now.strftime("%Y%m%d%H%M%S%f")
@@ -1151,6 +1235,7 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
             now_str=now_str,
             created_ts=created_ts,
             model_id=model_id,
+            response_format=response_format,
         )
     except Exception as e:  # pylint: disable=broad-exception-caught
       self._handle_inference_error(e, model_id, prompt)

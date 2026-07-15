@@ -89,7 +89,6 @@ if "litert_lm_cli" in sys.modules:
 
 from litert_lm_cli.commands import gemini_handler
 from litert_lm_cli.commands import openai_handler
-from litert_lm_cli.commands import serve
 from litert_lm_cli.commands import serve_util
 
 
@@ -609,6 +608,70 @@ class ServeTest(parameterized.TestCase):
       server.shutdown()
       thread.join()
 
+  def test_parse_response_format_valid(self):
+    self.assertIsNone(openai_handler._parse_response_format({}))
+    self.assertIsNone(
+        openai_handler._parse_response_format({"response_format": None})
+    )
+    self.assertIsNone(
+        openai_handler._parse_response_format(
+            {"response_format": {"type": "text"}}
+        )
+    )
+
+    rf_json = openai_handler._parse_response_format(
+        {"response_format": {"type": "json_object"}}
+    )
+    self.assertIsNotNone(rf_json)
+    self.assertEqual(rf_json.type, interfaces.ResponseFormat.Type.JSON_OBJECT)
+    self.assertEqual(rf_json.schema_or_pattern, "{}")
+
+    schema_dict = {"type": "object", "properties": {"a": {"type": "string"}}}
+    rf_json_schema = openai_handler._parse_response_format({
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"schema": schema_dict},
+        }
+    })
+    self.assertIsNotNone(rf_json_schema)
+    self.assertEqual(
+        rf_json_schema.type, interfaces.ResponseFormat.Type.JSON_OBJECT
+    )
+
+    rf_regex = openai_handler._parse_response_format(
+        {"response_format": {"type": "regex", "pattern": "[0-9]{3}"}}
+    )
+    self.assertIsNotNone(rf_regex)
+    self.assertEqual(rf_regex.type, interfaces.ResponseFormat.Type.REGEX)
+    self.assertEqual(rf_regex.schema_or_pattern, "[0-9]{3}")
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="not_a_dict",
+          body={"response_format": "invalid"},
+          err_msg="response_format must be a dict",
+      ),
+      dict(
+          testcase_name="unsupported_type",
+          body={"response_format": {"type": "unsupported"}},
+          err_msg="Unsupported response_format type",
+      ),
+      dict(
+          testcase_name="missing_json_schema",
+          body={"response_format": {"type": "json_schema"}},
+          err_msg="json_schema response_format requires a dict or str schema",
+      ),
+      dict(
+          testcase_name="missing_regex_pattern",
+          body={"response_format": {"type": "regex"}},
+          err_msg="regex response_format requires a string pattern/regex",
+      ),
+  )
+  def test_parse_response_format_invalid(self, body, err_msg):
+    with self.assertRaisesRegex(ValueError, err_msg):
+      openai_handler._parse_response_format(body)
+
 
 if __name__ == "__main__":
+
   absltest.main()
