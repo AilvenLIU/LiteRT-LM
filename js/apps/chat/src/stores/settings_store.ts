@@ -47,6 +47,12 @@ export const PartialSettingsSchema = SettingsSchema.partial();
 /** Type for inference configuration settings. */
 export type Settings = z.infer<typeof SettingsSchema>;
 
+/** Model-specific settings subset. */
+export type ModelSettings = Pick<
+    Settings,
+    'selectedModelPath' | 'contextLength' | 'maxOutputTokens' | 'samplerType' |
+    'temperature' | 'topP' | 'topK' | 'enableThinking'>;
+
 /** List of supported default models available for selection. */
 export const MODELS = [
   {
@@ -100,6 +106,19 @@ export class SettingsStore implements Settings {
   enableThinking = true;
   customModels: CustomModel[] = [];
   localDirModels: CustomModel[] = [];
+
+  get modelSettings(): ModelSettings {
+    return {
+      selectedModelPath: this.selectedModelPath,
+      contextLength: this.contextLength,
+      maxOutputTokens: this.maxOutputTokens,
+      samplerType: this.samplerType,
+      temperature: this.temperature,
+      topP: this.topP,
+      topK: this.topK,
+      enableThinking: this.enableThinking,
+    };
+  }
 
   private readonly SETTINGS_KEY = 'litertlm-chat-settings';
 

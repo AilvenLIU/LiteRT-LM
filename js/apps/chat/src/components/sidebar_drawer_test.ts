@@ -147,6 +147,80 @@ describe('litert-sidebar', () => {
         .toHaveBeenCalledWith(MODELS[0]!.path);
   });
 
+  it('resets selectedModelPath to default when the active standard model is deleted from cache',
+     async () => {
+       mockModelLoader.deleteModelFromCache.and.returnValue(
+           Promise.resolve(true));
+       mockSettings.selectedModelPath = MODELS[1]!.path;
+
+       // Make the selected standard model cached
+       cachedModelsMap.set(MODELS[1]!.filename, 1024 * 1024 * 1024);
+       element.requestUpdate();
+       await element.updateComplete;
+
+       const deleteBtn = element.shadowRoot!.querySelector(
+                             '.delete-cache-btn') as HTMLButtonElement;
+       expect(deleteBtn).toBeTruthy();
+
+       deleteBtn.click();
+       await new Promise(resolve => setTimeout(resolve));
+
+       expect(mockSettings.selectedModelPath).toBe(MODELS[0]!.path);
+       expect(mockSettings.saveSettings).toHaveBeenCalled();
+     });
+
+  it('does not reset selectedModelPath if a non-selected standard model is deleted from cache',
+     async () => {
+       mockModelLoader.deleteModelFromCache.and.returnValue(
+           Promise.resolve(true));
+       mockSettings.selectedModelPath = MODELS[1]!.path;
+
+       // Make the first model cached (which is not selected)
+       cachedModelsMap.set(MODELS[0]!.filename, 1024 * 1024 * 1024);
+       element.requestUpdate();
+       await element.updateComplete;
+
+       const deleteBtn = element.shadowRoot!.querySelector(
+                             '.delete-cache-btn') as HTMLButtonElement;
+       expect(deleteBtn).toBeTruthy();
+
+       deleteBtn.click();
+       await new Promise(resolve => setTimeout(resolve));
+
+       expect(mockSettings.selectedModelPath).toBe(MODELS[1]!.path);
+       expect(mockSettings.saveSettings).not.toHaveBeenCalled();
+     });
+
+  it('resets selectedModelPath to default and filters when selected custom model is deleted from cache',
+     async () => {
+       mockModelLoader.deleteModelFromCache.and.returnValue(
+           Promise.resolve(true));
+       const customModelPath = 'https://local-model/my-custom-model.litertlm';
+       mockSettings.customModels = [{
+         name: 'Custom Model',
+         filename: 'my-custom-model.litertlm',
+         path: customModelPath,
+         size: '1.0 GB'
+       }];
+       mockSettings.selectedModelPath = customModelPath;
+
+       // Make the custom model cached
+       cachedModelsMap.set('my-custom-model.litertlm', 1024 * 1024 * 1024);
+       element.requestUpdate();
+       await element.updateComplete;
+
+       const deleteBtn = element.shadowRoot!.querySelector(
+                             '.delete-cache-btn') as HTMLButtonElement;
+       expect(deleteBtn).toBeTruthy();
+
+       deleteBtn.click();
+       await new Promise(resolve => setTimeout(resolve));
+
+       expect(mockSettings.customModels.length).toBe(0);
+       expect(mockSettings.selectedModelPath).toBe(MODELS[0]!.path);
+       expect(mockSettings.saveSettings).toHaveBeenCalled();
+     });
+
   it('updates settings on slider/number input changes', async () => {
     // 1. Context Length
     const contextInput = element.shadowRoot!.querySelector('#context-length') as HTMLInputElement;

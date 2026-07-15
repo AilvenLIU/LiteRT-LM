@@ -19,7 +19,7 @@ import {Backend, Engine, getOrLoadGlobalLiteRtLm, GpuArtisanConfig} from '@liter
 import {teeStream} from '../tee_stream.js';
 
 import {LocalDirectoryService} from './local_directory_service.js';
-import {CustomModel, SettingsStore} from './settings_store.js';
+import {CustomModel, ModelSettings} from './settings_store.js';
 
 /**
  * Service responsible for downloading, caching, and building the GPU WASM
@@ -38,9 +38,10 @@ export class ModelLoaderService {
   downloadAbortController: AbortController|null = null;
   isDownloadAborted = false;
 
+  loadedSettings: ModelSettings|null = null;
+
   constructor(
       private readonly updateCallback: () => void,
-      private readonly settings: SettingsStore,
       private readonly updateStatus: (msg: string) => void,
       private readonly localDirService?: LocalDirectoryService,
       private readonly createEngine: typeof Engine.create = Engine.create,
@@ -74,30 +75,29 @@ export class ModelLoaderService {
     }
   }
 
-  async deleteModelFromCache(modelPath: string, onDeleted?: () => void) {
+  needsModelReload(settings: ModelSettings): boolean {
+    if (!this.engine || !this.loadedSettings) return true;
+    return this.loadedSettings.selectedModelPath !== settings.selectedModelPath ||
+           this.loadedSettings.contextLength !== settings.contextLength ||
+           this.loadedSettings.topK !== settings.topK;
+  }
+
+  async deleteModelFromCache(modelPath: string): Promise<boolean> {
     const confirmDelete = confirm(
         'Are you sure you want to remove this model\'s weights from your browser cache?');
-    if (!confirmDelete) return;
+    if (!confirmDelete) return false;
 
     try {
       const cache = await window.caches.open('litertlm-models');
       const deleted = await cache.delete(modelPath);
       if (deleted) {
         this.updateStatus('Model cache removed successfully.');
-
-        if (modelPath.startsWith('https://local-model/')) {
-          this.settings.customModels = this.settings.customModels.filter(m => m.path !== modelPath);
-          this.settings.saveSettings();
-        }
-
         await this.updateCacheSize();
-
-        if (this.settings.selectedModelPath === modelPath) {
-          if (onDeleted) onDeleted();
-        }
       }
+      return deleted;
     } catch (e) {
       console.error('[LiteRT-LM] Failed to delete model from Cache:', e);
+      return false;
     }
   }
 
@@ -143,10 +143,11 @@ export class ModelLoaderService {
     });
   }
 
-  async loadModelWeights(onModelLoaded: () => Promise<void>) {
+  async loadModelWeights(
+      settings: ModelSettings, onModelLoaded: () => Promise<void>) {
     if (this.isModelLoading) return;
 
-    const modelPath = this.settings.selectedModelPath;
+    const modelPath = settings.selectedModelPath;
     const modelFilename = modelPath.split('/').pop() || modelPath;
 
     this.isModelLoading = true;
@@ -276,14 +277,14 @@ export class ModelLoaderService {
         model: modelInput,
         backend: Backend.GPU_ARTISAN,
         mainExecutorSettings: {
-          maxNumTokens: this.settings.contextLength,
+          maxNumTokens: settings.contextLength,
           backendConfig: {
             num_output_candidates: 1,
             wait_for_weight_uploads: true,
             num_decode_steps_per_sync: 1,
             sequence_batch_size: 0,
             supported_lora_ranks: [] as number[],
-            max_top_k: Math.max(1, this.settings.topK),
+            max_top_k: Math.max(1, settings.topK),
             enable_decode_logits: false,
             enable_external_embeddings: false,
             use_submodel: true,
@@ -291,6 +292,9 @@ export class ModelLoaderService {
         },
         benchmarkEnabled: true
       });
+
+      this.loadedSettings = structuredClone(settings);
+
       const loadTimeSec = (performance.now() - startTime) / 1000;
       this.metricLoadTime = `${loadTimeSec.toFixed(2)}s`;
 
@@ -319,7 +323,7 @@ export class ModelLoaderService {
     }
   }
 
-  async importCustomModel(file: File): Promise<string> {
+  async importCustomModel(file: File): Promise<CustomModel> {
     const path = `https://local-model/${file.name}`;
     const cache = await window.caches.open('litertlm-models');
     
@@ -343,16 +347,9 @@ export class ModelLoaderService {
         size: `${(file.size / 1e9).toFixed(2)} GB`
       };
       
-      const exists = this.settings.customModels.some(m => m.path === path);
-      if (!exists) {
-        this.settings.customModels = [...this.settings.customModels, customModel];
-      }
-      
-      this.settings.selectedModelPath = path;
-      this.settings.saveSettings();
-      
       await this.updateCacheSize();
       this.updateStatus(`Local model ${file.name} imported.`);
+      return customModel;
       
     } catch (e) {
       console.error('[LiteRT-LM] Failed to import custom model:', e);
@@ -362,7 +359,6 @@ export class ModelLoaderService {
       this.isModelLoading = false;
       this.updateCallback();
     }
-    return path;
   }
 
   cancelDownload() {

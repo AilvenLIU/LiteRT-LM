@@ -317,9 +317,10 @@ export class LitertSidebar extends LitElement {
       this.state.settings.saveSettings();
 
       // Auto-trigger model loading compilation in background on settings change
-      this.state.modelLoader.loadModelWeights(async () => {
-        await this.state.chatSession.createConversationSession();
-      });
+      this.state.modelLoader.loadModelWeights(
+          this.state.settings.modelSettings, async () => {
+            await this.state.chatSession.createConversationSession();
+          });
     }
   }
 
@@ -331,10 +332,22 @@ export class LitertSidebar extends LitElement {
       const file = input.files?.[0];
       if (file) {
         try {
-          await this.state.modelLoader.importCustomModel(file);
-          await this.state.modelLoader.loadModelWeights(async () => {
-            await this.state.chatSession.createConversationSession();
-          });
+          const customModel =
+              await this.state.modelLoader.importCustomModel(file);
+          const exists = this.state.settings.customModels.some(
+              m => m.path === customModel.path);
+          if (!exists) {
+            this.state.settings.customModels = [
+              ...this.state.settings.customModels, customModel
+            ];
+          }
+          this.state.settings.selectedModelPath = customModel.path;
+          this.state.settings.saveSettings();
+
+          await this.state.modelLoader.loadModelWeights(
+              this.state.settings.modelSettings, async () => {
+                await this.state.chatSession.createConversationSession();
+              });
         } catch (e) {
           console.error('[LiteRT-LM] Failed to import/load custom model:', e);
         }
@@ -343,9 +356,25 @@ export class LitertSidebar extends LitElement {
     input.click();
   }
 
-  private handleRemoveCached(e: Event, modelPath: string) {
+  private async handleRemoveCached(e: Event, modelPath: string) {
     e.stopPropagation();  // Stop click propagation to prevent selecting model
-    this.state.modelLoader.deleteModelFromCache(modelPath);
+    const deleted =
+        await this.state.modelLoader.deleteModelFromCache(modelPath);
+    if (deleted) {
+      let settingsChanged = false;
+      if (modelPath.startsWith('https://local-model/')) {
+        this.state.settings.customModels =
+            this.state.settings.customModels.filter(m => m.path !== modelPath);
+        settingsChanged = true;
+      }
+      if (this.state.settings.selectedModelPath === modelPath) {
+        this.state.settings.selectedModelPath = MODELS[0]!.path;
+        settingsChanged = true;
+      }
+      if (settingsChanged) {
+        this.state.settings.saveSettings();
+      }
+    }
   }
 
   private handleSliderInput(e: Event, prop: keyof Settings) {

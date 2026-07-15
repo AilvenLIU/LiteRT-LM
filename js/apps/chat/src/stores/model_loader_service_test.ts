@@ -41,7 +41,7 @@ describe('ModelLoaderService', () => {
     };
     fakeLoadWasm = async () => ({} as LiteRtLm);
     modelLoader = new ModelLoaderService(
-        () => {}, settingsStore, (msg: string) => {}, undefined, fakeEngineCreate,
+        () => {}, (msg: string) => {}, undefined, fakeEngineCreate,
         fakeLoadWasm);
   });
 
@@ -70,7 +70,7 @@ describe('ModelLoaderService', () => {
     let updateCalled = false;
     modelLoader = new ModelLoaderService(() => {
       updateCalled = true;
-    }, settingsStore, (msg: string) => {}, undefined, fakeEngineCreate, fakeLoadWasm);
+    }, (msg: string) => {}, undefined, fakeEngineCreate, fakeLoadWasm);
 
     const mockCache = {
       keys: jasmine.createSpy().and.resolveTo([
@@ -104,8 +104,9 @@ describe('ModelLoaderService', () => {
     spyOn(window.caches, 'open').and.resolveTo(mockCache as unknown as Cache);
     spyOn(modelLoader, 'updateCacheSize').and.resolveTo();
 
-    await modelLoader.deleteModelFromCache('model1.litertlm');
+    const deleted = await modelLoader.deleteModelFromCache('model1.litertlm');
 
+    expect(deleted).toBeTrue();
     expect(window.confirm).toHaveBeenCalled();
     expect(window.caches.open).toHaveBeenCalledWith('litertlm-models');
     expect(mockCache.delete).toHaveBeenCalledWith('model1.litertlm');
@@ -116,8 +117,9 @@ describe('ModelLoaderService', () => {
     spyOn(window, 'confirm').and.returnValue(false);
     spyOn(window.caches, 'open');
 
-    await modelLoader.deleteModelFromCache('model1.litertlm');
+    const deleted = await modelLoader.deleteModelFromCache('model1.litertlm');
 
+    expect(deleted).toBeFalse();
     expect(window.caches.open).not.toHaveBeenCalled();
   });
 
@@ -149,7 +151,7 @@ describe('ModelLoaderService', () => {
   it('loadModelWeights ignores overlapping calls', async () => {
     modelLoader.isModelLoading = true;
     spyOn(window.caches, 'open');
-    await modelLoader.loadModelWeights(async () => {});
+    await modelLoader.loadModelWeights(settingsStore.modelSettings, async () => {});
     expect(window.caches.open).not.toHaveBeenCalled();
   });
 
@@ -174,7 +176,7 @@ describe('ModelLoaderService', () => {
 
     const onModelLoaded = jasmine.createSpy('onModelLoaded').and.resolveTo();
 
-    await modelLoader.loadModelWeights(onModelLoaded);
+    await modelLoader.loadModelWeights(settingsStore.modelSettings, onModelLoaded);
 
     expect(window.caches.open).toHaveBeenCalledWith('litertlm-models');
     expect(mockCache.match)
@@ -211,7 +213,7 @@ describe('ModelLoaderService', () => {
 
     const onModelLoaded = jasmine.createSpy('onModelLoaded').and.resolveTo();
 
-    await modelLoader.loadModelWeights(onModelLoaded);
+    await modelLoader.loadModelWeights(settingsStore.modelSettings, onModelLoaded);
 
     expect(window.caches.open).toHaveBeenCalledWith('litertlm-models');
     expect(mockCache.match)
@@ -234,7 +236,7 @@ describe('ModelLoaderService', () => {
 
     const onModelLoaded = jasmine.createSpy('onModelLoaded').and.resolveTo();
 
-    await modelLoader.loadModelWeights(onModelLoaded);
+    await modelLoader.loadModelWeights(settingsStore.modelSettings, onModelLoaded);
 
     expect(window.fetch).toHaveBeenCalled();
     expect(modelLoader.engine).toBeNull();
@@ -252,13 +254,13 @@ describe('ModelLoaderService', () => {
 
     let latestStatus = '';
     modelLoader =
-        new ModelLoaderService(() => {}, settingsStore, (msg: string) => {
+        new ModelLoaderService(() => {}, (msg: string) => {
           latestStatus = msg;
         }, undefined, fakeEngineCreate, fakeLoadWasm);
 
     const onModelLoaded = jasmine.createSpy('onModelLoaded').and.resolveTo();
 
-    await modelLoader.loadModelWeights(onModelLoaded);
+    await modelLoader.loadModelWeights(settingsStore.modelSettings, onModelLoaded);
 
     expect(window.fetch).toHaveBeenCalled();
     expect(modelLoader.engine).toBeNull();
@@ -273,18 +275,16 @@ describe('ModelLoaderService', () => {
     };
     spyOn(window.caches, 'open').and.resolveTo(mockCache as unknown as Cache);
     spyOn(modelLoader, 'updateCacheSize').and.resolveTo();
-    spyOn(settingsStore, 'saveSettings').and.callThrough();
 
     const file = new File(['model data'], 'custom-model.litertlm', {type: 'application/octet-stream'});
-    const path = await modelLoader.importCustomModel(file);
+    const customModel = await modelLoader.importCustomModel(file);
 
-    expect(path).toBe('https://local-model/custom-model.litertlm');
+    expect(customModel.path).toBe('https://local-model/custom-model.litertlm');
+    expect(customModel.name).toBe('custom-model');
+    expect(customModel.filename).toBe('custom-model.litertlm');
+    expect(customModel.size).toBe('0.00 GB');
     expect(window.caches.open).toHaveBeenCalledWith('litertlm-models');
     expect(mockCache.put).toHaveBeenCalled();
-    expect(settingsStore.customModels.length).toBe(1);
-    expect(settingsStore.customModels[0]!.name).toBe('custom-model');
-    expect(settingsStore.selectedModelPath).toBe(path);
-    expect(settingsStore.saveSettings).toHaveBeenCalled();
     expect(modelLoader.updateCacheSize).toHaveBeenCalled();
   });
 
@@ -299,7 +299,7 @@ describe('ModelLoaderService', () => {
 
     const onModelLoaded = jasmine.createSpy('onModelLoaded').and.resolveTo();
 
-    await modelLoader.loadModelWeights(onModelLoaded);
+    await modelLoader.loadModelWeights(settingsStore.modelSettings, onModelLoaded);
 
     expect(window.caches.open).toHaveBeenCalledWith('litertlm-models');
     expect(mockCache.match).toHaveBeenCalledWith('https://local-model/missing-model.litertlm');
@@ -309,29 +309,7 @@ describe('ModelLoaderService', () => {
     expect(modelLoader.isModelLoading).toBeFalse();
   });
 
-  it('deletes local model from cache and settings when confirmed', async () => {
-    spyOn(window, 'confirm').and.returnValue(true);
-    const mockCache = {delete: jasmine.createSpy().and.resolveTo(true)};
-    spyOn(window.caches, 'open').and.resolveTo(mockCache as unknown as Cache);
-    spyOn(modelLoader, 'updateCacheSize').and.resolveTo();
-    spyOn(settingsStore, 'saveSettings').and.callThrough();
 
-    settingsStore.customModels = [{
-      name: 'Local Model',
-      filename: 'local-model.litertlm',
-      path: 'https://local-model/local-model.litertlm',
-      size: '1.0 GB'
-    }];
-
-    await modelLoader.deleteModelFromCache('https://local-model/local-model.litertlm');
-
-    expect(window.confirm).toHaveBeenCalled();
-    expect(window.caches.open).toHaveBeenCalledWith('litertlm-models');
-    expect(mockCache.delete).toHaveBeenCalledWith('https://local-model/local-model.litertlm');
-    expect(settingsStore.customModels.length).toBe(0);
-    expect(settingsStore.saveSettings).toHaveBeenCalled();
-    expect(modelLoader.updateCacheSize).toHaveBeenCalled();
-  });
 
   it('loadModelWeights loads from local directory', async () => {
     settingsStore.selectedModelPath = 'local-dir://gemma.litertlm';
@@ -341,16 +319,121 @@ describe('ModelLoaderService', () => {
     mockLocalDirService.getFile.and.resolveTo(mockFile);
 
     modelLoader = new ModelLoaderService(
-        () => {}, settingsStore, (msg: string) => {}, mockLocalDirService,
+        () => {}, (msg: string) => {}, mockLocalDirService,
         fakeEngineCreate, fakeLoadWasm);
 
     const onModelLoaded = jasmine.createSpy('onModelLoaded').and.resolveTo();
 
-    await modelLoader.loadModelWeights(onModelLoaded);
+    await modelLoader.loadModelWeights(settingsStore.modelSettings, onModelLoaded);
 
     expect(mockLocalDirService.getFile).toHaveBeenCalledWith('local-dir://gemma.litertlm');
     expect(modelLoader.engine).toBeDefined();
     expect(onModelLoaded).toHaveBeenCalled();
     expect(modelLoader.isModelLoading).toBeFalse();
+  });
+
+  describe('needsModelReload', () => {
+    it('returns true when engine is null', () => {
+      modelLoader.engine = null;
+      expect(modelLoader.needsModelReload(settingsStore.modelSettings)).toBeTrue();
+    });
+
+    it('returns false after successful load', async () => {
+      const mockStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2, 3]));
+          controller.close();
+        }
+      });
+      const mockCache = {
+        match: jasmine.createSpy().and.resolveTo({
+          headers: new Headers({'content-length': '3'}),
+          body: mockStream,
+        })
+      };
+      spyOn(window.caches, 'open').and.resolveTo(mockCache as unknown as Cache);
+
+      settingsStore.selectedModelPath = 'https://example.com/model.litertlm';
+      settingsStore.contextLength = 2048;
+      settingsStore.topK = 32;
+
+      await modelLoader.loadModelWeights(settingsStore.modelSettings, async () => {});
+
+      expect(modelLoader.needsModelReload(settingsStore.modelSettings)).toBeFalse();
+    });
+
+    it('returns true when selectedModelPath changes', async () => {
+      const mockStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2, 3]));
+          controller.close();
+        }
+      });
+      const mockCache = {
+        match: jasmine.createSpy().and.resolveTo({
+          headers: new Headers({'content-length': '3'}),
+          body: mockStream,
+        })
+      };
+      spyOn(window.caches, 'open').and.resolveTo(mockCache as unknown as Cache);
+
+      settingsStore.selectedModelPath = 'https://example.com/model.litertlm';
+      await modelLoader.loadModelWeights(settingsStore.modelSettings, async () => {});
+
+      expect(modelLoader.needsModelReload(settingsStore.modelSettings)).toBeFalse();
+
+      settingsStore.selectedModelPath = 'https://example.com/different.litertlm';
+      expect(modelLoader.needsModelReload(settingsStore.modelSettings)).toBeTrue();
+    });
+
+    it('returns true when contextLength changes', async () => {
+      const mockStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2, 3]));
+          controller.close();
+        }
+      });
+      const mockCache = {
+        match: jasmine.createSpy().and.resolveTo({
+          headers: new Headers({'content-length': '3'}),
+          body: mockStream,
+        })
+      };
+      spyOn(window.caches, 'open').and.resolveTo(mockCache as unknown as Cache);
+
+      settingsStore.selectedModelPath = 'https://example.com/model.litertlm';
+      settingsStore.contextLength = 2048;
+      await modelLoader.loadModelWeights(settingsStore.modelSettings, async () => {});
+
+      expect(modelLoader.needsModelReload(settingsStore.modelSettings)).toBeFalse();
+
+      settingsStore.contextLength = 4096;
+      expect(modelLoader.needsModelReload(settingsStore.modelSettings)).toBeTrue();
+    });
+
+    it('returns true when topK changes', async () => {
+      const mockStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2, 3]));
+          controller.close();
+        }
+      });
+      const mockCache = {
+        match: jasmine.createSpy().and.resolveTo({
+          headers: new Headers({'content-length': '3'}),
+          body: mockStream,
+        })
+      };
+      spyOn(window.caches, 'open').and.resolveTo(mockCache as unknown as Cache);
+
+      settingsStore.selectedModelPath = 'https://example.com/model.litertlm';
+      settingsStore.topK = 32;
+      await modelLoader.loadModelWeights(settingsStore.modelSettings, async () => {});
+
+      expect(modelLoader.needsModelReload(settingsStore.modelSettings)).toBeFalse();
+
+      settingsStore.topK = 64;
+      expect(modelLoader.needsModelReload(settingsStore.modelSettings)).toBeTrue();
+    });
   });
 });

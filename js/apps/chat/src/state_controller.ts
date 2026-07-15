@@ -50,7 +50,6 @@ export class LlmChatStateController implements ReactiveController {
     );
     this.modelLoader = new ModelLoaderService(
         () => this.requestUpdate(),
-        this.settings,
         (msg: string) => {
           this.statusText = msg;
           this.requestUpdate();
