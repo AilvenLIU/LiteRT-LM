@@ -311,7 +311,7 @@ absl::Status EmbeddingLookupText::Initialize() {
     signature_key_ = signatures.front().Key();
   }
 
-  ABSL_LOG(INFO) << "EmbeddingLookupText::Initialize Creating input buffers";
+  ABSL_VLOG(1) << "EmbeddingLookupText::Initialize Creating input buffers";
   LITERT_ASSIGN_OR_RETURN(input_buffers_, compiled_model_->CreateInputBuffers(
                                               signature_key_.value()));
 
@@ -350,10 +350,10 @@ absl::Status EmbeddingLookupText::Initialize() {
     floats_per_token_output_ *= output_buffer_layout.Dimensions()[i];
   }
 
-  ABSL_LOG(INFO) << "EmbeddingLookupText initialized: "
-                 << "signature=" << signature_key_.value_or("default")
-                 << ", rank=" << output_buffer_layout.Rank()
-                 << ", floats_per_token=" << floats_per_token_output_;
+  ABSL_VLOG(1) << "EmbeddingLookupText initialized: "
+               << "signature=" << signature_key_.value_or("default")
+               << ", rank=" << output_buffer_layout.Rank()
+               << ", floats_per_token=" << floats_per_token_output_;
 
   // Initialize the default embedding vector to be the embedding of token 0.
   default_embedding_vector_.resize(floats_per_token_output_);

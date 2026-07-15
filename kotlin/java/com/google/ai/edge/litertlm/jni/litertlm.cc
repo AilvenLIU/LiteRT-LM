@@ -182,8 +182,8 @@ jobject CreateBenchmarkInfoJni(
 
   double total_init_time_ms = 0.0;
   for (const auto& phase : benchmark_info.GetInitPhases()) {
-    ABSL_LOG(INFO) << "Init phase: " << phase.first << " took "
-                   << absl::ToDoubleMilliseconds(phase.second) << " ms";
+    ABSL_VLOG(1) << "Init phase: " << phase.first << " took "
+                 << absl::ToDoubleMilliseconds(phase.second) << " ms";
     total_init_time_ms += absl::ToDoubleMilliseconds(phase.second);
   }
 

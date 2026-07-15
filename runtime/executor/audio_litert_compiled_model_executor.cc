@@ -648,9 +648,9 @@ absl::StatusOr<std::unique_ptr<AudioLiteRtCompiledModelExecutor>>
 AudioLiteRtCompiledModelExecutor::Create(
     AudioExecutorSettings executor_settings, Environment& env) {
   if (executor_settings.GetMaxSequenceLength() > 0) {
-    ABSL_LOG(INFO) << "Max sequence length is not used for "
-                      "AudioLiteRtCompiledModelExecutor, "
-                      "which can handle variable length input.";
+    ABSL_VLOG(1) << "Max sequence length is not used for "
+                    "AudioLiteRtCompiledModelExecutor, "
+                    "which can handle variable length input.";
   }
   LITERT_ASSIGN_OR_RETURN(
       auto resources,
@@ -681,8 +681,8 @@ AudioLiteRtCompiledModelExecutor::Create(
         audio_adapter,
         AudioAdapter::Create(executor_settings, env, *audio_adapter_model_or));
   } else {
-    ABSL_LOG(INFO) << "Audio adapter model is not found. Audio encoder output "
-                      "will be used directly.";
+    ABSL_VLOG(1) << "Audio adapter model is not found. Audio encoder output "
+                    "will be used directly.";
   }
   int sequence_length = 0;
   if (audio_encoder->GetInputMaskBuffer() != nullptr) {
@@ -775,9 +775,9 @@ AudioLiteRtCompiledModelExecutor::Create(
           "Unsupported type mismatch between audio encoder and adapter");
     }
   }
-  ABSL_LOG(INFO) << "AudioLiteRtCompiledModelExecutor created with "
-                    "encoder_shrinking_factor: "
-                 << encoder_shrinking_factor;
+  ABSL_VLOG(1) << "AudioLiteRtCompiledModelExecutor created with "
+                  "encoder_shrinking_factor: "
+               << encoder_shrinking_factor;
   return absl::WrapUnique(new AudioLiteRtCompiledModelExecutor(
       std::move(executor_settings), std::move(executor_properties), env,
       std::move(resources), std::move(audio_encoder), std::move(audio_adapter),

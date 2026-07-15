@@ -232,7 +232,7 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedImpl::Create(
   std::future<absl::StatusOr<std::unique_ptr<Tokenizer>>> tokenizer_future;
   std::unique_ptr<Tokenizer> tokenizer;
   if (!hasLlmModelType) {
-    ABSL_LOG(INFO)
+    ABSL_VLOG(1)
         << "Legacy model files don't have LlmModelType, loading tokenizer now";
     ABSL_ASSIGN_OR_RETURN(tokenizer, create_tokenizer());
     // Update and load the parameters from the model file and convert the
@@ -254,8 +254,8 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedImpl::Create(
   } else {
     // If the model type is available, wait for the tokenizer to be created
     // after the model is loaded.
-    ABSL_LOG(INFO) << "New model files have LlmModelType, loading tokenizer "
-                      "asynchronously";
+    ABSL_VLOG(1) << "New model files have LlmModelType, loading tokenizer "
+                    "asynchronously";
 
     if (engine_settings.GetParallelFileSectionLoading()) {
       // Launch the tokenizer creation in a separate thread in parallel with the

@@ -534,7 +534,7 @@ absl::Status SetCpuCacheOptions(
         weight_cache_file,
     absl::string_view logging_prefix, litert::CpuOptions& cpu_options) {
   if (!weight_cache_file.ok()) {
-    ABSL_LOG(INFO) << logging_prefix << " does not use cache.";
+    ABSL_VLOG(1) << logging_prefix << " does not use cache.";
     return absl::OkStatus();
   }
 
@@ -546,15 +546,14 @@ absl::Status SetCpuCacheOptions(
       ABSL_ASSIGN_OR_RETURN(auto duplicated, scoped_cache_file->Duplicate());
       ABSL_ASSIGN_OR_RETURN(int fd, duplicated.Release());
       cpu_options.SetXNNPackWeightCacheFileDescriptor(fd);
-      ABSL_LOG(INFO) << logging_prefix
-                     << " use provided cache file descriptor: " << fd;
+      ABSL_VLOG(1) << logging_prefix
+                   << " use provided cache file descriptor: " << fd;
     }
   } else if (std::holds_alternative<std::string>(*weight_cache_file)) {
     const std::string& weight_cache_path =
         std::get<std::string>(*weight_cache_file);
     cpu_options.SetXNNPackWeightCachePath(weight_cache_path.c_str());
-    ABSL_LOG(INFO) << logging_prefix
-                   << " use cache path: " << weight_cache_path;
+    ABSL_VLOG(1) << logging_prefix << " use cache path: " << weight_cache_path;
   }
   return absl::OkStatus();
 }
@@ -579,10 +578,10 @@ absl::Status SetGpuCacheOptions(
           std::filesystem::path(std::get<std::string>(*weight_cache_file))
               .parent_path()
               .string();
-      ABSL_LOG(INFO) << (logging_prefix.empty()
-                             ? ""
-                             : absl::StrCat(logging_prefix, ": "))
-                     << "Setting serialization dir: " << cache_path;
+      ABSL_VLOG(1) << (logging_prefix.empty()
+                           ? ""
+                           : absl::StrCat(logging_prefix, ": "))
+                   << "Setting serialization dir: " << cache_path;
       gpu_options.SetSerializationDir(cache_path.c_str());
       serialization_dir_set = true;
     } else {
@@ -604,10 +603,10 @@ absl::Status SetGpuCacheOptions(
             std::filesystem::path(std::get<std::string>(*program_cache_file))
                 .parent_path()
                 .string();
-        ABSL_LOG(INFO) << (logging_prefix.empty()
-                               ? ""
-                               : absl::StrCat(logging_prefix, ": "))
-                       << "Setting program cache dir: " << cache_path;
+        ABSL_VLOG(1) << (logging_prefix.empty()
+                             ? ""
+                             : absl::StrCat(logging_prefix, ": "))
+                     << "Setting program cache dir: " << cache_path;
         gpu_options.SetSerializationDir(cache_path.c_str());
       }
     } else {

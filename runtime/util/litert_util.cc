@@ -68,9 +68,9 @@ absl::StatusOr<OwnedEnvironment> CreateEnvironment(
       env_options.push_back(::litert::EnvironmentOptions::Option{
           ::litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
           main_executor_settings.GetLitertDispatchLibDir()});
-      ABSL_LOG(INFO) << "Setting dispatch library path from "
-                        "main_executor_settings: "
-                     << main_executor_settings.GetLitertDispatchLibDir();
+      ABSL_VLOG(1) << "Setting dispatch library path from "
+                      "main_executor_settings: "
+                   << main_executor_settings.GetLitertDispatchLibDir();
     } else {
       // Otherwise, use the directory of the model file.
       std::string model_path(
@@ -86,13 +86,13 @@ absl::StatusOr<OwnedEnvironment> CreateEnvironment(
       bool should_set_path = !dispatch_library_path.empty();
 #endif
       if (should_set_path) {
-        ABSL_LOG(INFO) << "Setting dispatch library path: "
-                       << dispatch_library_path;
+        ABSL_VLOG(1) << "Setting dispatch library path: "
+                     << dispatch_library_path;
         env_options.push_back(::litert::EnvironmentOptions::Option{
             ::litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
             absl::string_view(dispatch_library_path)});
       } else {
-        ABSL_LOG(INFO) << "No dispatch library path provided.";
+        ABSL_VLOG(1) << "No dispatch library path provided.";
       }
     }
 #endif  // defined(LITERT_DISABLE_NPU)

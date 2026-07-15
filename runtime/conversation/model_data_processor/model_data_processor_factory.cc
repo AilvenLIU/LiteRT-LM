@@ -546,30 +546,30 @@ absl::StatusOr<std::unique_ptr<ModelDataProcessor>> CreateModelDataProcessor(
     const std::vector<std::vector<int>>& stop_token_ids,
     bool enable_constrained_decoding, PromptTemplateCapabilities capabilities) {
   if (std::holds_alternative<Gemma3DataProcessorConfig>(config)) {
-    ABSL_LOG(INFO) << "Creating Gemma3DataProcessor";
+    ABSL_VLOG(1) << "Creating Gemma3DataProcessor";
     return Gemma3DataProcessor::Create(
         std::get<Gemma3DataProcessorConfig>(config), preface, tokenizer,
         stop_token_ids, enable_constrained_decoding);
   } else if (std::holds_alternative<Qwen3DataProcessorConfig>(config)) {
-    ABSL_LOG(INFO) << "Creating Qwen3DataProcessor";
+    ABSL_VLOG(1) << "Creating Qwen3DataProcessor";
     return Qwen3DataProcessor::Create(
         std::get<Qwen3DataProcessorConfig>(config), preface);
   } else if (std::holds_alternative<GenericDataProcessorConfig>(config)) {
-    ABSL_LOG(INFO) << "Creating GenericDataProcessor";
+    ABSL_VLOG(1) << "Creating GenericDataProcessor";
     return GenericDataProcessor::Create(
         std::get<GenericDataProcessorConfig>(config), capabilities);
   } else if (std::holds_alternative<FunctionGemmaDataProcessorConfig>(config)) {
-    ABSL_LOG(INFO) << "Creating FunctionGemmaDataProcessor";
+    ABSL_VLOG(1) << "Creating FunctionGemmaDataProcessor";
     return FunctionGemmaDataProcessor::Create(
         std::get<FunctionGemmaDataProcessorConfig>(config), preface, tokenizer,
         stop_token_ids, enable_constrained_decoding);
   } else if (std::holds_alternative<Gemma4DataProcessorConfig>(config)) {
-    ABSL_LOG(INFO) << "Creating Gemma4DataProcessor";
+    ABSL_VLOG(1) << "Creating Gemma4DataProcessor";
     return Gemma4DataProcessor::Create(
         std::get<Gemma4DataProcessorConfig>(config), preface, tokenizer,
         stop_token_ids, enable_constrained_decoding);
   } else if (std::holds_alternative<FastVlmDataProcessorConfig>(config)) {
-    ABSL_LOG(INFO) << "Creating FastVlmDataProcessor";
+    ABSL_VLOG(1) << "Creating FastVlmDataProcessor";
     return FastVlmDataProcessor::Create(
         std::get<FastVlmDataProcessorConfig>(config), capabilities);
   } else {

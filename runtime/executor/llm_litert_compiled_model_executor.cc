@@ -1420,7 +1420,7 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::InitializeSampler(
       sampler_handles_input && sampler_->CanHandleInput() &&
       !signatures_.input_tokens.empty() && runs_embedding_on_gpu;
   if (sampler_handles_input_) {
-    ABSL_LOG(INFO) << "Sampler will handle decode input tensors.";
+    ABSL_VLOG(1) << "Sampler will handle decode input tensors.";
     if (!decode_prev_input_pos_) {
       LITERT_ASSIGN_OR_RETURN(
           decode_prev_input_pos_,
@@ -1707,8 +1707,8 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
     section_map["tflite_weights"] = {
         section_offset.value().first,
         section_offset.value().second - section_offset.value().first};
-    ABSL_LOG(INFO) << "section_map: " << section_map["tflite_weights"].offset
-                   << " " << section_map["tflite_weights"].length;
+    ABSL_VLOG(1) << "section_map: " << section_map["tflite_weights"].offset
+                 << " " << section_map["tflite_weights"].length;
     LITERT_ASSIGN_OR_RETURN(auto scoped_file, resources.GetScopedFile());
     LITERT_ASSIGN_OR_RETURN(auto duplicated_scoped_file,
                             scoped_file.get().Duplicate());
@@ -1835,8 +1835,8 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
   std::optional<absl::flat_hash_map<absl::string_view, TensorBuffer>>
       decode_output_kv_cache_buffers;
   if (batch_size > 1) {
-    ABSL_LOG(INFO) << "Decode batch size is larger than 1. Allocate decode "
-                   << "only KV cache buffers.";
+    ABSL_VLOG(1) << "Decode batch size is larger than 1. Allocate decode "
+                 << "only KV cache buffers.";
     decode_input_kv_cache_buffers =
         absl::flat_hash_map<absl::string_view, TensorBuffer>();
     decode_output_kv_cache_buffers =

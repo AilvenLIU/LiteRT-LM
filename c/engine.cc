@@ -951,9 +951,9 @@ litert_lm_engine_settings_create_from_raw_file_descriptor(
                     << model_assets.status();
     return nullptr;
   }
-  ABSL_LOG(INFO) << "LiteRT-LM successfully created EngineSettings directly "
-                    "from raw File Descriptor: "
-                 << fd;
+  ABSL_VLOG(1) << "LiteRT-LM successfully created EngineSettings directly "
+                  "from raw File Descriptor: "
+               << fd;
   return CreateEngineSettingsHelper(
       std::move(*model_assets), absl::NullSafeStringView(backend_str),
       absl::NullSafeStringView(vision_backend_str),

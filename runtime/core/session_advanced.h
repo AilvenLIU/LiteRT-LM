@@ -181,7 +181,7 @@ class SessionAdvanced : public SessionInterface {
   // TODO(b/450903294): Add rollback history support for Session and
   // Conversation.
   void CancelProcess() override {
-    ABSL_LOG(INFO) << "SessionAdvanced::CancelProcess";
+    ABSL_VLOG(1) << "SessionAdvanced::CancelProcess";
     auto execution_manager_lock = execution_manager_.lock();
     if (execution_manager_lock == nullptr) {
       ABSL_LOG(ERROR) << "Execution manager is not available.";

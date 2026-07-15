@@ -103,7 +103,7 @@ ExtractBufferKeyAndTfLiteSectionHint(const schema::SectionObject* section) {
       }
     }
     if (found_model_type) {
-      ABSL_LOG(INFO) << "model_type: " << model_type;
+      ABSL_VLOG(1) << "model_type: " << model_type;
       ABSL_ASSIGN_OR_RETURN(ModelType model_type_enum,
                             StringToModelType(model_type));
       buffer_key = BufferKey(section->data_type(), model_type_enum);
@@ -195,7 +195,7 @@ absl::StatusOr<std::unique_ptr<LitertLmLoader>> LitertLmLoader::Create(
 }
 
 absl::Status LitertLmLoader::Initialize() {
-  ABSL_LOG(INFO) << "LitertLmLoader::Initialize";
+  ABSL_VLOG(1) << "LitertLmLoader::Initialize";
 
   // Map the header of the model file.
   uint64_t model_file_size;
@@ -219,15 +219,15 @@ absl::Status LitertLmLoader::Initialize() {
                                       /*size=*/header_size));
     header_data = header_memory_mapped_file->data();
   }
-  ABSL_LOG(INFO) << "mmap_status is ok";
+  ABSL_VLOG(1) << "mmap_status is ok";
 
   // Read the header information.
   absl::Status status =
       ReadHeaderFromLiteRTLM(header_data, header_size, &header_);
-  ABSL_LOG(INFO) << "status: " << status;
-  ABSL_LOG(INFO) << "major_version: " << header_.major_version;
-  ABSL_LOG(INFO) << "minor_version: " << header_.minor_version;
-  ABSL_LOG(INFO) << "patch_version: " << header_.patch_version;
+  ABSL_VLOG(1) << "status: " << status;
+  ABSL_VLOG(1) << "major_version: " << header_.major_version;
+  ABSL_VLOG(1) << "minor_version: " << header_.minor_version;
+  ABSL_VLOG(1) << "patch_version: " << header_.patch_version;
   if (!status.ok()) {
     return status;
   }
@@ -243,12 +243,12 @@ absl::Status LitertLmLoader::Initialize() {
     section_hints_map_[buffer_key] = section_hint;
 
     if (section_hint.backend_constraint.has_value()) {
-      ABSL_LOG(INFO) << "section_backend_constraint: "
-                     << *section_hint.backend_constraint;
+      ABSL_VLOG(1) << "section_backend_constraint: "
+                   << *section_hint.backend_constraint;
     }
     if (section_hint.prefer_activation_type.has_value()) {
-      ABSL_LOG(INFO) << "section_prefer_activation_type: "
-                     << *section_hint.prefer_activation_type;
+      ABSL_VLOG(1) << "section_prefer_activation_type: "
+                   << *section_hint.prefer_activation_type;
     }
 
     if (section->begin_offset() > section->end_offset()) {
@@ -260,11 +260,11 @@ absl::Status LitertLmLoader::Initialize() {
     section_locations_[buffer_key] =
         std::make_pair(section->begin_offset(), section->end_offset());
 
-    ABSL_LOG(INFO) << "section_index: " << i;
-    ABSL_LOG(INFO) << "section_data_type: "
-                   << EnumNameAnySectionDataType(section->data_type());
-    ABSL_LOG(INFO) << "section_begin_offset: " << section->begin_offset();
-    ABSL_LOG(INFO) << "section_end_offset: " << section->end_offset();
+    ABSL_VLOG(1) << "section_index: " << i;
+    ABSL_VLOG(1) << "section_data_type: "
+                 << EnumNameAnySectionDataType(section->data_type());
+    ABSL_VLOG(1) << "section_begin_offset: " << section->begin_offset();
+    ABSL_VLOG(1) << "section_end_offset: " << section->end_offset();
   }
   return absl::OkStatus();
 }

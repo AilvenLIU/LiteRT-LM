@@ -564,7 +564,7 @@ LlmLiteRtNpuCompiledModelExecutor::CreateLiteRtCpuOptions(
 }
 
 LlmLiteRtNpuCompiledModelExecutor::~LlmLiteRtNpuCompiledModelExecutor() {
-  ABSL_LOG(INFO) << "LatencyStats: " << GetLatencyStats();
+  ABSL_VLOG(1) << "LatencyStats: " << GetLatencyStats();
 }
 
 absl::StatusOr<LlmLiteRtNpuCompiledModelExecutor::EmbedderContext>

@@ -97,11 +97,11 @@ absl::Status ValidateBackendConstraint(
                        backend_constraint_str, "] but ", modality_name,
                        " backend is ", backend));
     }
-    ABSL_LOG(INFO) << "The " << modality_name
-                   << " backend constraint is matched: " << backend;
+    ABSL_VLOG(1) << "The " << modality_name
+                 << " backend constraint is matched: " << backend;
   } else {
-    ABSL_LOG(INFO) << "The " << modality_name
-                   << " backend constraint is not set.";
+    ABSL_VLOG(1) << "The " << modality_name
+                 << " backend constraint is not set.";
   }
   return absl::OkStatus();
 }
@@ -188,8 +188,8 @@ absl::StatusOr<EngineSettings> EngineSettings::CreateDefault(
     }
 
     if (is_text_artisan) {
-      ABSL_LOG(INFO) << "Artisan model detected. Switching backend from GPU to "
-                        "GPU_ARTISAN.";
+      ABSL_VLOG(1) << "Artisan model detected. Switching backend from GPU to "
+                      "GPU_ARTISAN.";
       backend = Backend::GPU_ARTISAN;
       if (audio_backend.has_value() && audio_backend.value() == Backend::GPU) {
         audio_backend = Backend::GPU_ARTISAN;
@@ -440,7 +440,7 @@ absl::Status EngineSettings::MaybeUpdateAndValidate(
   }
 
   ABSL_VLOG(5) << "The llm metadata: " << metadata.DebugString();
-  ABSL_LOG(INFO) << "The validated engine settings: " << *this;
+  ABSL_VLOG(1) << "The validated engine settings: " << *this;
   return absl::OkStatus();
 }
 

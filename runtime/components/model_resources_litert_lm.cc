@@ -106,8 +106,8 @@ absl::StatusOr<const litert::Model*> ModelResourcesLitertLm::GetTFLiteModel(
             absl::StatusCode::kUnimplemented) {
           return model_from_section.status();
         }
-        ABSL_LOG(INFO) << "File-backed LiteRT model loading is unsupported; "
-                          "falling back to buffer-backed loading.";
+        ABSL_VLOG(1) << "File-backed LiteRT model loading is unsupported; "
+                        "falling back to buffer-backed loading.";
       } else {
         auto& model = model_map_[model_type];
         model = std::make_unique<litert::Model>(
@@ -119,8 +119,8 @@ absl::StatusOr<const litert::Model*> ModelResourcesLitertLm::GetTFLiteModel(
 
   litert::BufferRef<uint8_t> buffer_ref =
       litert_lm_loader_->GetTFLiteModel(model_type);
-  ABSL_LOG(INFO) << "model_type: " << ModelTypeToString(model_type);
-  ABSL_LOG(INFO) << "litert model size: " << buffer_ref.Size();
+  ABSL_VLOG(1) << "model_type: " << ModelTypeToString(model_type);
+  ABSL_VLOG(1) << "litert model size: " << buffer_ref.Size();
   if (buffer_ref.Size() == 0) {
     return absl::NotFoundError(absl::StrCat(ModelTypeToString(model_type),
                                             " not found in the model."));
@@ -146,8 +146,8 @@ absl::StatusOr<absl::string_view> ModelResourcesLitertLm::GetTFLiteModelBuffer(
   litert::BufferRef<uint8_t> buffer_ref =
       litert_lm_loader_->GetTFLiteModel(model_type);
 
-  ABSL_LOG(INFO) << "model_type: " << ModelTypeToString(model_type);
-  ABSL_LOG(INFO) << "litert model size: " << buffer_ref.Size();
+  ABSL_VLOG(1) << "model_type: " << ModelTypeToString(model_type);
+  ABSL_VLOG(1) << "litert model size: " << buffer_ref.Size();
   if (buffer_ref.Size() == 0) {
     return absl::NotFoundError(absl::StrCat(ModelTypeToString(model_type),
                                             " not found in the model."));

@@ -532,14 +532,14 @@ absl::StatusOr<ExecutorVisionData> VisionLiteRtCompiledModelExecutor::Encode(
   LITERT_ASSIGN_OR_RETURN(
       auto encoder_signature,
       vision_encoder_->GetModel().GetSignature(encoder_signature_index));
-  ABSL_LOG(INFO) << "encoder_signature_index: " << encoder_signature_index
-                 << " name: " << encoder_signature.Key();
+  ABSL_VLOG(1) << "encoder_signature_index: " << encoder_signature_index
+               << " name: " << encoder_signature.Key();
   if (vision_adapter_ != nullptr) {
     LITERT_ASSIGN_OR_RETURN(
         auto adapter_signature,
         vision_adapter_->GetModel().GetSignature(*adapter_signature_index));
-    ABSL_LOG(INFO) << "adapter_signature_index: " << *adapter_signature_index
-                   << " name: " << adapter_signature.Key();
+    ABSL_VLOG(1) << "adapter_signature_index: " << *adapter_signature_index
+                 << " name: " << adapter_signature.Key();
   }
 
   std::vector<TensorBuffer> adapter_output_tensor_buffers;

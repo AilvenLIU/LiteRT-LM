@@ -164,12 +164,12 @@ absl::Status UpdateCompilationOptions(
 }  // namespace
 
 LlmLiteRtMtpDrafter::~LlmLiteRtMtpDrafter() {
-  ABSL_LOG(INFO) << "Num drafted tokens: " << num_drafted_tokens_;
-  ABSL_LOG(INFO) << "Num verified tokens: " << num_verified_tokens_;
+  ABSL_VLOG(1) << "Num drafted tokens: " << num_drafted_tokens_;
+  ABSL_VLOG(1) << "Num verified tokens: " << num_verified_tokens_;
   if (num_drafted_tokens_ > 0) {
-    ABSL_LOG(INFO) << "Success rate: "
-                   << static_cast<double>(num_verified_tokens_) /
-                          num_drafted_tokens_;
+    ABSL_VLOG(1) << "Success rate: "
+                 << static_cast<double>(num_verified_tokens_) /
+                        num_drafted_tokens_;
   }
 }
 

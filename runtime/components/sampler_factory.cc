@@ -364,7 +364,7 @@ class TopKOpenClCApiSampler : public TopKCApiSampler {
         "LiteRtTopKOpenClSampler_UpdateConfig");
     if (capi_or.ok()) {
       capi = std::move(capi_or.value());
-      ABSL_LOG(INFO) << "Dynamically loaded LiteRtTopKOpenClSampler C API.";
+      ABSL_VLOG(1) << "Dynamically loaded LiteRtTopKOpenClSampler C API.";
     } else {
       if (capi_or.status().code() != absl::StatusCode::kUnavailable) {
         return capi_or.status();
@@ -377,7 +377,7 @@ class TopKOpenClCApiSampler : public TopKCApiSampler {
         return capi_or.status();
       }
       capi = std::move(static_capi_or.value());
-      ABSL_LOG(INFO) << "Statically linked LiteRtTopKOpenClSampler C API.";
+      ABSL_VLOG(1) << "Statically linked LiteRtTopKOpenClSampler C API.";
     }
 
     LiteRtTopKSampler_Sampler* sampler = nullptr;
@@ -440,7 +440,7 @@ class TopKWebGpuCApiSampler : public TopKCApiSampler {
         "LiteRtTopKWebGpuSampler_SetInputTensorsAndInferenceFunc");
     if (capi_or.ok()) {
       capi = std::move(capi_or.value());
-      ABSL_LOG(INFO) << "Dynamically loaded LiteRtTopKWebGpuSampler C API.";
+      ABSL_VLOG(1) << "Dynamically loaded LiteRtTopKWebGpuSampler C API.";
     } else {
       if (capi_or.status().code() != absl::StatusCode::kUnavailable) {
         return capi_or.status();
@@ -453,7 +453,7 @@ class TopKWebGpuCApiSampler : public TopKCApiSampler {
         return capi_or.status();
       }
       capi = std::move(static_capi_or.value());
-      ABSL_LOG(INFO) << "Statically linked LiteRtTopKWebGpuSampler C API.";
+      ABSL_VLOG(1) << "Statically linked LiteRtTopKWebGpuSampler C API.";
     }
 
     LiteRtTopKSampler_Sampler* sampler = nullptr;
@@ -519,7 +519,7 @@ class TopKMetalCApiSampler : public TopKCApiSampler {
         "LiteRtTopKMetalSampler_SetInputTensorsAndInferenceFunc");
     if (capi_or.ok()) {
       capi = std::move(capi_or.value());
-      ABSL_LOG(INFO) << "Dynamically loaded LiteRtTopKMetalSampler C API.";
+      ABSL_VLOG(1) << "Dynamically loaded LiteRtTopKMetalSampler C API.";
     } else {
       if (capi_or.status().code() != absl::StatusCode::kUnavailable) {
         return capi_or.status();
@@ -532,7 +532,7 @@ class TopKMetalCApiSampler : public TopKCApiSampler {
         return capi_or.status();
       }
       capi = std::move(static_capi_or.value());
-      ABSL_LOG(INFO) << "Statically linked LiteRtTopKMetalSampler C API.";
+      ABSL_VLOG(1) << "Statically linked LiteRtTopKMetalSampler C API.";
     }
 
     LiteRtTopKSampler_Sampler* sampler = nullptr;
@@ -581,8 +581,8 @@ absl::StatusOr<std::unique_ptr<Sampler>> CreateCpuSampler(
     proto::SamplerParameters sampler_params) {
   switch (sampler_params.type()) {
     case proto::SamplerParameters::TYPE_UNSPECIFIED:
-      ABSL_LOG(INFO) << "Sampler type is unspecified. Assume the LLM Executor "
-                        "handles the sampling logic.";
+      ABSL_VLOG(1) << "Sampler type is unspecified. Assume the LLM Executor "
+                      "handles the sampling logic.";
       return nullptr;
     case proto::SamplerParameters::TOP_P:
       return TopPSampler::Create(sampler_params.k(), sampler_params.p(),
@@ -623,8 +623,8 @@ absl::StatusOr<std::unique_ptr<Sampler>> CreateGpuSampler(
         webgpu_sampler.status().code() != absl::StatusCode::kUnavailable) {
       return webgpu_sampler;
     }
-    ABSL_LOG(INFO) << "WebGPU sampler explicitly requested but "
-                      "failed/unavailable, falling back.";
+    ABSL_VLOG(1) << "WebGPU sampler explicitly requested but "
+                    "failed/unavailable, falling back.";
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
   }
 
@@ -636,7 +636,7 @@ absl::StatusOr<std::unique_ptr<Sampler>> CreateGpuSampler(
       opencl_sampler.status().code() != absl::StatusCode::kUnavailable) {
     return opencl_sampler;
   }
-  ABSL_LOG(INFO)
+  ABSL_VLOG(1)
       << "OpenCL sampler not available, falling back to other sampler options.";
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
@@ -649,8 +649,8 @@ absl::StatusOr<std::unique_ptr<Sampler>> CreateGpuSampler(
         webgpu_sampler.status().code() != absl::StatusCode::kUnavailable) {
       return webgpu_sampler;
     }
-    ABSL_LOG(INFO) << "WebGPU sampler not available, falling back to other "
-                      "sampler options.";
+    ABSL_VLOG(1) << "WebGPU sampler not available, falling back to other "
+                    "sampler options.";
   }
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
@@ -668,8 +668,8 @@ absl::StatusOr<std::unique_ptr<Sampler>> CreateGpuSampler(
       ABSL_LOG(WARNING)
           << "Metal sampler explicitly requested but failed/unavailable.";
     } else {
-      ABSL_LOG(INFO) << "Metal sampler not available, falling back to other "
-                        "sampler options.";
+      ABSL_VLOG(1) << "Metal sampler not available, falling back to other "
+                      "sampler options.";
     }
   }
 #endif  // __APPLE__
@@ -682,7 +682,7 @@ absl::StatusOr<std::unique_ptr<Sampler>> CreateGpuSampler(
       webgpu_sampler.status().code() != absl::StatusCode::kUnavailable) {
     return webgpu_sampler;
   }
-  ABSL_LOG(INFO)
+  ABSL_VLOG(1)
       << "WebGPU sampler not available, falling back to other sampler options.";
 #endif                         // LITERT_HAS_WEBGPU_SUPPORT
 
@@ -694,7 +694,7 @@ absl::StatusOr<std::unique_ptr<Sampler>> CreateGpuSampler(
       opencl_sampler.status().code() != absl::StatusCode::kUnavailable) {
     return opencl_sampler;
   }
-  ABSL_LOG(INFO)
+  ABSL_VLOG(1)
       << "OpenCL sampler not available, falling back to other sampler options.";
 #endif                         // LITERT_HAS_OPENCL_SUPPORT
 #endif                         // !__ANDROID__
