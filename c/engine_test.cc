@@ -68,11 +68,13 @@ struct LiteRtLmConversationConfig {
   std::string tools_json;
   std::string messages_json;
   std::string extra_context_json;
+  std::string prompt_template;
   bool enable_constrained_decoding = false;
   bool filter_channel_content_from_kv_cache = false;
   bool stream_tool_calls = false;
   std::string stream_tool_calls_channel_name = "tool_call";
   std::optional<litert::lm::ThinkingConfig> thinking_config;
+  std::optional<LiteRtLmConstraintProviderType> constraint_provider_type;
 };
 
 struct LiteRtLmConversation {
