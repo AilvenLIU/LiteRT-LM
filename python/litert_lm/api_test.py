@@ -14,6 +14,7 @@
 
 """Standalone structural verification suite for pre-built LiteRT-LM PyPI wheels."""
 
+import argparse
 import pathlib
 import re
 import shutil
@@ -199,7 +200,29 @@ def verify_comprehensive_e2e_suite(model_path: pathlib.Path):
   )
 
 
+def verify_gpu_suite(model_path: pathlib.Path):
+  """Quick smoke test to ensure the GPU delegate initializes and runs correctly."""
+  print("------------------------------------------------")
+  print("🚀 Running GPU Hardware Verification")
+  print("------------------------------------------------")
+  with (
+      litert_lm.Engine(
+          str(model_path), backend=litert_lm.Backend.GPU(), max_num_tokens=4096
+      ) as engine,
+      engine.create_conversation() as conversation,
+  ):
+    msg = conversation.send_message("What is the capital of France?")
+    text = msg["content"][0]["text"]
+    print(f"   GPU Response: '{text.strip()}'")
+    assert "paris" in text.lower(), f"GPU Failure: Got '{text}'"
+  print("   ✅ GPU Hardware Acceleration Passed!")
+
+
 def main():
+  parser = argparse.ArgumentParser()
+  parser.add_argument("--test-gpu", action="store_true", help="Run GPU tests")
+  args = parser.parse_args()
+
   litert_lm.set_min_log_severity(litert_lm.LogSeverity.INFO)
 
   # Target GCS model cached in temporary storage
@@ -266,6 +289,9 @@ def main():
     raise FileNotFoundError(f"Verification model not found at {target_model}")
 
   verify_comprehensive_e2e_suite(target_model)
+
+  if args.test_gpu:
+    verify_gpu_suite(target_model)
 
 
 if __name__ == "__main__":
