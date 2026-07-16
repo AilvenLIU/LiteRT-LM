@@ -88,6 +88,7 @@ describe('LiteRtLm tests', () => {
       enable_decode_logits: true,
       enable_external_embeddings: false,
       use_submodel: true,
+      use_autosized_ringbuffers: false,
     };
 
     const engine = await Engine.create({
@@ -144,6 +145,7 @@ describe('LiteRtLm tests', () => {
             enable_decode_logits: true,
             enable_external_embeddings: false,
             use_submodel: true,
+            use_autosized_ringbuffers: false,
           };
           engine = await Engine.create({
             model: modelPath,

@@ -115,6 +115,7 @@ export class LitertLmSettingsEditor extends LitElement {
     enable_decode_logits: false,
     enable_external_embeddings: false,
     use_submodel: false,
+    use_autosized_ringbuffers: false,
   };
 
   @state()
@@ -493,6 +494,13 @@ export class LitertLmSettingsEditor extends LitElement {
               this.gpuArtisanConfig.use_submodel = val;
               this.requestUpdate();
             }, 'Whether the submodel should be used if available.')}
+      ${
+        this.renderField(
+            'Use Autosized Ringbuffers', config, loaded, 'use_autosized_ringbuffers',
+            'checkbox', (val) => {
+              this.gpuArtisanConfig.use_autosized_ringbuffers = val;
+              this.requestUpdate();
+            }, 'For low GPU memory with long contexts, use minimally sized ringbuffers for local attention. Prevents instantaneous rewinding, but saves a lot of memory, especially for large models.')}
     `;
   }
 

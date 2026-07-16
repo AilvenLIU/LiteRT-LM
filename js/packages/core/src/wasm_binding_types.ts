@@ -195,6 +195,11 @@ export declare interface GpuArtisanConfig {
 
   // Whether the submodel should be used if available.
   use_submodel: boolean;
+
+  // For low GPU memory with long contexts, use minimally sized ringbuffers for
+  // local attention. Prevents instantaneous rewinding, but saves a lot of
+  // memory, especially for large models.
+  use_autosized_ringbuffers: boolean;
 }
 
 /**

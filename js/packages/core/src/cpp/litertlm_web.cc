@@ -164,7 +164,9 @@ EMSCRIPTEN_BINDINGS(litertlm_web) {
              &litert::lm::GpuArtisanConfig::enable_decode_logits)
       .field("enable_external_embeddings",
              &litert::lm::GpuArtisanConfig::enable_external_embeddings)
-      .field("use_submodel", &litert::lm::GpuArtisanConfig::use_submodel);
+      .field("use_submodel", &litert::lm::GpuArtisanConfig::use_submodel)
+      .field("use_autosized_ringbuffers",
+             &litert::lm::GpuArtisanConfig::use_autosized_ringbuffers);
 
   emscripten::value_object<litert::lm::AdvancedSettings>("AdvancedSettings")
       .field("prefill_batch_sizes", &getPrefills, &setPrefills)

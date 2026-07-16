@@ -288,6 +288,7 @@ export class ModelLoaderService {
             enable_decode_logits: false,
             enable_external_embeddings: false,
             use_submodel: true,
+            use_autosized_ringbuffers: true,
           } as GpuArtisanConfig
         },
         benchmarkEnabled: true
