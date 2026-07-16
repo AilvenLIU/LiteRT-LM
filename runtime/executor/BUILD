@@ -152,6 +152,7 @@ cc_library(
         "//runtime/util:model_asset_bundle_resources",
         "//runtime/util:scoped_file",
         "//runtime/util:tensor_buffer_util",
+        "@litert//tflite/delegates/xnnpack:xnnpack_delegate_hdrs_only",
         "@litert//tflite/types:half",
     ],
 )

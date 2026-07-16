@@ -60,7 +60,6 @@
 #include "runtime/executor/llm_executor_io_types.h"
 #include "runtime/util/convert_tensor_buffer.h"  // IWYU pragma: keep
 #include "runtime/util/tensor_buffer_util.h"
-#include "tflite/delegates/xnnpack/xnnpack_delegate.h"  // from @litert
 #include "tflite/types/half.h"  // from @litert
 
 #if !defined(LITERT_DISABLE_NPU)
@@ -73,35 +72,8 @@ namespace {
 // Set the default GPU options for the model.
 absl::Status SetGpuOptions(const AudioExecutorSettings& executor_settings,
                            litert::GpuOptions& gpu_options) {
-#if defined(LITERT_USE_WEBGPU_ACCELERATOR)
-  gpu_options.SetBackend(GpuOptions::Backend::kWebGpu);
-#endif  // defined(LITERT_USE_WEBGPU_ACCELERATOR)
-  gpu_options.EnableConstantTensorSharing(true);
-  // Mixed precision setting overrides the activation data type setting. The
-  // underlying delegate uses fp32 precision to represent mixed precision, so we
-  // set it to fp32 here.
-  if (executor_settings.IsMixedPrecisionEnabled()) {
-    gpu_options.SetPrecision(GpuOptions::Precision::kFp32);
-  } else if (executor_settings.GetActivationDataType().has_value()) {
-    if (executor_settings.GetActivationDataType().value() ==
-        ActivationDataType::FLOAT32) {
-      gpu_options.SetPrecision(GpuOptions::Precision::kFp32);
-    } else {
-      gpu_options.SetPrecision(GpuOptions::Precision::kFp16);
-    }
-  } else {
-    // Default to fp32 if no activation data type is specified, for backward
-    // compatibility with previous launched models.
-    gpu_options.SetPrecision(GpuOptions::Precision::kFp32);
-  }
-#if defined(__APPLE__)
-  gpu_options.SetPreferTextureWeights(false);
-  gpu_options.SetUseMetalArgumentBuffers(true);
-#else   // !__APPLE__
-  gpu_options.SetPreferTextureWeights(true);
-#endif  // !__APPLE__
-  gpu_options.SetMadviseOriginalSharedTensors(true);
-  gpu_options.SetConvertWeightsOnGpu(true);
+  ABSL_RETURN_IF_ERROR(
+      ::litert::lm::SetCommonGpuOptions(executor_settings, gpu_options));
   gpu_options.SetHintFullyDelegatedToSingleDelegate(true);
   gpu_options.EnableInfiniteFloatCapping(true);
   gpu_options.SetNumStepsOfCommandBufferPreparations(2);
@@ -119,13 +91,8 @@ absl::Status SetGpuOptions(const AudioExecutorSettings& executor_settings,
 // Set the default CPU options for the model.
 absl::Status SetCpuOptions(const AudioExecutorSettings& executor_settings,
                            litert::CpuOptions& cpu_options) {
-  cpu_options.SetNumThreads(executor_settings.GetNumThreads());
-  auto default_xnn_options = TfLiteXNNPackDelegateOptionsDefault();
-  cpu_options.SetXNNPackFlags(
-      default_xnn_options.flags |
-      TFLITE_XNNPACK_DELEGATE_FLAG_DYNAMIC_FULLY_CONNECTED |
-      TFLITE_XNNPACK_DELEGATE_FLAG_ENABLE_LATEST_OPERATORS);
-  return absl::OkStatus();
+  return ::litert::lm::SetCpuOptions(cpu_options,
+                                     executor_settings.GetNumThreads());
 }
 
 constexpr std::array<absl::string_view, 3> kAudioInputNames = {

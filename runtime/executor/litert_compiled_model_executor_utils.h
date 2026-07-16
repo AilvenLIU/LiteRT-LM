@@ -150,6 +150,17 @@ absl::Status GenericComputeTokenEmbeddings(
     EmbeddingLookupManager* embedding_lookup_manager,
     EmbeddingLookupManager* per_layer_embedding_lookup_manager);
 
+// Set centralized CPU options (e.g. threads and default XNNPack flags).
+absl::Status SetCpuOptions(litert::CpuOptions& cpu_options,
+                           int num_threads = 4);
+
+// Set centralized standard GPU options common across executors.
+absl::Status SetCommonGpuOptions(
+    const ExecutorSettingsBase& executor_settings,
+    litert::GpuOptions& gpu_options,
+    std::optional<ActivationDataType> fallback_activation_data_type =
+        std::nullopt);
+
 // Set the CPU weight cache options for XNNPACK.
 // Args:
 //   - weight_cache_file: An optional weight cache file path.

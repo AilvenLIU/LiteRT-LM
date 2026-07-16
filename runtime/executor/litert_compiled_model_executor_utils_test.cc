@@ -876,5 +876,58 @@ TEST(LlmLiteRTCompiledModelExecutorUtilsTest, GetGpuModelCacheData_WithFd) {
   EXPECT_EQ(cache_data.cache_key, expected_cache_key);
 }
 
+class DummyExecutorSettings : public ExecutorSettingsBase {
+ public:
+  DummyExecutorSettings()
+      : ExecutorSettingsBase(*ModelAssets::Create("dummy_path")) {}
+};
+
+TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
+     SetCpuOptions_ConfigureSuccessfully) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto cpu_options, litert::CpuOptions::Create());
+  EXPECT_OK(SetCpuOptions(cpu_options, 8));
+}
+
+TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
+     SetCommonGpuOptions_DefaultAndFallbackPrecisions) {
+  DummyExecutorSettings executor_settings;
+  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
+
+  // Without fallback_activation_data_type specified, defaults to FLOAT32.
+  EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options));
+
+  // With FLOAT32 fallback specified, configures kFp32.
+  EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
+                                ActivationDataType::FLOAT32));
+
+  // With FLOAT16, INT16, and INT8 fallback specified, configures kFp16.
+  EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
+                                ActivationDataType::FLOAT16));
+  EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
+                                ActivationDataType::INT16));
+  EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
+                                ActivationDataType::INT8));
+}
+
+TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
+     SetCommonGpuOptions_ExplicitActivationPrecisionOverride) {
+  DummyExecutorSettings executor_settings;
+  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
+
+  // Explicit FLOAT32 overrides fallback of FLOAT16/INT8.
+  executor_settings.SetActivationDataType(ActivationDataType::FLOAT32);
+  EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
+                                ActivationDataType::FLOAT16));
+
+  // Explicit INT8 or FLOAT16 overrides fallback of FLOAT32.
+  executor_settings.SetActivationDataType(ActivationDataType::INT8);
+  EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
+                                ActivationDataType::FLOAT32));
+
+  executor_settings.SetActivationDataType(ActivationDataType::FLOAT16);
+  EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
+                                ActivationDataType::FLOAT32));
+}
+
 }  // namespace
 }  // namespace litert::lm

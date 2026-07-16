@@ -55,6 +55,7 @@
 #include "runtime/util/file_format_util.h"
 #include "runtime/util/file_util.h"
 #include "runtime/util/litert_lm_loader.h"
+#include "tflite/delegates/xnnpack/xnnpack_delegate.h"  // from @litert
 #include "runtime/util/model_asset_bundle_resources.h"
 #include "runtime/util/scoped_file.h"
 #include "runtime/util/status_macros.h"  //NOLINT
@@ -525,6 +526,46 @@ absl::Status GenericComputeTokenEmbeddings(
           wrapped_ple_embeddings.buffer.Read(output_ple_embeddings));
     }
   }
+  return absl::OkStatus();
+}
+
+absl::Status SetCpuOptions(litert::CpuOptions& cpu_options, int num_threads) {
+  cpu_options.SetNumThreads(num_threads);
+  auto default_xnn_options = TfLiteXNNPackDelegateOptionsDefault();
+  cpu_options.SetXNNPackFlags(
+      default_xnn_options.flags |
+      TFLITE_XNNPACK_DELEGATE_FLAG_DYNAMIC_FULLY_CONNECTED |
+      TFLITE_XNNPACK_DELEGATE_FLAG_ENABLE_LATEST_OPERATORS);
+  return absl::OkStatus();
+}
+
+absl::Status SetCommonGpuOptions(
+    const ExecutorSettingsBase& executor_settings,
+    litert::GpuOptions& gpu_options,
+    std::optional<ActivationDataType> fallback_activation_data_type) {
+#if defined(LITERT_USE_WEBGPU_ACCELERATOR)
+  gpu_options.SetBackend(GpuOptions::Backend::kWebGpu);
+#endif  // defined(LITERT_USE_WEBGPU_ACCELERATOR)
+  gpu_options.EnableConstantTensorSharing(true);
+  ActivationDataType activation_type =
+      executor_settings.GetActivationDataType().has_value()
+          ? executor_settings.GetActivationDataType().value()
+          : fallback_activation_data_type.value_or(ActivationDataType::FLOAT32);
+  if (activation_type == ActivationDataType::FLOAT32) {
+    gpu_options.SetPrecision(litert::GpuOptions::Precision::kFp32);
+  } else {
+    // For FLOAT16, INT16, and INT8 activation data types, calculation
+    // precision of the GPU delegate is set to fp16.
+    gpu_options.SetPrecision(litert::GpuOptions::Precision::kFp16);
+  }
+#if defined(__APPLE__)
+  gpu_options.SetPreferTextureWeights(false);
+  gpu_options.SetUseMetalArgumentBuffers(true);
+#else   // !__APPLE__
+  gpu_options.SetPreferTextureWeights(true);
+#endif  // !__APPLE__
+  gpu_options.SetMadviseOriginalSharedTensors(true);
+  gpu_options.SetConvertWeightsOnGpu(true);
   return absl::OkStatus();
 }
 

@@ -62,7 +62,6 @@
 #include "runtime/executor/vision_executor_settings.h"
 #include "runtime/util/convert_tensor_buffer.h"
 #include "runtime/util/status_macros.h"  // NOLINT
-#include "tflite/delegates/xnnpack/xnnpack_delegate.h"  // from @litert
 
 namespace litert::lm {
 
@@ -83,44 +82,13 @@ constexpr absl::string_view kMask = "mask";
 // Set the default GPU options for the model.
 absl::Status SetGpuOptions(const VisionExecutorSettings& executor_settings,
                            litert::GpuOptions& gpu_options) {
-#if defined(LITERT_USE_WEBGPU_ACCELERATOR)
-  gpu_options.SetBackend(GpuOptions::Backend::kWebGpu);
-#endif  // defined(LITERT_USE_WEBGPU_ACCELERATOR)
-  gpu_options.EnableConstantTensorSharing(true);
-  if (executor_settings.GetActivationDataType().has_value()) {
-    if (executor_settings.GetActivationDataType().value() ==
-        ActivationDataType::FLOAT32) {
-      gpu_options.SetPrecision(GpuOptions::Precision::kFp32);
-    } else {
-      gpu_options.SetPrecision(GpuOptions::Precision::kFp16);
-    }
-  } else {
-    // Default to fp32 if no activation data type is specified, for backward
-    // compatibility with previous launched models.
-    gpu_options.SetPrecision(GpuOptions::Precision::kFp32);
-  }
-#if defined(__APPLE__)
-  gpu_options.SetPreferTextureWeights(false);
-  gpu_options.SetUseMetalArgumentBuffers(true);
-#else   // !__APPLE__
-  gpu_options.SetPreferTextureWeights(true);
-#endif  // !__APPLE__
-  gpu_options.SetMadviseOriginalSharedTensors(true);
-  gpu_options.SetConvertWeightsOnGpu(true);
-  return absl::OkStatus();
+  return ::litert::lm::SetCommonGpuOptions(executor_settings, gpu_options);
 }
 
 // Set the default CPU options for the model.
 absl::Status SetCpuOptions(const VisionExecutorSettings& executor_settings,
                            litert::CpuOptions& cpu_options) {
-  // Set the number of threads to 4 by default.
-  cpu_options.SetNumThreads(4);
-  auto default_xnn_options = TfLiteXNNPackDelegateOptionsDefault();
-  cpu_options.SetXNNPackFlags(
-      default_xnn_options.flags |
-      TFLITE_XNNPACK_DELEGATE_FLAG_DYNAMIC_FULLY_CONNECTED |
-      TFLITE_XNNPACK_DELEGATE_FLAG_ENABLE_LATEST_OPERATORS);
-  return absl::OkStatus();
+  return ::litert::lm::SetCpuOptions(cpu_options, 4);
 }
 
 // Returns the index of the signature that should be used for the given number

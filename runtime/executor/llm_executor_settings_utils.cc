@@ -20,7 +20,6 @@
 #include <string>
 #include <variant>
 
-#include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
@@ -34,9 +33,7 @@
 #include "runtime/executor/litert_compiled_model_executor_utils.h"
 #include "runtime/executor/llm_executor_settings.h"
 #include "runtime/util/file_util.h"
-#include "runtime/util/scoped_file.h"
 #include "runtime/util/status_macros.h"
-#include "tflite/delegates/xnnpack/xnnpack_delegate.h"  // from @litert
 
 namespace litert::lm {
 
@@ -103,15 +100,15 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
           executor_settings.GetModelAssets().GetScopedFile().value()->IsValid();
 
       auto program_cache_file = executor_settings.GetProgramCacheFile(
-          cache_suffix.value_or("") +
-              std::string(ExecutorSettingsBase::kMlDriftCacheSuffix),
+          absl::StrCat(cache_suffix.value_or(""),
+                       ExecutorSettingsBase::kMlDriftCacheSuffix),
           /*check_and_clean=*/true);
       bool has_valid_program_cache_fd =
           program_cache_file.ok() &&
           !std::holds_alternative<std::string>(*program_cache_file);
       auto weight_cache_file = executor_settings.GetWeightCacheFile(
-          cache_suffix.value_or("") +
-              std::string(ExecutorSettingsBase::kMlDriftWeightCacheSuffix),
+          absl::StrCat(cache_suffix.value_or(""),
+                       ExecutorSettingsBase::kMlDriftWeightCacheSuffix),
           /*check_and_clean=*/true);
       bool has_valid_weight_cache_fd =
           weight_cache_file.ok() &&
@@ -145,6 +142,8 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
           weight_cache_file, program_cache_file, cache_key,
           /*logging_prefix=*/"", advanced_settings.cache_compiled_shaders_only,
           gpu_compilation_options));
+      ABSL_RETURN_IF_ERROR(SetCommonGpuOptions(
+          executor_settings, gpu_compilation_options, activation_data_type));
 
       // Use NoExternalTensorsMode to get better performance.
       ABSL_ASSIGN_OR_RETURN(const GpuConfig gpu_config,
@@ -240,41 +239,15 @@ absl::StatusOr<litert::Options> CreateCompilationOptions(
       ABSL_ASSIGN_OR_RETURN(const CpuConfig cpu_config,
                             executor_settings.GetBackendConfig<CpuConfig>());
       const uint32_t num_threads = cpu_config.number_of_threads;
-      cpu_compilation_options.SetNumThreads(num_threads);
+      ABSL_RETURN_IF_ERROR(
+          SetCpuOptions(cpu_compilation_options, num_threads));
       cpu_compilation_options.SetEnableYNNPack(cpu_config.enable_ynnpack);
       auto weight_cache_file = executor_settings.GetWeightCacheFile(
-          cache_suffix.value_or("") +
-              std::string(ExecutorSettingsBase::kXnnpackCacheSuffix),
+          absl::StrCat(cache_suffix.value_or(""),
+                       ExecutorSettingsBase::kXnnpackCacheSuffix),
           /*check_and_clean=*/true);
-      if (weight_cache_file.ok()) {
-        if (std::holds_alternative<std::string>(*weight_cache_file)) {
-          cache_path = std::get<std::string>(*weight_cache_file);
-          cpu_compilation_options.SetXNNPackWeightCachePath(cache_path.c_str());
-        } else {
-          auto scoped_cache_file =
-              std::get<std::shared_ptr<ScopedFile>>(*weight_cache_file);
-          ABSL_ASSIGN_OR_RETURN(auto duplicated,
-                                scoped_cache_file->Duplicate());
-          ABSL_ASSIGN_OR_RETURN(int fd, duplicated.Release());
-          cpu_compilation_options.SetXNNPackWeightCacheFileDescriptor(fd);
-        }
-      } else {
-        ABSL_LOG(WARNING) << "Can't use cache: " << weight_cache_file.status();
-      }
-      auto default_xnn_options = TfLiteXNNPackDelegateOptionsDefault();
-      // Set XNNPACK flags for CPU execution (`Backend::kCpu`):
-      // - TFLITE_XNNPACK_DELEGATE_FLAG_DYNAMIC_FULLY_CONNECTED: Enables dynamic
-      //   fully connected layers for efficient LLM weight handling.
-      // - TFLITE_XNNPACK_DELEGATE_FLAG_ENABLE_LATEST_OPERATORS: Enables the
-      //   latest experimental/new XNNPACK operators (e.g., newer SDPA variants
-      //   and dynamic shape features) required by converted LiteRT-LM models
-      //   (such as Gemma 4 AST audio/text models evaluated during CPU vs. GPU
-      //   LoRA and AST comparison testing) that are not yet enabled in the
-      //   default XNNPACK delegate options.
-      cpu_compilation_options.SetXNNPackFlags(
-          default_xnn_options.flags |
-          TFLITE_XNNPACK_DELEGATE_FLAG_DYNAMIC_FULLY_CONNECTED |
-          TFLITE_XNNPACK_DELEGATE_FLAG_ENABLE_LATEST_OPERATORS);
+      ABSL_RETURN_IF_ERROR(SetCpuCacheOptions(
+          weight_cache_file, "LLM", cpu_compilation_options));
       LITERT_ASSIGN_OR_RETURN(auto& runtime_options,
                               compilation_options.GetRuntimeOptions());
       runtime_options.SetCompressQuantizationZeroPoints(true);
