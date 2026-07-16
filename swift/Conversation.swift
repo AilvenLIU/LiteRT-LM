@@ -92,6 +92,7 @@ public class Conversation {
     extraContext: [String: Any]? = nil,
     repetitionPenaltyConfig: RepetitionPenaltyConfig? = nil,
     noRepeatNgramConfig: NoRepeatNgramConfig? = nil,
+    suppressTokensConfig: SuppressTokensConfig? = nil,
     maxOutputTokens: Int? = nil,
     thinkingConfig: ThinkingConfig? = nil
   ) async throws -> Message {
@@ -106,6 +107,7 @@ public class Conversation {
         extraContext: extraContext,
         repetitionPenaltyConfig: repetitionPenaltyConfig,
         noRepeatNgramConfig: noRepeatNgramConfig,
+        suppressTokensConfig: suppressTokensConfig,
         maxOutputTokens: maxOutputTokens,
         thinkingConfig: i == 0 ? thinkingConfig : nil
       )
@@ -132,6 +134,7 @@ public class Conversation {
     extraContext: [String: Any]?,
     repetitionPenaltyConfig: RepetitionPenaltyConfig? = nil,
     noRepeatNgramConfig: NoRepeatNgramConfig? = nil,
+    suppressTokensConfig: SuppressTokensConfig? = nil,
     maxOutputTokens: Int? = nil,
     thinkingConfig: ThinkingConfig? = nil
   ) throws
@@ -197,6 +200,21 @@ public class Conversation {
       }
       litert_lm_conversation_optional_args_set_no_repeat_ngram_config(
         optionalArgs, cNoRepeatNgramConfig)
+    }
+    if let suppressTokens = suppressTokensConfig?.suppressTokens, !suppressTokens.isEmpty {
+      guard let cSuppressTokensConfig = litert_lm_suppress_tokens_config_create() else {
+        throw LiteRTLMError.conversation(
+          .invalidResponse("Failed to create native suppress tokens config."))
+      }
+      defer { litert_lm_suppress_tokens_config_delete(cSuppressTokensConfig) }
+
+      let cTokens = suppressTokens.map { Int32($0) }
+      cTokens.withUnsafeBufferPointer { buffer in
+        litert_lm_suppress_tokens_config_set_suppress_tokens(
+          cSuppressTokensConfig, buffer.baseAddress, buffer.count)
+      }
+      litert_lm_conversation_optional_args_set_suppress_tokens_config(
+        optionalArgs, cSuppressTokensConfig)
     }
     if let maxOutputTokens = maxOutputTokens {
       litert_lm_conversation_optional_args_set_max_output_tokens(
@@ -290,6 +308,7 @@ public class Conversation {
     extraContext: [String: Any]? = nil,
     repetitionPenaltyConfig: RepetitionPenaltyConfig? = nil,
     noRepeatNgramConfig: NoRepeatNgramConfig? = nil,
+    suppressTokensConfig: SuppressTokensConfig? = nil,
     maxOutputTokens: Int? = nil,
     thinkingConfig: ThinkingConfig? = nil
   ) -> AsyncThrowingStream<Message, Error> {
@@ -302,6 +321,7 @@ public class Conversation {
           conversation: self,
           repetitionPenaltyConfig: repetitionPenaltyConfig,
           noRepeatNgramConfig: noRepeatNgramConfig,
+          suppressTokensConfig: suppressTokensConfig,
           maxOutputTokens: maxOutputTokens
         )
 
@@ -311,6 +331,7 @@ public class Conversation {
           extraContext: extraContext,
           repetitionPenaltyConfig: repetitionPenaltyConfig,
           noRepeatNgramConfig: noRepeatNgramConfig,
+          suppressTokensConfig: suppressTokensConfig,
           maxOutputTokens: maxOutputTokens,
           thinkingConfig: thinkingConfig,
           context: context
@@ -343,6 +364,7 @@ public class Conversation {
     extraContext: [String: Any]? = nil,
     repetitionPenaltyConfig: RepetitionPenaltyConfig? = nil,
     noRepeatNgramConfig: NoRepeatNgramConfig? = nil,
+    suppressTokensConfig: SuppressTokensConfig? = nil,
     maxOutputTokens: Int? = nil,
     thinkingConfig: ThinkingConfig? = nil,
     context: StreamContext
@@ -408,6 +430,21 @@ public class Conversation {
       }
       litert_lm_conversation_optional_args_set_no_repeat_ngram_config(
         optionalArgs, cNoRepeatNgramConfig)
+    }
+    if let suppressTokens = suppressTokensConfig?.suppressTokens, !suppressTokens.isEmpty {
+      guard let cSuppressTokensConfig = litert_lm_suppress_tokens_config_create() else {
+        throw LiteRTLMError.conversation(
+          .invalidResponse("Failed to create native suppress tokens config."))
+      }
+      defer { litert_lm_suppress_tokens_config_delete(cSuppressTokensConfig) }
+
+      let cTokens = suppressTokens.map { Int32($0) }
+      cTokens.withUnsafeBufferPointer { buffer in
+        litert_lm_suppress_tokens_config_set_suppress_tokens(
+          cSuppressTokensConfig, buffer.baseAddress, buffer.count)
+      }
+      litert_lm_conversation_optional_args_set_suppress_tokens_config(
+        optionalArgs, cSuppressTokensConfig)
     }
     if let maxOutputTokens = maxOutputTokens {
       litert_lm_conversation_optional_args_set_max_output_tokens(
@@ -639,6 +676,7 @@ public class Conversation {
     var pendingToolCalls: [[String: Any]] = []
     let repetitionPenaltyConfig: RepetitionPenaltyConfig?
     let noRepeatNgramConfig: NoRepeatNgramConfig?
+    let suppressTokensConfig: SuppressTokensConfig?
     let maxOutputTokens: Int?
 
     init(
@@ -646,12 +684,14 @@ public class Conversation {
       conversation: Conversation,
       repetitionPenaltyConfig: RepetitionPenaltyConfig? = nil,
       noRepeatNgramConfig: NoRepeatNgramConfig? = nil,
+      suppressTokensConfig: SuppressTokensConfig? = nil,
       maxOutputTokens: Int? = nil
     ) {
       self.continuation = continuation
       self.conversation = conversation
       self.repetitionPenaltyConfig = repetitionPenaltyConfig
       self.noRepeatNgramConfig = noRepeatNgramConfig
+      self.suppressTokensConfig = suppressTokensConfig
       self.maxOutputTokens = maxOutputTokens
     }
   }
@@ -725,6 +765,7 @@ private func streamCallback(
             messageJson: toolResponseJson,
             repetitionPenaltyConfig: context.repetitionPenaltyConfig,
             noRepeatNgramConfig: context.noRepeatNgramConfig,
+            suppressTokensConfig: context.suppressTokensConfig,
             maxOutputTokens: context.maxOutputTokens,
             context: context
           )

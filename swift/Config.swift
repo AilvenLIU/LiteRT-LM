@@ -303,3 +303,17 @@ public struct NoRepeatNgramConfig {
     self.windowSize = windowSize
   }
 }
+
+/// Configuration for suppressing tokens during generation.
+public struct SuppressTokensConfig {
+
+  /// The list of token IDs to suppress.
+  public let suppressTokens: [Int]
+
+  /// - Parameters:
+  ///   - suppressTokens: The list of token IDs to suppress. Can be any sequence of Ints (e.g.
+  ///     Array or Set).
+  public init<S: Sequence>(suppressTokens: S) where S.Element == Int {
+    self.suppressTokens = Array(suppressTokens)
+  }
+}
