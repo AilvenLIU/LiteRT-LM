@@ -71,6 +71,7 @@ public class Conversation {
 
   deinit {
     if let handle = handle {
+      self.handle = nil
       litert_lm_conversation_delete(handle)
     }
   }

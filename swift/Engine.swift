@@ -258,6 +258,7 @@ public actor Engine {
 
   deinit {
     if let handle = handle {
+      self.handle = nil
       litert_lm_engine_delete(handle)
     }
   }

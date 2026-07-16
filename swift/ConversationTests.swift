@@ -31,7 +31,7 @@ class ConversationTests: XCTestCase {
   override func setUp() async throws {
     try await super.setUp()
     let modelResource =
-      "runtime/testdata/test_lm.litertlm"
+      + "runtime/testdata/test_lm.litertlm"
     let modelPath = testDataPath(forResource: modelResource)
     ExperimentalFlags.optIntoExperimentalAPIs()
     ExperimentalFlags.enableBenchmark = true
@@ -345,5 +345,29 @@ class ConversationTests: XCTestCase {
       chunkCount += 1
     }
     XCTAssertGreaterThan(chunkCount, 0)
+  }
+
+  func testConversationTeardownAndEngineRetentionDoesNotCrash() async throws {
+    let modelResource =
+      "runtime/testdata/test_lm.litertlm"
+    var localEngine: Engine? = Engine(
+      engineConfig: try EngineConfig(
+        modelPath: testDataPath(forResource: modelResource),
+        maxNumTokens: 10,
+        cacheDir: NSTemporaryDirectory()
+      )
+    )
+    try await localEngine?.initialize()
+    var localConversation: Conversation? = try await localEngine?.createConversation()
+    XCTAssertTrue(localConversation?.isAlive == true)
+
+    // Release local reference to localEngine.
+    // Because localConversation holds a strong reference to localEngine, localEngine will remain alive.
+    localEngine = nil
+    XCTAssertTrue(localConversation?.isAlive == true)
+
+    // Releasing localConversation triggers Conversation.deinit, which sets handle = nil before litert_lm_conversation_delete,
+    // and then releases localEngine, triggering Engine.deinit, setting handle = nil before litert_lm_engine_delete without crashing.
+    localConversation = nil
   }
 }
