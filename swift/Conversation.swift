@@ -81,6 +81,7 @@ public class Conversation {
   /// - Parameter message: The message to send to the model.
   /// - Parameter extraContext: The extra context to send to the model.
   /// - Parameter repetitionPenaltyConfig: Optional configuration for repetition penalty.
+  /// - Parameter noRepeatNgramConfig: Optional configuration for no repeat ngram penalty.
   /// - Parameter maxOutputTokens: Optional maximum number of output tokens.
   /// - Parameter thinkingConfig: Optional configuration for thinking/reasoning generation.
   /// - Returns: The model's response message.
@@ -90,6 +91,7 @@ public class Conversation {
     _ message: Message,
     extraContext: [String: Any]? = nil,
     repetitionPenaltyConfig: RepetitionPenaltyConfig? = nil,
+    noRepeatNgramConfig: NoRepeatNgramConfig? = nil,
     maxOutputTokens: Int? = nil,
     thinkingConfig: ThinkingConfig? = nil
   ) async throws -> Message {
@@ -103,6 +105,7 @@ public class Conversation {
         messageJson: currentMessageJson,
         extraContext: extraContext,
         repetitionPenaltyConfig: repetitionPenaltyConfig,
+        noRepeatNgramConfig: noRepeatNgramConfig,
         maxOutputTokens: maxOutputTokens,
         thinkingConfig: i == 0 ? thinkingConfig : nil
       )
@@ -128,6 +131,7 @@ public class Conversation {
     messageJson: [String: Any],
     extraContext: [String: Any]?,
     repetitionPenaltyConfig: RepetitionPenaltyConfig? = nil,
+    noRepeatNgramConfig: NoRepeatNgramConfig? = nil,
     maxOutputTokens: Int? = nil,
     thinkingConfig: ThinkingConfig? = nil
   ) throws
@@ -175,6 +179,24 @@ public class Conversation {
       }
       litert_lm_conversation_optional_args_set_repetition_penalty_config(
         optionalArgs, cRepetitionPenaltyConfig)
+    }
+    if let noRepeatNgramConfig = noRepeatNgramConfig {
+      guard let cNoRepeatNgramConfig = litert_lm_no_repeat_ngram_config_create() else {
+        throw LiteRTLMError.conversation(
+          .invalidResponse("Failed to create native no repeat ngram config."))
+      }
+      defer { litert_lm_no_repeat_ngram_config_delete(cNoRepeatNgramConfig) }
+
+      if let noRepeatNgramSize = noRepeatNgramConfig.noRepeatNgramSize {
+        litert_lm_no_repeat_ngram_config_set_no_repeat_ngram_size(
+          cNoRepeatNgramConfig, Int32(noRepeatNgramSize))
+      }
+      if let windowSize = noRepeatNgramConfig.windowSize {
+        litert_lm_no_repeat_ngram_config_set_window_size(
+          cNoRepeatNgramConfig, Int32(windowSize))
+      }
+      litert_lm_conversation_optional_args_set_no_repeat_ngram_config(
+        optionalArgs, cNoRepeatNgramConfig)
     }
     if let maxOutputTokens = maxOutputTokens {
       litert_lm_conversation_optional_args_set_max_output_tokens(
@@ -267,6 +289,7 @@ public class Conversation {
     _ message: Message,
     extraContext: [String: Any]? = nil,
     repetitionPenaltyConfig: RepetitionPenaltyConfig? = nil,
+    noRepeatNgramConfig: NoRepeatNgramConfig? = nil,
     maxOutputTokens: Int? = nil,
     thinkingConfig: ThinkingConfig? = nil
   ) -> AsyncThrowingStream<Message, Error> {
@@ -278,6 +301,7 @@ public class Conversation {
           continuation: continuation,
           conversation: self,
           repetitionPenaltyConfig: repetitionPenaltyConfig,
+          noRepeatNgramConfig: noRepeatNgramConfig,
           maxOutputTokens: maxOutputTokens
         )
 
@@ -286,6 +310,7 @@ public class Conversation {
           messageJson: messageJson,
           extraContext: extraContext,
           repetitionPenaltyConfig: repetitionPenaltyConfig,
+          noRepeatNgramConfig: noRepeatNgramConfig,
           maxOutputTokens: maxOutputTokens,
           thinkingConfig: thinkingConfig,
           context: context
@@ -317,6 +342,7 @@ public class Conversation {
     messageJson: [String: Any],
     extraContext: [String: Any]? = nil,
     repetitionPenaltyConfig: RepetitionPenaltyConfig? = nil,
+    noRepeatNgramConfig: NoRepeatNgramConfig? = nil,
     maxOutputTokens: Int? = nil,
     thinkingConfig: ThinkingConfig? = nil,
     context: StreamContext
@@ -364,6 +390,24 @@ public class Conversation {
       }
       litert_lm_conversation_optional_args_set_repetition_penalty_config(
         optionalArgs, cRepetitionPenaltyConfig)
+    }
+    if let noRepeatNgramConfig = noRepeatNgramConfig {
+      guard let cNoRepeatNgramConfig = litert_lm_no_repeat_ngram_config_create() else {
+        throw LiteRTLMError.conversation(
+          .invalidResponse("Failed to create native no repeat ngram config."))
+      }
+      defer { litert_lm_no_repeat_ngram_config_delete(cNoRepeatNgramConfig) }
+
+      if let noRepeatNgramSize = noRepeatNgramConfig.noRepeatNgramSize {
+        litert_lm_no_repeat_ngram_config_set_no_repeat_ngram_size(
+          cNoRepeatNgramConfig, Int32(noRepeatNgramSize))
+      }
+      if let windowSize = noRepeatNgramConfig.windowSize {
+        litert_lm_no_repeat_ngram_config_set_window_size(
+          cNoRepeatNgramConfig, Int32(windowSize))
+      }
+      litert_lm_conversation_optional_args_set_no_repeat_ngram_config(
+        optionalArgs, cNoRepeatNgramConfig)
     }
     if let maxOutputTokens = maxOutputTokens {
       litert_lm_conversation_optional_args_set_max_output_tokens(
@@ -594,17 +638,20 @@ public class Conversation {
     var toolCallCount: Int = 0
     var pendingToolCalls: [[String: Any]] = []
     let repetitionPenaltyConfig: RepetitionPenaltyConfig?
+    let noRepeatNgramConfig: NoRepeatNgramConfig?
     let maxOutputTokens: Int?
 
     init(
       continuation: AsyncThrowingStream<Message, Error>.Continuation,
       conversation: Conversation,
       repetitionPenaltyConfig: RepetitionPenaltyConfig? = nil,
+      noRepeatNgramConfig: NoRepeatNgramConfig? = nil,
       maxOutputTokens: Int? = nil
     ) {
       self.continuation = continuation
       self.conversation = conversation
       self.repetitionPenaltyConfig = repetitionPenaltyConfig
+      self.noRepeatNgramConfig = noRepeatNgramConfig
       self.maxOutputTokens = maxOutputTokens
     }
   }
@@ -677,6 +724,7 @@ private func streamCallback(
             handle: context.conversation.checkIsAlive(),
             messageJson: toolResponseJson,
             repetitionPenaltyConfig: context.repetitionPenaltyConfig,
+            noRepeatNgramConfig: context.noRepeatNgramConfig,
             maxOutputTokens: context.maxOutputTokens,
             context: context
           )

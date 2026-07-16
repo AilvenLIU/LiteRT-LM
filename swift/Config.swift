@@ -277,3 +277,29 @@ public struct RepetitionPenaltyConfig {
     self.windowSize = windowSize
   }
 }
+
+/// Configuration for banning repetitive ngrams during generation.
+public struct NoRepeatNgramConfig {
+
+  /// The size of the ngram to ban (e.g. 5 means 5-grams). If set to an integer greater than 0,
+  /// all ngrams of that size can only occur once. The logits of the banned tokens will be set to
+  /// -inf. The value is clamped to [0, inf) during execution.
+  public let noRepeatNgramSize: Int?
+
+  /// The maximum number of recent tokens to consider for banning. Tokens older than this are
+  /// forgotten. A value of 0 means track all infinite history. The value is clamped to [0, inf)
+  /// during execution. If set less than the ngram size, the window size will be set to the ngram
+  /// size to ensure that the ngram can be tracked.
+  public let windowSize: Int?
+
+  /// - Parameters:
+  ///   - noRepeatNgramSize: The size of the ngram to ban.
+  ///   - windowSize: The maximum number of recent tokens in generation history to consider.
+  public init(
+    noRepeatNgramSize: Int? = nil,
+    windowSize: Int? = nil
+  ) {
+    self.noRepeatNgramSize = noRepeatNgramSize
+    self.windowSize = windowSize
+  }
+}

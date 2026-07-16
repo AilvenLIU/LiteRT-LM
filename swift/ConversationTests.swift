@@ -341,6 +341,33 @@ class ConversationTests: XCTestCase {
     XCTAssertGreaterThan(chunkCount, 0)
   }
 
+  func testSendMessageWithNoRepeatNgram() async throws {
+    let conversation = try await self.engine.createConversation(with: ConversationConfig())
+    XCTAssertTrue(conversation.isAlive)
+
+    let response = try await conversation.sendMessage(
+      Message("Hello"),
+      noRepeatNgramConfig: try NoRepeatNgramConfig(noRepeatNgramSize: 5, windowSize: 10)
+    )
+    XCTAssertFalse(response.contents.isEmpty)
+  }
+
+  func testSendStreamMessageWithNoRepeatNgram() async throws {
+    let conversation = try await self.engine.createConversation(with: ConversationConfig())
+    XCTAssertTrue(conversation.isAlive)
+
+    let message = Message("Hello")
+    var chunkCount = 0
+
+    for try await _ in conversation.sendMessageStream(
+      message,
+      noRepeatNgramConfig: try NoRepeatNgramConfig(noRepeatNgramSize: 5, windowSize: 10)
+    ) {
+      chunkCount += 1
+    }
+    XCTAssertGreaterThan(chunkCount, 0)
+  }
+
   func testCreateConversationWithThinkingConfig() async throws {
     let config = ConversationConfig(
       thinkingConfig: ThinkingConfig(enableThinking: true, thinkingTokenBudget: 32)
