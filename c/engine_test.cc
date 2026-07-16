@@ -27,63 +27,12 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "absl/synchronization/notification.h"  // from @com_google_absl
-#include "nlohmann/json.hpp"  // from @nlohmann_json
-#include "runtime/components/logits_processor/no_repeat_ngram_config.h"
-#include "runtime/components/logits_processor/repetition_penalty_config.h"
-#include "runtime/components/logits_processor/suppress_tokens_config.h"
+#include "c/engine_internal.h"
 #include "runtime/conversation/conversation.h"
 #include "runtime/conversation/io_types.h"
 #include "runtime/conversation/thinking_config.h"
 #include "runtime/engine/engine_settings.h"
 #include "runtime/executor/executor_settings_base.h"
-#include "runtime/executor/llm_executor_settings.h"
-
-using ::litert::lm::Conversation;
-using ::litert::lm::EngineSettings;
-using ::litert::lm::NoRepeatNgramConfig;
-using ::litert::lm::RepetitionPenaltyConfig;
-using ::litert::lm::SessionConfig;
-using ::litert::lm::SuppressTokensConfig;
-
-struct LiteRtLmEngineSettings {
-  std::unique_ptr<EngineSettings> settings;
-};
-
-struct LiteRtLmSessionConfig {
-  std::unique_ptr<SessionConfig> config;
-};
-
-struct LiteRtLmConversationOptionalArgs {
-  std::optional<RepetitionPenaltyConfig> repetition_penalty_config;
-  std::optional<NoRepeatNgramConfig> no_repeat_ngram_config;
-  std::optional<SuppressTokensConfig> suppress_tokens_config;
-  std::optional<int> visual_token_budget;
-  std::optional<int> max_output_tokens;
-  std::optional<litert::lm::ThinkingConfig> thinking_config;
-};
-
-struct LiteRtLmConversationConfig {
-  std::optional<SessionConfig> session_config;
-  std::string system_message_json;
-  std::string tools_json;
-  std::string messages_json;
-  std::string extra_context_json;
-  std::string prompt_template;
-  bool enable_constrained_decoding = false;
-  bool filter_channel_content_from_kv_cache = false;
-  bool stream_tool_calls = false;
-  std::string stream_tool_calls_channel_name = "tool_call";
-  std::optional<litert::lm::ThinkingConfig> thinking_config;
-  std::optional<LiteRtLmConstraintProviderType> constraint_provider_type;
-};
-
-struct LiteRtLmConversation {
-  std::unique_ptr<Conversation> conversation;
-};
-
-struct LiteRtLmJsonResponse {
-  std::string json_string;
-};
 
 namespace {
 

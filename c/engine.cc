@@ -35,6 +35,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "nlohmann/json.hpp"  // from @nlohmann_json
+#include "c/engine_internal.h"
 #include "runtime/components/logits_processor/constrained_decoding/llg_constraint_config.h"
 #include "runtime/components/logits_processor/no_repeat_ngram_config.h"
 #include "runtime/components/logits_processor/repetition_penalty_config.h"
@@ -55,49 +56,6 @@
 #include "runtime/proto/sampler_params.pb.h"
 #include "runtime/proto/token.pb.h"
 #include "runtime/util/logging.h"
-#include "runtime/util/scoped_file.h"
-
-struct LiteRtLmInputData {
-  explicit LiteRtLmInputData(litert::lm::InputData d) : data(std::move(d)) {}
-  litert::lm::InputData data;
-};
-
-struct LiteRtLmSamplerParams {
-  LiteRtLmSamplerType type;
-  int32_t top_k;
-  float top_p;
-  float temperature;
-  int32_t seed;
-};
-
-struct LiteRtLmStreamChunk {
-  const char* text = nullptr;
-  bool is_final = false;
-  const char* error_msg = nullptr;
-};
-
-struct LiteRtLmRepetitionPenaltyConfig {
-  litert::lm::RepetitionPenaltyConfig repetition_penalty_config;
-};
-
-struct LiteRtLmNoRepeatNgramConfig {
-  litert::lm::NoRepeatNgramConfig no_repeat_ngram_config;
-};
-
-struct LiteRtLmSuppressTokensConfig {
-  litert::lm::SuppressTokensConfig suppress_tokens_config;
-};
-
-struct LiteRtLmConversationOptionalArgs {
-  std::optional<litert::lm::RepetitionPenaltyConfig> repetition_penalty_config;
-  std::optional<litert::lm::NoRepeatNgramConfig> no_repeat_ngram_config;
-  std::optional<litert::lm::SuppressTokensConfig> suppress_tokens_config;
-  std::optional<int> visual_token_budget;
-  std::optional<int> max_output_tokens;
-  std::optional<litert::lm::ThinkingConfig> thinking_config;
-  LiteRtLmConstraintType constraint_type = kLiteRtLmConstraintTypeNone;
-  std::string constraint_string;
-};
 
 namespace {
 
@@ -306,10 +264,6 @@ void litert_lm_input_data_delete(LiteRtLmInputData* input_data) {
   delete input_data;
 }
 
-struct LiteRtLmEngineSettings {
-  std::unique_ptr<EngineSettings> settings;
-};
-
 static LiteRtLmEngineSettings* CreateEngineSettingsHelper(
     ModelAssets model_assets, absl::string_view backend_str,
     absl::string_view vision_backend_str, absl::string_view audio_backend_str) {
@@ -352,76 +306,6 @@ static LiteRtLmEngineSettings* CreateEngineSettingsHelper(
       std::make_unique<EngineSettings>(std::move(*engine_settings));
   return c_settings;
 }
-
-struct LiteRtLmEngine {
-  std::unique_ptr<Engine> engine;
-};
-
-struct LiteRtLmSession {
-  std::unique_ptr<Engine::Session> session;
-};
-
-struct LiteRtLmResponses {
-  Responses responses;
-};
-
-struct LiteRtLmBenchmarkInfo {
-  litert::lm::BenchmarkInfo benchmark_info;
-};
-
-struct LiteRtLmConversation {
-  std::unique_ptr<Conversation> conversation;
-  // This field stores the result of the last call to
-  // `litert_lm_conversation_render_message_to_string`. This ties the lifetime
-  // of the returned `const char*` to the `LiteRtLmConversation` object,
-  // ensuring memory safety for the C API caller without requiring explicit
-  // per-call deallocation.
-  std::string last_rendered_message;
-  // This field stores the result of the last call to
-  // `litert_lm_conversation_render_preface_to_string`.
-  std::string last_rendered_preface;
-};
-
-struct LiteRtLmJsonResponse {
-  std::string json_string;
-};
-
-// TODO: b/483172229 - Migrate to use SessionConfig instead of unique_ptr to
-// SessionConfig for consistency and efficiency.
-struct LiteRtLmSessionConfig {
-  std::unique_ptr<SessionConfig> config;
-};
-
-struct LiteRtLmConversationConfig {
-  std::optional<SessionConfig> session_config;
-  std::string system_message_json;
-  std::string tools_json;
-  std::string messages_json;
-  std::string extra_context_json;
-  std::string prompt_template;
-  bool enable_constrained_decoding = false;
-  bool filter_channel_content_from_kv_cache = false;
-  bool stream_tool_calls = false;
-  std::string stream_tool_calls_channel_name = "tool_call";
-  std::optional<litert::lm::ThinkingConfig> thinking_config;
-  std::optional<LiteRtLmConstraintProviderType> constraint_provider_type;
-};
-
-struct LiteRtLmDetokenizeResult {
-  std::string text;
-};
-
-struct LiteRtLmTokenizeResult {
-  std::vector<int> tokens;
-};
-
-struct LiteRtLmTokenUnion {
-  litert::lm::proto::TokenUnion token_union;
-};
-
-struct LiteRtLmTokenUnions {
-  std::vector<litert::lm::proto::TokenUnion> tokens;
-};
 
 extern "C" {
 
