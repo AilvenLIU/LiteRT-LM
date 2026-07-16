@@ -229,8 +229,10 @@ public actor Engine {
       conversationConfig.enableToolCallStreaming
         && ExperimentalFlags.enableConversationToolCallStreaming,
       ExperimentalFlags.conversationToolCallStreamingChannelName)
-    litert_lm_conversation_config_set_filter_channel_content_from_kv_cache(
-      cConversationConfig, ExperimentalFlags.filterChannelContentFromKvCache)
+    if let filterChannelContentFromKvCache = ExperimentalFlags.filterChannelContentFromKvCache {
+      litert_lm_conversation_config_set_filter_channel_content_from_kv_cache(
+        cConversationConfig, filterChannelContentFromKvCache)
+    }
 
     if let thinkingConfig = conversationConfig.thinkingConfig {
       guard let cThinkingConfig = litert_lm_thinking_config_create() else {

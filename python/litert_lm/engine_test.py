@@ -445,6 +445,15 @@ class EngineTest(LiteRtLmTestBase):
     ):
       self.assertEqual(conversation.chat_template, tmpl)
 
+  def test_create_conversation_with_filter_channel_content_from_kv_cache(self):
+    with (
+        self._create_engine() as engine,
+        engine.create_conversation(
+            filter_channel_content_from_kv_cache=True
+        ) as conversation,
+    ):
+      self.assertIsNotNone(conversation)
+
   def test_create_conversation_with_max_output_tokens_async(self):
     with (
         self._create_engine() as engine,

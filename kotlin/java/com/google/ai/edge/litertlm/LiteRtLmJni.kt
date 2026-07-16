@@ -219,7 +219,7 @@ internal object LiteRtLmJni {
     channelsJsonString: String?,
     extraContextJsonString: String,
     enableConversationConstrainedDecoding: Boolean,
-    filterChannelContentFromKvCache: Boolean,
+    filterChannelContentFromKvCache: Boolean?,
     overwritePromptTemplate: String?,
     loraPath: String?,
     audioLoraPath: String?,

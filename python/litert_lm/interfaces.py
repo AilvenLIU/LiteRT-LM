@@ -400,7 +400,7 @@ class AbstractEngine(abc.ABC):
       tool_event_handler: ToolEventHandler | None = None,
       automatic_tool_calling: bool = True,
       extra_context: collections.abc.Mapping[str, Any] | None = None,
-      filter_channel_content_from_kv_cache: bool = False,
+      filter_channel_content_from_kv_cache: bool | None = None,
       thinking_config: ThinkingConfig | None = None,
       sampler_config: SamplerConfig | None = None,
       lora_config: LoraConfig | None = None,

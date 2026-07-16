@@ -1031,7 +1031,7 @@ LITERTLM_JNIEXPORT jlong JNICALL JNI_METHOD(nativeCreateConversation)(
     jstring messages_json_string, jstring tools_description_json_string,
     jstring channels_json_string, jstring extra_context_json_string,
     jboolean enable_constrained_decoding,
-    jboolean filter_channel_content_from_kv_cache,
+    jobject filter_channel_content_from_kv_cache_obj,
     jstring overwrite_prompt_template, jstring lora_path_str,
     jstring audio_lora_path_str, jboolean prefill_preface_on_init,
     jint max_output_token, jobject thinking_config_obj,
@@ -1119,9 +1119,17 @@ LITERTLM_JNIEXPORT jlong JNICALL JNI_METHOD(nativeCreateConversation)(
           .SetSessionConfig(session_config)
           .SetPreface(json_preface)
           .SetEnableConstrainedDecoding(enable_constrained_decoding)
-          .SetFilterChannelContentFromKvCache(
-              filter_channel_content_from_kv_cache)
           .SetPrefillPrefaceOnInit(prefill_preface_on_init);
+
+  if (filter_channel_content_from_kv_cache_obj != nullptr) {
+    jclass boolean_class = env->FindClass("java/lang/Boolean");
+    jmethodID boolean_value_mid =
+        env->GetMethodID(boolean_class, "booleanValue", "()Z");
+    jboolean filter_val = env->CallBooleanMethod(
+        filter_channel_content_from_kv_cache_obj, boolean_value_mid);
+    env->DeleteLocalRef(boolean_class);
+    conversation_config_builder.SetFilterChannelContentFromKvCache(filter_val);
+  }
 
   if (enable_response_format) {
     conversation_config_builder.SetConstraintProviderConfig(

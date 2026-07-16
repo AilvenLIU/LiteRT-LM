@@ -1480,8 +1480,10 @@ LiteRtLmConversation* litert_lm_conversation_create(
       builder.SetConstraintProviderConfig(litert::lm::LlGuidanceConfig());
     }
 
-    builder.SetFilterChannelContentFromKvCache(
-        c_config->filter_channel_content_from_kv_cache);
+    if (c_config->filter_channel_content_from_kv_cache.has_value()) {
+      builder.SetFilterChannelContentFromKvCache(
+          *c_config->filter_channel_content_from_kv_cache);
+    }
     builder.SetStreamToolCalls(c_config->stream_tool_calls,
                                c_config->stream_tool_calls_channel_name);
     if (!c_config->prompt_template.empty()) {

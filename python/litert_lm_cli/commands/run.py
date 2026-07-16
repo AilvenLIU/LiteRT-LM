@@ -185,7 +185,7 @@ def run_interactive(
     chat_template: str | None = None,
     max_num_tokens: int | None = None,
     max_num_images: int | None = None,
-    filter_channel_content_from_kv_cache: bool = False,
+    filter_channel_content_from_kv_cache: bool | None = None,
     thinking: bool | None = None,
     thinking_budget: int | None = None,
     vision_backend: str | None = None,
@@ -454,8 +454,11 @@ def run_interactive(
 )
 @click.option(
     "--filter-channel-content-from-kv-cache",
-    is_flag=True,
-    default=False,
+    is_flag=False,
+    flag_value="true",
+    type=click.Choice(["true", "false"], case_sensitive=False),
+    default=None,
+    callback=common.parse_bool_opt,
     help="Whether to filter channel content from the KV cache.",
 )
 @click.option(
@@ -559,7 +562,7 @@ def run(
     from_huggingface_repo: str | None = None,
     huggingface_token: str | None = None,
     max_num_tokens: int | None = None,
-    filter_channel_content_from_kv_cache: bool = False,
+    filter_channel_content_from_kv_cache: bool | None = None,
     thinking: bool | None = None,
     thinking_budget: int | None = None,
     vision_backend: str | None = None,

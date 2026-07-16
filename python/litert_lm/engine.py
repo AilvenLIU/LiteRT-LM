@@ -221,7 +221,7 @@ class Engine(interfaces.AbstractEngine):
       tool_event_handler: interfaces.ToolEventHandler | None = None,
       automatic_tool_calling: bool = True,
       extra_context: collections.abc.Mapping[str, Any] | None = None,
-      filter_channel_content_from_kv_cache: bool = False,
+      filter_channel_content_from_kv_cache: bool | None = None,
       thinking_config: interfaces.ThinkingConfig | None = None,
       sampler_config: interfaces.SamplerConfig | None = None,
       system_message: str | None = None,
@@ -323,9 +323,9 @@ class Engine(interfaces.AbstractEngine):
             conv_config, True
         )
 
-      if filter_channel_content_from_kv_cache:
+      if filter_channel_content_from_kv_cache is not None:
         self._lib.litert_lm_conversation_config_set_filter_channel_content_from_kv_cache(
-            conv_config, True
+            conv_config, filter_channel_content_from_kv_cache
         )
 
       if thinking_config is not None:

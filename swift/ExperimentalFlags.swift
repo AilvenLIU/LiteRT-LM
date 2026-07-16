@@ -168,10 +168,10 @@ public struct ExperimentalFlags {
     }
   }
 
-  private static var _filterChannelContentFromKvCache: Bool = false
+  private static var _filterChannelContentFromKvCache: Bool? = nil
 
   /// Whether to filter channel content from the KV cache.
-  public static var filterChannelContentFromKvCache: Bool {
+  public static var filterChannelContentFromKvCache: Bool? {
     get { return _filterChannelContentFromKvCache }
     set {
       guard optedIn else {
