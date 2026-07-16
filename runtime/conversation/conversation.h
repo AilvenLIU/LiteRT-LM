@@ -262,7 +262,7 @@ class ConversationConfig {
     bool prefill_preface_on_init_ = false;
     std::optional<ConstraintProviderConfig> constraint_provider_config_;
     std::optional<std::vector<Channel>> channels_ = std::nullopt;
-    bool filter_channel_content_from_kv_cache_ = false;
+    bool filter_channel_content_from_kv_cache_ = true;
     bool return_error_on_parse_failure_ = true;
     bool return_error_on_max_tokens_reached_ = false;
     std::optional<ThinkingConfig> thinking_config_ = std::nullopt;
