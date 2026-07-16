@@ -107,6 +107,7 @@ struct LiteRtLmSettings {
   int num_logits_to_print_after_decode = 0;
   std::optional<std::string> score_target_text = std::nullopt;
   bool gpu_madvise_original_shared_tensors = true;
+  bool gpu_enable_metal_residency_set = false;
   bool disable_cache = false;
   bool disable_weight_cache = false;
   bool disable_gpu_program_cache = false;

@@ -83,5 +83,6 @@ ABSL_DECLARE_FLAG(bool, use_hw_cache_update_for_npu);
 ABSL_DECLARE_FLAG(bool, use_hw_ple_for_npu);
 ABSL_DECLARE_FLAG(bool, enable_npu_debug_logging);
 ABSL_DECLARE_FLAG(bool, disable_input_prompt_as_hint);
+ABSL_DECLARE_FLAG(bool, gpu_enable_metal_residency_set);
 
 #endif  // THIRD_PARTY_ODML_LITERT_LM_RUNTIME_ENGINE_SHARED_FLAGS_H_

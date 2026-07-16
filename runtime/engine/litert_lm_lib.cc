@@ -606,6 +606,7 @@ absl::StatusOr<EngineSettings> CreateEngineSettings(
           static_cast<uint32_t>(settings.num_logits_to_print_after_decode),
       .gpu_madvise_original_shared_tensors =
           settings.gpu_madvise_original_shared_tensors,
+      .gpu_enable_metal_residency_set = settings.gpu_enable_metal_residency_set,
       .is_benchmark = settings.benchmark,
       .preferred_device_substr = settings.preferred_device_substr,
       .num_threads_to_upload = settings.num_threads_to_upload,
