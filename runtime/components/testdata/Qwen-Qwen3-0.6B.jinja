@@ -83,7 +83,7 @@
 {%- endfor %}
 {%- if add_generation_prompt %}
     {{- '<|im_start|>assistant\n' }}
-    {%- if enable_thinking is defined and enable_thinking is false %}
+    {%- if not enable_thinking|default(true) %}
         {{- '<think>\n\n</think>\n\n' }}
     {%- endif %}
 {%- endif %}
