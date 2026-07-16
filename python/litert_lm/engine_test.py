@@ -370,6 +370,29 @@ class EngineTest(LiteRtLmTestBase):
 
       mock_set_num_threads.assert_called_once_with(mock.ANY, 4)
 
+  def test_benchmark_class_with_enable_speculative_decoding(self):
+    lib = litert_lm._ffi._get_lib()
+    orig_set_spec = (
+        lib.litert_lm_engine_settings_set_enable_speculative_decoding
+    )
+    with mock.patch.object(
+        lib,
+        "litert_lm_engine_settings_set_enable_speculative_decoding",
+        autospec=True,
+        side_effect=orig_set_spec,
+    ) as mock_set_spec:
+      benchmark = litert_lm.Benchmark(
+          self.model_path,
+          litert_lm.Backend.CPU(),
+          prefill_tokens=10,
+          decode_tokens=10,
+          cache_dir=":nocache",
+          enable_speculative_decoding=False,
+      )
+      benchmark.run()
+
+      mock_set_spec.assert_called_once_with(mock.ANY, False)
+
   def test_engine_abc_inheritance(self):
     with self._create_engine() as engine:
       self.assertIsInstance(engine, litert_lm.AbstractEngine)

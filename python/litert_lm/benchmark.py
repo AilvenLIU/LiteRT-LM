@@ -67,6 +67,10 @@ class Benchmark(interfaces.AbstractBenchmark):
     )
     if self.cache_dir:
       lib.litert_lm_engine_settings_set_cache_dir(settings, self.cache_dir)
+    if self.enable_speculative_decoding is not None:
+      lib.litert_lm_engine_settings_set_enable_speculative_decoding(
+          settings, self.enable_speculative_decoding
+      )
 
     engine_ptr = lib.litert_lm_engine_create(settings)
     lib.litert_lm_engine_settings_delete(settings)
