@@ -165,7 +165,21 @@ using LogitsQuantizationParams =
 
 }  // namespace
 
-#define NPU_EXECUTOR_LOG(X) ABSL_LOG_IF(X, npu_config_.enable_npu_debug_logging)
+// On Windows, `ERROR` is defined as a macro, which can cause issues if it is
+// expanded prematurely where the literal token `ERROR` is expected.
+//
+// To work around this, we use token concatenation (`##`) to construct the
+// underlying macro name. Because `severity` is pasted (##), it is NOT expanded
+// to its macro value first. For example, `NPU_EXECUTOR_LOG(ERROR)` simply
+// pastes `NPU_EXECUTOR_LOG_` and `ERROR` to form `NPU_EXECUTOR_LOG_ERROR`,
+// which then safely expands to `ABSL_LOG_IF(ERROR, ...)`.
+#define NPU_EXECUTOR_LOG_INFO \
+  ABSL_LOG_IF(INFO, npu_config_.enable_npu_debug_logging)
+#define NPU_EXECUTOR_LOG_ERROR \
+  ABSL_LOG_IF(ERROR, npu_config_.enable_npu_debug_logging)
+#define NPU_EXECUTOR_LOG_WARNING \
+  ABSL_LOG_IF(WARNING, npu_config_.enable_npu_debug_logging)
+#define NPU_EXECUTOR_LOG(severity) NPU_EXECUTOR_LOG_##severity
 
 // Signature names for the embedder.
 struct EmbedderSignatures {
