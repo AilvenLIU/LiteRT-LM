@@ -399,7 +399,7 @@ def run_interactive(
 
 @click.command(
     cls=help_formatter.ColorCommand,
-    help="""Runs a LiteRT-LM model interactively or with a single prompt.
+    help="""Runs a model interactively or with a single prompt.
   \b
   Examples:
     # Run interactively using a model ID from 'litert-lm list'

@@ -33,8 +33,7 @@ def _is_interactive() -> bool:
     cls=help_formatter.ColorCommand,
     help=textwrap.dedent("""\
         \b
-        Packs a LiteRT-LM file using a TOML configuration file or a directory
-        containing 'model.toml'.
+        Packs a LiteRT-LM file using a TOML configuration file or a directory.
 
         Default output behaviors:
           - If CONFIG_OR_DIR is omitted, it defaults to 'model.toml' in the

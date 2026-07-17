@@ -138,7 +138,7 @@ def run_benchmark(
 
 @click.command(
     cls=help_formatter.ColorCommand,
-    help="""Benchmarks a LiteRT-LM model.
+    help="""Benchmarks a model.
   \b
   Examples:
     # Benchmark using a model ID from 'litert-lm list'

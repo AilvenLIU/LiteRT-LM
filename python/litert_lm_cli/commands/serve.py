@@ -70,7 +70,7 @@ def run_server(
 @click.command(
     cls=help_formatter.ColorCommand,
     help=(
-        "Start a server with an OpenAI-compatible API.\n\n"
+        "Start an OpenAI-compatible API server.\n\n"
         "Supported OpenAI endpoints:\n"
         "  - /v1/models\n"
         "  - /v1/chat/completions\n\n"
