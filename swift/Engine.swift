@@ -222,8 +222,13 @@ public actor Engine {
     if !messagesJsonStr.isEmpty {
       litert_lm_conversation_config_set_messages(cConversationConfig, messagesJsonStr)
     }
-    litert_lm_conversation_config_set_enable_constrained_decoding(
-      cConversationConfig, ExperimentalFlags.enableConversationConstrainedDecoding)
+    if conversationConfig.enableResponseFormat {
+      var providerType = kLiteRtLmConstraintProviderTypeLlGuidance
+      litert_lm_conversation_config_set_constraint_provider(cConversationConfig, &providerType)
+    } else {
+      litert_lm_conversation_config_set_enable_constrained_decoding(
+        cConversationConfig, ExperimentalFlags.enableConversationConstrainedDecoding)
+    }
     litert_lm_conversation_config_set_stream_tool_calls(
       cConversationConfig,
       conversationConfig.enableToolCallStreaming
@@ -255,7 +260,9 @@ public actor Engine {
     return Conversation(
       handle: conversationHandle,
       toolManager: toolManager,
-      automaticToolCalling: conversationConfig.automaticToolCalling, engine: self)
+      automaticToolCalling: conversationConfig.automaticToolCalling,
+      engine: self,
+      enableResponseFormat: conversationConfig.enableResponseFormat)
   }
 
   deinit {

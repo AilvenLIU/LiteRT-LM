@@ -347,9 +347,83 @@ class ConversationTests: XCTestCase {
     XCTAssertGreaterThan(chunkCount, 0)
   }
 
+  func testResponseFormatCreation() throws {
+    let schemaStr = "{\"type\": \"object\"}"
+    let formatFromString = try ResponseFormat.json(schema: schemaStr)
+    XCTAssertEqual(formatFromString.type, .jsonObject)
+    XCTAssertEqual(formatFromString.schemaOrPattern, schemaStr)
+
+    let schemaMap: [String: Any] = ["type": "object"]
+    let formatFromMap = try ResponseFormat.json(schema: schemaMap)
+    XCTAssertEqual(formatFromMap.type, .jsonObject)
+    XCTAssertTrue(formatFromMap.schemaOrPattern.contains("type"))
+
+    let regexPattern = "[0-9]{3}"
+    let formatRegex = ResponseFormat.regex(pattern: regexPattern)
+    XCTAssertEqual(formatRegex.type, .regex)
+    XCTAssertEqual(formatRegex.schemaOrPattern, regexPattern)
+  }
+
+  func testResponseFormatInvalidJsonSchemaThrows() throws {
+    let invalidSchema = "{invalid_json: true"
+    do {
+      _ = try ResponseFormat.json(schema: invalidSchema)
+      XCTFail("Expected invalidJsonSchema error to be thrown")
+    } catch let error as LiteRTLMError {
+      XCTAssertEqual(error, LiteRTLMError.config(.invalidJsonSchema(invalidSchema)))
+    }
+  }
+
+  func testSendMessageWithoutEnableResponseFormatThrows() async throws {
+    let conversation = try await self.engine.createConversation(with: ConversationConfig())
+    XCTAssertTrue(conversation.isAlive)
+
+    do {
+      _ = try await conversation.sendMessage(
+        Message("Hello"),
+        responseFormat: ResponseFormat.regex(pattern: "[0-9]{3}")
+      )
+      XCTFail("Expected responseFormatNotEnabled error to be thrown")
+    } catch let error as LiteRTLMError {
+      XCTAssertEqual(error, LiteRTLMError.conversation(.responseFormatNotEnabled))
+    }
+  }
+
+  func testSendMessageStreamWithoutEnableResponseFormatThrows() async throws {
+    let conversation = try await self.engine.createConversation(with: ConversationConfig())
+    XCTAssertTrue(conversation.isAlive)
+
+    let message = Message("Hello")
+    let stream = conversation.sendMessageStream(
+      message,
+      responseFormat: ResponseFormat.regex(pattern: "[0-9]{3}")
+    )
+
+    do {
+      for try await _ in stream {
+        XCTFail("Expected responseFormatNotEnabled error, but got a chunk")
+      }
+      XCTFail("Expected responseFormatNotEnabled error to be thrown")
+    } catch let error as LiteRTLMError {
+      XCTAssertEqual(error, LiteRTLMError.conversation(.responseFormatNotEnabled))
+    }
+  }
+
+  func testSendMessageWithResponseFormatRegex() async throws {
+    let config = ConversationConfig(enableResponseFormat: true)
+    let conversation = try await self.engine.createConversation(with: config)
+    XCTAssertTrue(conversation.isAlive)
+
+    let response = try await conversation.sendMessage(
+      Message("What is 1+1?"),
+      responseFormat: ResponseFormat.regex(pattern: "aiedge")
+    )
+    XCTAssertFalse(response.contents.isEmpty)
+  }
+
   func testConversationTeardownAndEngineRetentionDoesNotCrash() async throws {
     let modelResource =
-      "runtime/testdata/test_lm.litertlm"
+      + "runtime/testdata/test_lm.litertlm"
     var localEngine: Engine? = Engine(
       engineConfig: try EngineConfig(
         modelPath: testDataPath(forResource: modelResource),

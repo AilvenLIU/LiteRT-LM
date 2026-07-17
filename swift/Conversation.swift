@@ -53,6 +53,7 @@ public class Conversation {
   private let toolManager: ToolManager
   private let automaticToolCalling: Bool
   private let engine: Engine
+  private let enableResponseFormat: Bool
 
   /// Whether the conversation is alive and ready to be used.
   public var isAlive: Bool {
@@ -61,12 +62,13 @@ public class Conversation {
 
   init(
     handle: CConversationHandle, toolManager: ToolManager, automaticToolCalling: Bool = true,
-    engine: Engine
+    engine: Engine, enableResponseFormat: Bool = false
   ) {
     self.handle = handle
     self.toolManager = toolManager
     self.automaticToolCalling = automaticToolCalling
     self.engine = engine
+    self.enableResponseFormat = enableResponseFormat
   }
 
   deinit {
@@ -76,25 +78,43 @@ public class Conversation {
     }
   }
 
+  private func resolveResponseFormat(
+    currentMessageJson: [String: Any],
+    responseFormat: ResponseFormat?
+  ) -> ResponseFormat? {
+    guard let responseFormat = responseFormat else { return nil }
+    let isToolResponse = (currentMessageJson["role"] as? String) == "tool"
+    if automaticToolCalling && toolManager.toolsJsonDescription != "[]" && !isToolResponse {
+      return nil
+    }
+    return responseFormat
+  }
+
   /// Sends a message to the model and returns the response. This is a synchronous call.
   ///
   /// - Parameter message: The message to send to the model.
   /// - Parameter extraContext: The extra context to send to the model.
   /// - Parameter thinkingConfig: Optional configuration for thinking/reasoning generation.
+  /// - Parameter responseFormat: Optional response format for constrained decoding.
   /// - Returns: The model's response message.
   /// - Throws: A `LiteRTLMError` if sending the message fails or the model
   ///   returns an invalid response.
   public func sendMessage(
-    _ message: Message, extraContext: [String: Any]? = nil, thinkingConfig: ThinkingConfig? = nil
+    _ message: Message, extraContext: [String: Any]? = nil, thinkingConfig: ThinkingConfig? = nil,
+    responseFormat: ResponseFormat? = nil
   ) async throws -> Message {
     let handle = try checkIsAlive()
+
+    if responseFormat != nil && !enableResponseFormat {
+      throw LiteRTLMError.conversation(.responseFormatNotEnabled)
+    }
 
     var currentMessageJson: [String: Any] = message.toJson
 
     for i in 0..<recurringToolCallLimit {
       let (responseJson, responseString) = try attemptSendMessage(
         handle: handle, messageJson: currentMessageJson, extraContext: extraContext,
-        thinkingConfig: i == 0 ? thinkingConfig : nil)
+        thinkingConfig: i == 0 ? thinkingConfig : nil, responseFormat: responseFormat)
 
       guard let toolCalls = responseJson["tool_calls"] as? [[String: Any]] else {
         if responseJson["content"] != nil || responseJson["channels"] != nil {
@@ -114,7 +134,7 @@ public class Conversation {
 
   private func attemptSendMessage(
     handle: CConversationHandle, messageJson: [String: Any], extraContext: [String: Any]?,
-    thinkingConfig: ThinkingConfig? = nil
+    thinkingConfig: ThinkingConfig? = nil, responseFormat: ResponseFormat? = nil
   ) throws
     -> (responseJson: [String: Any], responseString: String)
   {
@@ -146,6 +166,20 @@ public class Conversation {
       litert_lm_thinking_config_set_thinking_token_budget(
         cThinkingConfig, Int32(thinkingConfig.thinkingTokenBudget))
       litert_lm_conversation_optional_args_set_thinking_config(optionalArgs, cThinkingConfig)
+    }
+
+    if let responseFormat = resolveResponseFormat(
+      currentMessageJson: messageJson, responseFormat: responseFormat)
+    {
+      let cConstraintType: LiteRtLmConstraintType
+      switch responseFormat.type {
+      case .regex:
+        cConstraintType = kLiteRtLmConstraintTypeRegex
+      case .jsonObject:
+        cConstraintType = kLiteRtLmConstraintTypeJsonSchema
+      }
+      litert_lm_conversation_optional_args_set_constraint(
+        optionalArgs, cConstraintType, responseFormat.schemaOrPattern)
     }
 
     guard
@@ -215,20 +249,25 @@ public class Conversation {
   /// - Parameter message: The message to send.
   /// - Parameter extraContext: The extra context to send to the model.
   /// - Parameter thinkingConfig: Optional configuration for thinking/reasoning generation.
+  /// - Parameter responseFormat: Optional response format for constrained decoding.
   /// - Returns: An async throwing stream of `Message` chunks.
   public func sendMessageStream(
-    _ message: Message, extraContext: [String: Any]? = nil, thinkingConfig: ThinkingConfig? = nil
+    _ message: Message, extraContext: [String: Any]? = nil, thinkingConfig: ThinkingConfig? = nil,
+    responseFormat: ResponseFormat? = nil
   ) -> AsyncThrowingStream<Message, Error> {
     return AsyncThrowingStream { continuation in
       do {
+        if responseFormat != nil && !enableResponseFormat {
+          throw LiteRTLMError.conversation(.responseFormatNotEnabled)
+        }
         let handle = try self.checkIsAlive()
         let messageJson: [String: Any] = message.toJson
         let context = StreamContext(
-          continuation: continuation, conversation: self)
+          continuation: continuation, conversation: self, responseFormat: responseFormat)
 
         try self.sendToStream(
           handle: handle, messageJson: messageJson, extraContext: extraContext,
-          thinkingConfig: thinkingConfig, context: context)
+          thinkingConfig: thinkingConfig, responseFormat: responseFormat, context: context)
       } catch {
         continuation.finish(throwing: error)
       }
@@ -253,6 +292,7 @@ public class Conversation {
     messageJson: [String: Any],
     extraContext: [String: Any]? = nil,
     thinkingConfig: ThinkingConfig? = nil,
+    responseFormat: ResponseFormat? = nil,
     context: StreamContext
   ) throws {
     let messageData = try JSONSerialization.data(withJSONObject: messageJson)
@@ -284,6 +324,20 @@ public class Conversation {
       litert_lm_thinking_config_set_thinking_token_budget(
         cThinkingConfig, Int32(thinkingConfig.thinkingTokenBudget))
       litert_lm_conversation_optional_args_set_thinking_config(optionalArgs, cThinkingConfig)
+    }
+
+    if let responseFormat = resolveResponseFormat(
+      currentMessageJson: messageJson, responseFormat: responseFormat)
+    {
+      let cConstraintType: LiteRtLmConstraintType
+      switch responseFormat.type {
+      case .regex:
+        cConstraintType = kLiteRtLmConstraintTypeRegex
+      case .jsonObject:
+        cConstraintType = kLiteRtLmConstraintTypeJsonSchema
+      }
+      litert_lm_conversation_optional_args_set_constraint(
+        optionalArgs, cConstraintType, responseFormat.schemaOrPattern)
     }
 
     let contextPtr = Unmanaged.passRetained(context).toOpaque()
@@ -497,13 +551,16 @@ public class Conversation {
     let conversation: Conversation
     var toolCallCount: Int = 0
     var pendingToolCalls: [[String: Any]] = []
+    let responseFormat: ResponseFormat?
 
     init(
       continuation: AsyncThrowingStream<Message, Error>.Continuation,
-      conversation: Conversation
+      conversation: Conversation,
+      responseFormat: ResponseFormat? = nil
     ) {
       self.continuation = continuation
       self.conversation = conversation
+      self.responseFormat = responseFormat
     }
   }
 }
@@ -574,6 +631,7 @@ private func streamCallback(
           try context.conversation.sendToStream(
             handle: context.conversation.checkIsAlive(),
             messageJson: toolResponseJson,
+            responseFormat: context.responseFormat,
             context: context
           )
         } catch {

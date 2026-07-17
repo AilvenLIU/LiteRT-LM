@@ -184,6 +184,7 @@ public struct ConversationConfig {
   public let enableToolCallStreaming: Bool
   public let thinkingConfig: ThinkingConfig?
   public let automaticToolCalling: Bool
+  public let enableResponseFormat: Bool
 
   /// - Parameters:
   ///   - systemMessage: The system message to be used in the conversation.
@@ -196,6 +197,7 @@ public struct ConversationConfig {
   ///   - enableToolCallStreaming: Whether to enable conversation tool call streaming.
   ///   - thinkingConfig: Optional configuration for thinking/reasoning generation.
   ///   - automaticToolCalling: Whether to enable automatic tool calling. Default is true.
+  ///   - enableResponseFormat: Whether to enable response format (constrained decoding). Default is false.
   public init(
     systemMessage: Message? = nil,
     initialMessages: [Message] = [],
@@ -205,7 +207,8 @@ public struct ConversationConfig {
     audioLoraPath: String? = nil,
     enableToolCallStreaming: Bool = false,
     thinkingConfig: ThinkingConfig? = nil,
-    automaticToolCalling: Bool = true
+    automaticToolCalling: Bool = true,
+    enableResponseFormat: Bool = false
   ) {
     self.systemMessage = systemMessage.flatMap { msg in
       if msg.toString.isEmpty {
@@ -222,5 +225,6 @@ public struct ConversationConfig {
     self.enableToolCallStreaming = enableToolCallStreaming
     self.thinkingConfig = thinkingConfig
     self.automaticToolCalling = automaticToolCalling
+    self.enableResponseFormat = enableResponseFormat
   }
 }

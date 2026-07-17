@@ -34,6 +34,7 @@ swift_library(
         "ExperimentalFlags.swift",
         "LiteRTLMError.swift",
         "Message.swift",
+        "ResponseFormat.swift",
         "Tool.swift",
         "ToolManager.swift",
     ],
