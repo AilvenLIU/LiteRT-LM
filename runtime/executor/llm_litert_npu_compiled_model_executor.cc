@@ -1560,12 +1560,12 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::WarmupInference(
   auto result = compiled_model_llm.Run(
       prefill_signatures.prefill, llm_inference_context.prefill_input_buffers,
       llm_inference_context.prefill_output_buffers);
-  RET_CHECK(result) << "Inference warmup run for Gemma3 (prefill) failed."
+  RET_CHECK(result) << "Inference warmup run for LLM (prefill) failed."
                     << result.Error().Message();
   result = compiled_model_llm.Run(LlmSignatures::kDecodeLlm,
                                   llm_inference_context.decode_input_buffers,
                                   llm_inference_context.decode_output_buffers);
-  RET_CHECK(result) << "Inference warmup run for Gemma3 (decode) failed."
+  RET_CHECK(result) << "Inference warmup run for LLM (decode) failed."
                     << result.Error().Message();
 
   result = compiled_model_auxiliary.Run(
