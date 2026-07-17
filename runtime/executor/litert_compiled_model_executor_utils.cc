@@ -48,6 +48,8 @@
 #include "runtime/components/embedding_lookup/embedding_lookup_manager.h"
 #include "runtime/components/embedding_lookup/embedding_lookup_text.h"
 #include "runtime/components/model_resources.h"
+#include "runtime/executor/llm_executor_io_types.h"
+#include "runtime/executor/llm_executor_settings.h"
 #include "runtime/util/status_macros.h"  // IWYU pragma: keep NOLINT
 #include "runtime/components/model_resources_litert_lm.h"  // IWYU pragma: keep
 #include "runtime/components/model_resources_task.h"
@@ -78,6 +80,9 @@ constexpr std::array<absl::string_view, 2> kInputPositionsNames = {"positions",
 // Possible input attention mask names:
 constexpr std::array<absl::string_view, 2> kInputAttnMaskNames = {"attn_mask",
                                                                   "mask"};
+// Possible local input attention mask names:
+constexpr std::array<absl::string_view, 3> kInputLocalAttnMaskNames = {
+    "local_mask", "attn_mask_local", "local_attn_mask"};
 // Possible embedding names:
 constexpr std::array<absl::string_view, 1> kEmbeddingNames = {"embeddings"};
 // Possible per layer embedding names:
@@ -150,6 +155,10 @@ absl::StatusOr<ModelSignatures> GetModelSignaturesFromInputOutputNames(
     }
     if (absl::c_linear_search(kInputAttnMaskNames, input_name)) {
       model_signatures.input_attn_mask = std::string(input_name);
+      continue;
+    }
+    if (absl::c_linear_search(kInputLocalAttnMaskNames, input_name)) {
+      model_signatures.input_attn_mask_local = std::string(input_name);
       continue;
     }
     if (absl::c_linear_search(kEmbeddingNames, input_name)) {
@@ -400,14 +409,39 @@ absl::Status FillSingleBufferCacheParamTensor(
   return absl::OkStatus();
 }
 
+// Helper function to fill a range of values in a tensor buffer with the given
+// type.
+static void FillRange(litert::ElementType type, void* addr, int start,
+                      int end) {
+  if (type == litert::ElementType::Bool) {
+    bool* ptr = static_cast<bool*>(addr);
+    std::fill(ptr + start, ptr + end, true);
+  } else if (type == litert::ElementType::Float16) {
+    tflite::half* ptr = static_cast<tflite::half*>(addr);
+    std::fill(ptr + start, ptr + end, tflite::half(0.0f));
+  } else {
+    float* ptr = static_cast<float*>(addr);
+    std::fill(ptr + start, ptr + end, 0.0f);
+  }
+}
+
 absl::Status FillAttentionMask(litert::TensorBuffer& mask, int start_timestep,
-                               int steps) {
+                               int steps,
+                               const AttentionMaskPolicy& attention_mask_policy,
+                               std::optional<absl::Span<const int>> token_ids,
+                               std::optional<int> sliding_window_size) {
   LITERT_ASSIGN_OR_RETURN(auto mask_tensor_type, mask.TensorType());
   RET_CHECK_EQ(mask_tensor_type.Layout().Rank(), 4)
           .SetCode(absl::StatusCode::kInvalidArgument)
       << "Attention mask must be 4D.";
   int batch_size = mask_tensor_type.Layout().Dimensions()[0];
-  int channel_size = mask_tensor_type.Layout().Dimensions()[3];
+  int context_size = mask_tensor_type.Layout().Dimensions()[3];
+  if (attention_mask_policy == AttentionMaskPolicy::kVisionBidirectional &&
+      !token_ids.has_value()) {
+    return absl::InvalidArgumentError(
+        "Empty token ids with vision bidirectional attention mask policy is "
+        "not allowed.");
+  }
   LITERT_ASSIGN_OR_RETURN(auto mask_size, mask.PackedSize());
   LITERT_ASSIGN_OR_RETURN(auto mask_lock_and_addr,
                           litert::TensorBufferScopedLock::Create(
@@ -426,26 +460,52 @@ absl::Status FillAttentionMask(litert::TensorBuffer& mask, int start_timestep,
 
   for (int b = 0; b < batch_size; ++b) {
     for (int i = 0; i < steps; ++i) {
-      int current_step = start_timestep + i;
-      int offset = b * batch_offset + i * channel_size;
-      // For current step = n, we fill (n+1) positions for the mask sequence.
-      if (mask_tensor_type.ElementType() == litert::ElementType::Bool) {
-        // Boolean mask: Fill value = true.
-        bool* bool_ptr = static_cast<bool*>(mask_lock_and_addr.second);
-        std::fill(bool_ptr + offset, bool_ptr + offset + current_step + 1,
-                  true);
-      } else if (mask_tensor_type.ElementType() ==
-                 litert::ElementType::Float16) {
-        // Float16 mask: Fill value = 0.0f.
-        tflite::half* half_ptr =
-            static_cast<tflite::half*>(mask_lock_and_addr.second);
-        std::fill(half_ptr + offset, half_ptr + offset + current_step + 1,
-                  tflite::half(0.0f));
-      } else {  // litert::ElementType::Float32, checked above.
-        // Float mask: Fill value = 0.0f.
-        float* float_ptr = static_cast<float*>(mask_lock_and_addr.second);
-        std::fill(float_ptr + offset, float_ptr + offset + current_step + 1,
-                  0.0f);
+      int q = start_timestep + i;
+      int offset = b * batch_offset + i * context_size;
+      if (attention_mask_policy == AttentionMaskPolicy::kVisionBidirectional &&
+          q < token_ids->size() &&
+          (*token_ids)[q] == ExecutorVisionData::kSpecialToken) {
+        int start_k = 0;
+        if (sliding_window_size.has_value()) {
+          start_k = std::max(0, q - sliding_window_size.value() + 1);
+        }
+        int end_k = token_ids->size();
+        if (sliding_window_size.has_value()) {
+          end_k = std::min<int>(end_k, q + sliding_window_size.value() + 1);
+        }
+        int first_past_non_vision_token = q;
+        for (int j = q - 1; j >= start_k; --j) {
+          if ((*token_ids)[j] != ExecutorVisionData::kSpecialToken) {
+            first_past_non_vision_token = j;
+            break;
+          }
+        }
+        // Image tokens can attend to all past tokens, but cannot attend to
+        // future non-vision tokens.
+        const int first_future_non_vision_token =
+            std::find_if(token_ids->begin() + q, token_ids->begin() + end_k,
+                         [](int token_id) {
+                           return token_id != ExecutorVisionData::kSpecialToken;
+                         }) -
+            token_ids->begin();
+        FillRange(mask_tensor_type.ElementType(), mask_lock_and_addr.second,
+                  offset + start_k, offset + first_future_non_vision_token);
+      } else {
+        // Fast path for text queries or other policies.
+        int causal_start = 0;
+        if (sliding_window_size.has_value()) {
+          causal_start = std::max(0, q - sliding_window_size.value() + 1);
+        }
+        int causal_end = q + 1;
+        if (attention_mask_policy == AttentionMaskPolicy::kBidirectional) {
+          causal_end = std::min<int>(context_size, start_timestep + steps);
+          if (sliding_window_size.has_value()) {
+            causal_end =
+                std::min<int>(causal_end, q + sliding_window_size.value());
+          }
+        }
+        FillRange(mask_tensor_type.ElementType(), mask_lock_and_addr.second,
+                  offset + causal_start, offset + causal_end);
       }
     }
   }

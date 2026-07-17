@@ -342,6 +342,12 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::CreatePrefillInputBuffers(
             prefill_signature, signatures_.input_attn_mask.value()));
     prefill_input_buffers[signatures_.input_attn_mask.value()] =
         std::move(attn_mask_buffer);
+    if (signatures_.input_attn_mask_local.has_value()) {
+      auto attn_mask_local_buffer = compiled_model_->CreateInputBuffer(
+          prefill_signature, signatures_.input_attn_mask_local.value());
+      prefill_input_buffers[signatures_.input_attn_mask_local.value()] =
+          std::move(*attn_mask_local_buffer);
+    }
   }
   if (signatures_.input_int32_param.has_value()) {
     gpu_optimized_single_buffer_cache_ = true;
@@ -488,6 +494,11 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::PrefillInternal(
       ABSL_RETURN_IF_ERROR(InitializeAttentionMask(
           prefill_input_buffers[signatures_.input_attn_mask.value()],
           use_fp16_precision_));
+      if (signatures_.input_attn_mask_local.has_value()) {
+        ABSL_RETURN_IF_ERROR(InitializeAttentionMask(
+            prefill_input_buffers[signatures_.input_attn_mask_local.value()],
+            use_fp16_precision_));
+      }
     }
     // TODO(b/425396146): Add the unit tests for checking the prefill length.
     // We always hold one pending token in the input ids for the next
@@ -602,10 +613,33 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::PrefillInternal(
         }
       }
       if (signatures_.input_attn_mask.has_value()) {
+        AttentionMaskSettings attn_settings = [this]() {
+          absl::MutexLock lock(executor_settings_mutex_);
+          return executor_settings_.GetAttentionMaskSettings();
+        }();
+        auto tokens_copy = llm_context_->processed_context()
+                               .processed_tokens()
+                               .GetCopyOfTokens();
+        absl::Span<const int> token_ids_span =
+            tokens_copy.empty() ? absl::Span<const int>()
+                                : absl::MakeConstSpan(tokens_copy[0]);
+
         ABSL_RETURN_IF_ERROR(FillAttentionMask(
             prefill_input_buffers[signatures_.input_attn_mask.value()],
             start_step,
-            /*steps=*/prefill_length + input_idx));
+            /*steps=*/prefill_length + input_idx,
+            attn_settings.attention_mask_policy, token_ids_span,
+            /*sliding_window_size=*/std::nullopt));
+        if (signatures_.input_attn_mask_local.has_value()) {
+          ABSL_LOG(INFO) << "filling local attention mask";
+          ABSL_RETURN_IF_ERROR(FillAttentionMask(
+              prefill_input_buffers[signatures_.input_attn_mask_local.value()],
+              start_step,
+              /*steps=*/prefill_length + input_idx,
+              attn_settings.local_attention_mask_policy.value_or(
+                  attn_settings.attention_mask_policy),
+              token_ids_span, attn_settings.sliding_window_size));
+        }
       }
       if (gpu_optimized_single_buffer_cache_) {
         LITERT_RETURN_IF_ERROR(signatures_.input_int32_param.has_value());
@@ -865,9 +899,34 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::DecodeInternal(
     ABSL_RETURN_IF_ERROR(InitializeAttentionMask(
         decode_input_buffers_[signatures_.input_attn_mask.value()],
         use_fp16_precision_));
+    if (signatures_.input_attn_mask_local.has_value()) {
+      ABSL_RETURN_IF_ERROR(InitializeAttentionMask(
+          decode_input_buffers_[signatures_.input_attn_mask_local.value()],
+          use_fp16_precision_));
+    }
+    AttentionMaskSettings attn_settings = [this]() {
+      absl::MutexLock lock(executor_settings_mutex_);
+      return executor_settings_.GetAttentionMaskSettings();
+    }();
+    auto tokens_copy =
+        llm_context_->processed_context().processed_tokens().GetCopyOfTokens();
+    absl::Span<const int> token_ids_span =
+        tokens_copy.empty() ? absl::Span<const int>()
+                            : absl::MakeConstSpan(tokens_copy[0]);
+
     ABSL_RETURN_IF_ERROR(FillAttentionMask(
         decode_input_buffers_[signatures_.input_attn_mask.value()], step,
-        /*steps=*/1));
+        /*steps=*/1, attn_settings.attention_mask_policy, token_ids_span,
+        /*sliding_window_size=*/std::nullopt));
+    if (signatures_.input_attn_mask_local.has_value()) {
+      ABSL_RETURN_IF_ERROR(FillAttentionMask(
+          decode_input_buffers_[signatures_.input_attn_mask_local.value()],
+          step,
+          /*steps=*/1,
+          attn_settings.local_attention_mask_policy.value_or(
+              attn_settings.attention_mask_policy),
+          token_ids_span, attn_settings.sliding_window_size));
+    }
   }
   if (gpu_optimized_single_buffer_cache_) {
     LITERT_RETURN_IF_ERROR(signatures_.input_int32_param.has_value());

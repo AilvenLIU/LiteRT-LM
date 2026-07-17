@@ -317,7 +317,10 @@ absl::Status LlmLiteRtMtpDrafter::PrepareDrafterInputBuffers(
                               /*use_fp16_precision=*/false));
   ABSL_RETURN_IF_ERROR(FillAttentionMask(active_drafter_input_buffers_["mask"],
                                          /*start_step=*/position,
-                                         /*steps=*/1));
+                                         /*steps=*/1,
+                                         AttentionMaskPolicy::kCausal,
+                                         /*token_ids=*/std::nullopt,
+                                         /*sliding_window_size=*/std::nullopt));
   if (active_drafter_input_buffers_.contains("param_tensor")) {
     ABSL_RETURN_IF_ERROR(FillSingleBufferCacheParamTensor(
         active_drafter_input_buffers_["param_tensor"], position,
@@ -400,7 +403,10 @@ absl::Status LlmLiteRtMtpDrafter::PrepareVerifierInputBuffers(
                                                /*use_fp16_precision=*/false));
   ABSL_RETURN_IF_ERROR(FillAttentionMask(verifier_input_buffers_["mask"],
                                          /*start_step=*/position,
-                                         /*steps=*/num_draft_steps_ + 1));
+                                         /*steps=*/num_draft_steps_ + 1,
+                                         AttentionMaskPolicy::kCausal,
+                                         /*token_ids=*/std::nullopt,
+                                         /*sliding_window_size=*/std::nullopt));
 
   std::vector<int> drafted_tokens_with_input_token;
   drafted_tokens_with_input_token.reserve(num_draft_steps_ + 1);

@@ -124,6 +124,8 @@ cc_library(
     hdrs = ["litert_compiled_model_executor_utils.h"],
     deps = [
         ":executor_settings_base",
+        ":llm_executor_io_types",
+        ":llm_executor_settings",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/log:absl_log",
@@ -167,6 +169,7 @@ cc_test(
     deps = [
         ":executor_settings_base",
         ":litert_compiled_model_executor_utils",
+        ":llm_executor_settings",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",

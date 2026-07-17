@@ -14,10 +14,12 @@
 
 #include "runtime/executor/litert_compiled_model_executor_utils.h"
 
+#include <cstdlib>
 #include <filesystem>  // NOLINT: Required for path manipulation.
 #include <fstream>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -41,6 +43,7 @@
 #include "litert/test/matchers.h"  // from @litert
 #include "runtime/components/model_resources.h"
 #include "runtime/executor/executor_settings_base.h"
+#include "runtime/executor/llm_executor_settings.h"
 #include "runtime/util/file_util.h"
 #include "runtime/util/memory_mapped_file.h"
 #include "runtime/util/scoped_file.h"
@@ -468,7 +471,8 @@ TEST(LlmLiteRTCompiledModelExecutorUtilsTest, FillAttentionMask_Float32) {
   // channel_size = 10
   // i = 0: current_step = 5. Fills indices [0, 5] with 0.0f.
   // i = 1: current_step = 6. Fills indices [10, 16] with 0.0f.
-  ASSERT_OK(FillAttentionMask(*mask_buffer, /*start_timestep=*/5, /*steps=*/2));
+  ASSERT_OK(FillAttentionMask(*mask_buffer, /*start_timestep=*/5, /*steps=*/2,
+                              AttentionMaskPolicy::kCausal));
 
   auto lock = litert::TensorBufferScopedLock::Create(
       *mask_buffer, litert::TensorBuffer::LockMode::kRead);
@@ -503,7 +507,8 @@ TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
   // channel_size = 10
   // i = 0: current_step = 5. Fills indices [0, 5] with 0.0f.
   // i = 1: current_step = 6. Fills indices [10, 16] with 0.0f.
-  ASSERT_OK(FillAttentionMask(*mask_buffer, /*start_timestep=*/5, /*steps=*/2));
+  ASSERT_OK(FillAttentionMask(*mask_buffer, /*start_timestep=*/5, /*steps=*/2,
+                              AttentionMaskPolicy::kCausal));
 
   auto lock = litert::TensorBufferScopedLock::Create(
       *mask_buffer, litert::TensorBuffer::LockMode::kRead);
@@ -540,7 +545,8 @@ TEST(LlmLiteRTCompiledModelExecutorUtilsTest, FillAttentionMask_Bool) {
   // i = 0: current_step = 2. Fills indices [0, 2] with true.
   // i = 1: current_step = 3. Fills indices [8, 11] with true.
   // i = 2: current_step = 4. Fills indices [16, 20] with true.
-  ASSERT_OK(FillAttentionMask(*mask_buffer, /*start_timestep=*/2, /*steps=*/3));
+  ASSERT_OK(FillAttentionMask(*mask_buffer, /*start_timestep=*/2, /*steps=*/3,
+                              AttentionMaskPolicy::kCausal));
 
   auto lock = litert::TensorBufferScopedLock::Create(
       *mask_buffer, litert::TensorBuffer::LockMode::kRead);
@@ -575,7 +581,8 @@ TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
   // i = 0: current_step = 2. Fills indices [0, 2] with true.
   // i = 1: current_step = 3. Fills indices [8, 11] with true.
   // i = 2: current_step = 4. Fills indices [16, 20] with true.
-  ASSERT_OK(FillAttentionMask(*mask_buffer, /*start_timestep=*/2, /*steps=*/3));
+  ASSERT_OK(FillAttentionMask(*mask_buffer, /*start_timestep=*/2, /*steps=*/3,
+                              AttentionMaskPolicy::kCausal));
 
   auto lock = litert::TensorBufferScopedLock::Create(
       *mask_buffer, litert::TensorBuffer::LockMode::kRead);
@@ -591,6 +598,330 @@ TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
       }
     }
   }
+}
+
+TEST(LlmLiteRTCompiledModelExecutorUtilsTest, FillAttentionMask_Bidirectional) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, ::litert::Environment::Create({}));
+
+  auto layout = ::litert::Layout(::litert::Dimensions({1, 7, 1, 10}));
+  RankedTensorType ranked_tensor_type(ElementType::Float32, std::move(layout));
+  auto mask_buffer =
+      TensorBuffer::CreateManaged(env, ::litert::TensorBufferType::kHostMemory,
+                                  ranked_tensor_type, sizeof(float) * 70);
+  ASSERT_TRUE(mask_buffer);
+
+  ASSERT_OK(InitializeAttentionMask(*mask_buffer, /*is_f16=*/false));
+
+  std::vector<int> token_ids = {1, 2, 3, 4, 5, 6, 7};
+  ASSERT_OK(FillAttentionMask(*mask_buffer, /*start_timestep=*/0, /*steps=*/7,
+                              AttentionMaskPolicy::kBidirectional, token_ids));
+
+  auto lock = litert::TensorBufferScopedLock::Create(
+      *mask_buffer, litert::TensorBuffer::LockMode::kRead);
+  ASSERT_TRUE(lock);
+  float* mask_ptr = static_cast<float*>(lock->second);
+
+  // All queries (q=0 to 6) should attend to [0, 6]
+  for (int q = 0; q < 7; ++q) {
+    int offset = q * 10;
+    for (int i = 0; i < 10; ++i) {
+      if (i <= 6) {
+        EXPECT_EQ(mask_ptr[offset + i], 0.0f) << "q=" << q << ", k=" << i;
+      } else {
+        EXPECT_LT(mask_ptr[offset + i], -1000.0f) << "q=" << q << ", k=" << i;
+      }
+    }
+  }
+}
+
+TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
+     FillAttentionMask_Bidirectional_SlidingWindow) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, ::litert::Environment::Create({}));
+
+  auto layout = ::litert::Layout(::litert::Dimensions({1, 7, 1, 10}));
+  RankedTensorType ranked_tensor_type(ElementType::Float32, std::move(layout));
+  auto mask_buffer =
+      TensorBuffer::CreateManaged(env, ::litert::TensorBufferType::kHostMemory,
+                                  ranked_tensor_type, sizeof(float) * 70);
+  ASSERT_TRUE(mask_buffer);
+
+  ASSERT_OK(InitializeAttentionMask(*mask_buffer, /*is_f16=*/false));
+
+  std::vector<int> token_ids = {1, 2, 3, 4, 5, 6, 7};
+  ASSERT_OK(FillAttentionMask(*mask_buffer, /*start_timestep=*/0, /*steps=*/7,
+                              AttentionMaskPolicy::kBidirectional, token_ids,
+                              /*sliding_window_size=*/2));
+
+  auto lock = litert::TensorBufferScopedLock::Create(
+      *mask_buffer, litert::TensorBuffer::LockMode::kRead);
+  ASSERT_TRUE(lock);
+  float* mask_ptr = static_cast<float*>(lock->second);
+
+  // For q=0 to 6, expected unmasked keys satisfy std::abs(q - k) < 2 and k <= 6
+  for (int q = 0; q < 7; ++q) {
+    int offset = q * 10;
+    for (int k = 0; k < 10; ++k) {
+      bool expected_unmasked = (std::abs(q - k) < 2) && (k <= 6);
+      if (expected_unmasked) {
+        EXPECT_EQ(mask_ptr[offset + k], 0.0f) << "q=" << q << ", k=" << k;
+      } else {
+        EXPECT_LT(mask_ptr[offset + k], -1000.0f) << "q=" << q << ", k=" << k;
+      }
+    }
+  }
+}
+
+TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
+     FillAttentionMask_VisionBidirectional) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, ::litert::Environment::Create({}));
+
+  auto layout = ::litert::Layout(::litert::Dimensions({1, 8, 1, 10}));
+  RankedTensorType ranked_tensor_type(ElementType::Float32, std::move(layout));
+  auto mask_buffer =
+      TensorBuffer::CreateManaged(env, ::litert::TensorBufferType::kHostMemory,
+                                  ranked_tensor_type, sizeof(float) * 80);
+  ASSERT_TRUE(mask_buffer);
+
+  ASSERT_OK(InitializeAttentionMask(*mask_buffer, /*is_f16=*/false));
+
+  std::vector<int> token_ids = {10, -1, -1, -3, -1, -1, 12, 13};
+  ASSERT_OK(FillAttentionMask(*mask_buffer, /*start_timestep=*/0, /*steps=*/8,
+                              AttentionMaskPolicy::kVisionBidirectional,
+                              token_ids));
+
+  auto lock = litert::TensorBufferScopedLock::Create(
+      *mask_buffer, litert::TensorBuffer::LockMode::kRead);
+  ASSERT_TRUE(lock);
+  float* mask_ptr = static_cast<float*>(lock->second);
+
+  // q = 0: Expected unmasked: 0
+  int offset = 0;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k == 0);
+    EXPECT_EQ(mask_ptr[offset + k] == 0.0f, expected_unmasked)
+        << "q=0, k=" << k;
+  }
+
+  // q = 1: Expected unmasked: 0, 1, 2
+  offset += 10;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k <= 2);
+    EXPECT_EQ(mask_ptr[offset + k] == 0.0f, expected_unmasked)
+        << "q=1, k=" << k;
+  }
+
+  // q = 2: Expected unmasked: 0, 1, 2
+  offset += 10;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k <= 2);
+    EXPECT_EQ(mask_ptr[offset + k] == 0.0f, expected_unmasked)
+        << "q=2, k=" << k;
+  }
+
+  // q = 3: Expected unmasked: 0, 1, 2, 3
+  offset += 10;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k <= 3);
+    EXPECT_EQ(mask_ptr[offset + k] == 0.0f, expected_unmasked)
+        << "q=3, k=" << k;
+  }
+
+  // q = 4: Expected unmasked: 0, 1, 2, 3, 4, 5
+  offset += 10;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k <= 5);
+    EXPECT_EQ(mask_ptr[offset + k] == 0.0f, expected_unmasked)
+        << "q=4, k=" << k;
+  }
+
+  // q = 5: Expected unmasked: 0, 1, 2, 3, 4, 5
+  offset += 10;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k <= 5);
+    EXPECT_EQ(mask_ptr[offset + k] == 0.0f, expected_unmasked)
+        << "q=5, k=" << k;
+  }
+
+  // q = 6: Expected unmasked: 0 to 6
+  offset += 10;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k <= 6);
+    EXPECT_EQ(mask_ptr[offset + k] == 0.0f, expected_unmasked)
+        << "q=6, k=" << k;
+  }
+
+  // q = 7: Expected unmasked: 0 to 7
+  offset += 10;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k <= 7);
+    EXPECT_EQ(mask_ptr[offset + k] == 0.0f, expected_unmasked)
+        << "q=7, k=" << k;
+  }
+}
+
+TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
+     FillAttentionMask_Causal_SlidingWindow) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, ::litert::Environment::Create({}));
+
+  auto layout = ::litert::Layout(::litert::Dimensions({1, 3, 1, 10}));
+  RankedTensorType ranked_tensor_type(ElementType::Float32, std::move(layout));
+  auto mask_buffer =
+      TensorBuffer::CreateManaged(env, ::litert::TensorBufferType::kHostMemory,
+                                  ranked_tensor_type, sizeof(float) * 30);
+  ASSERT_TRUE(mask_buffer);
+
+  ASSERT_OK(InitializeAttentionMask(*mask_buffer, /*is_f16=*/false));
+
+  // start_timestep = 2, steps = 3. (q = 2, 3, 4).
+  // sliding_window_size = 2.
+  ASSERT_OK(FillAttentionMask(*mask_buffer, /*start_timestep=*/2, /*steps=*/3,
+                              AttentionMaskPolicy::kCausal,
+                              /*token_ids=*/std::nullopt,
+                              /*sliding_window_size=*/2));
+
+  auto lock = litert::TensorBufferScopedLock::Create(
+      *mask_buffer, litert::TensorBuffer::LockMode::kRead);
+  ASSERT_TRUE(lock);
+  float* mask_ptr = static_cast<float*>(lock->second);
+
+  // q = 2: Expected unmasked: [1, 2].
+  int offset = 0;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k >= 1 && k <= 2);
+    if (expected_unmasked) {
+      EXPECT_EQ(mask_ptr[offset + k], 0.0f) << "q=2, k=" << k;
+    } else {
+      EXPECT_LT(mask_ptr[offset + k], -1000.0f) << "q=2, k=" << k;
+    }
+  }
+
+  // q = 3: Expected unmasked: [2, 3].
+  offset += 10;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k >= 2 && k <= 3);
+    if (expected_unmasked) {
+      EXPECT_EQ(mask_ptr[offset + k], 0.0f) << "q=3, k=" << k;
+    } else {
+      EXPECT_LT(mask_ptr[offset + k], -1000.0f) << "q=3, k=" << k;
+    }
+  }
+
+  // q = 4: Expected unmasked: [3, 4].
+  offset += 10;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k >= 3 && k <= 4);
+    if (expected_unmasked) {
+      EXPECT_EQ(mask_ptr[offset + k], 0.0f) << "q=4, k=" << k;
+    } else {
+      EXPECT_LT(mask_ptr[offset + k], -1000.0f) << "q=4, k=" << k;
+    }
+  }
+}
+
+TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
+     FillAttentionMask_VisionBidirectional_SlidingWindow) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, ::litert::Environment::Create({}));
+
+  auto layout = ::litert::Layout(::litert::Dimensions({1, 8, 1, 10}));
+  RankedTensorType ranked_tensor_type(ElementType::Float32, std::move(layout));
+  auto mask_buffer =
+      TensorBuffer::CreateManaged(env, ::litert::TensorBufferType::kHostMemory,
+                                  ranked_tensor_type, sizeof(float) * 80);
+  ASSERT_TRUE(mask_buffer);
+
+  ASSERT_OK(InitializeAttentionMask(*mask_buffer, /*is_f16=*/false));
+
+  std::vector<int> token_ids = {10, -1, -1, -3, -1, -1, 12, 13};
+  ASSERT_OK(FillAttentionMask(*mask_buffer, /*start_timestep=*/0, /*steps=*/8,
+                              AttentionMaskPolicy::kVisionBidirectional,
+                              token_ids,
+                              /*sliding_window_size=*/2));
+
+  auto lock = litert::TensorBufferScopedLock::Create(
+      *mask_buffer, litert::TensorBuffer::LockMode::kRead);
+  ASSERT_TRUE(lock);
+  float* mask_ptr = static_cast<float*>(lock->second);
+
+  // q = 0: Expected unmasked: 0
+  int offset = 0;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k == 0);
+    EXPECT_EQ(mask_ptr[offset + k] == 0.0f, expected_unmasked)
+        << "q=0, k=" << k;
+  }
+
+  // q = 1: Expected unmasked: 0, 1, 2
+  offset += 10;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k <= 2);
+    EXPECT_EQ(mask_ptr[offset + k] == 0.0f, expected_unmasked)
+        << "q=1, k=" << k;
+  }
+
+  // q = 2: Expected unmasked: 1, 2
+  offset += 10;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k >= 1 && k <= 2);
+    EXPECT_EQ(mask_ptr[offset + k] == 0.0f, expected_unmasked)
+        << "q=2, k=" << k;
+  }
+
+  // q = 3: Expected unmasked: 2, 3
+  offset += 10;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k >= 2 && k <= 3);
+    EXPECT_EQ(mask_ptr[offset + k] == 0.0f, expected_unmasked)
+        << "q=3, k=" << k;
+  }
+
+  // q = 4: Expected unmasked: 3, 4, 5
+  offset += 10;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k == 3 || k == 4 || k == 5);
+    EXPECT_EQ(mask_ptr[offset + k] == 0.0f, expected_unmasked)
+        << "q=4, k=" << k;
+  }
+
+  // q = 5: Expected unmasked: 4, 5
+  offset += 10;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k == 4 || k == 5);
+    EXPECT_EQ(mask_ptr[offset + k] == 0.0f, expected_unmasked)
+        << "q=5, k=" << k;
+  }
+
+  // q = 6: Expected unmasked: 5, 6
+  offset += 10;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k >= 5 && k <= 6);
+    EXPECT_EQ(mask_ptr[offset + k] == 0.0f, expected_unmasked)
+        << "q=6, k=" << k;
+  }
+
+  // q = 7: Expected unmasked: 6, 7
+  offset += 10;
+  for (int k = 0; k < 10; ++k) {
+    bool expected_unmasked = (k >= 6 && k <= 7);
+    EXPECT_EQ(mask_ptr[offset + k] == 0.0f, expected_unmasked)
+        << "q=7, k=" << k;
+  }
+}
+
+TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
+     FillAttentionMask_VisionBidirectional_EmptyTokensFails) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, ::litert::Environment::Create({}));
+
+  auto layout = ::litert::Layout(::litert::Dimensions({1, 2, 1, 10}));
+  RankedTensorType ranked_tensor_type(ElementType::Float32, std::move(layout));
+  auto mask_buffer =
+      TensorBuffer::CreateManaged(env, ::litert::TensorBufferType::kHostMemory,
+                                  ranked_tensor_type, sizeof(float) * 20);
+  ASSERT_TRUE(mask_buffer);
+
+  EXPECT_THAT(FillAttentionMask(*mask_buffer, /*start_timestep=*/5, /*steps=*/2,
+                                AttentionMaskPolicy::kVisionBidirectional,
+                                /*token_ids=*/std::nullopt),
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(LlmLiteRTCompiledModelExecutorUtilsTest,

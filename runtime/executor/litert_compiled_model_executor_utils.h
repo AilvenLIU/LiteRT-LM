@@ -27,6 +27,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_model.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "litert/cc/options/litert_cpu_options.h"  // from @litert
@@ -34,6 +35,7 @@
 #include "runtime/components/embedding_lookup/embedding_lookup_manager.h"
 #include "runtime/components/model_resources.h"
 #include "runtime/executor/executor_settings_base.h"
+#include "runtime/executor/llm_executor_settings.h"
 #include "runtime/proto/sampler_params.pb.h"
 #include "runtime/util/scoped_file.h"
 
@@ -60,6 +62,9 @@ struct ModelSignatures {
   // Input attention mask signature name. For both prefill and decode.
   // Not all models require this input.
   std::optional<std::string> input_attn_mask;
+  // Input attention mask signature name for local attention. For both prefill
+  // and decode. Not all models require this input.
+  std::optional<std::string> input_attn_mask_local;
   // Input embeddings signature name. For both prefill and decode. When this
   // is provided, the embedding model will be used to look up the embeddings and
   // the input_tokens value must not be set.
@@ -126,8 +131,15 @@ absl::Status InitializeAttentionMask(::litert::TensorBuffer& mask, bool is_f16);
 // mask - The attention mask tensor to be filled.
 // start_timestep - The starting timestep to be filled at seq = 1.
 // steps - The number of steps to fill (the number of sequences to be filled).
-absl::Status FillAttentionMask(::litert::TensorBuffer& mask, int start_timestep,
-                               int steps);
+// attention_mask_policy - The attention mask policy.
+// token_ids - The token ids of the full context. Required for
+//             kVisionBidirectional attention mask policy.
+// sliding_window_size - The sliding window size.
+absl::Status FillAttentionMask(
+    ::litert::TensorBuffer& mask, int start_timestep, int steps,
+    const AttentionMaskPolicy& attention_mask_policy,
+    std::optional<absl::Span<const int>> token_ids = std::nullopt,
+    std::optional<int> sliding_window_size = std::nullopt);
 
 // Fills the parameters used by single buffer cache update from
 // start_index to start_index + update_length.
