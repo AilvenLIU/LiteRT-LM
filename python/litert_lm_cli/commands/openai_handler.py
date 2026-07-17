@@ -62,6 +62,62 @@ def _format_sse_final() -> bytes:
   return b"data: [DONE]\n\n"
 
 
+def _parse_model_parameter(
+    model_param: str,
+) -> tuple[str, str | None, int | None]:
+  """Parses a model parameter string into (model_id, backend, max_num_tokens).
+
+  Format: "<model-id>[,<backend>[,<max-token>]]"
+
+  Note:
+    This syntax is supported mainly for backward compatibility. We will not
+    add extra config values to it and might remove this support in the future.
+
+  Args:
+    model_param: The model string from the request.
+
+  Returns:
+    A tuple of (model_id, backend, max_num_tokens).
+
+  Raises:
+    ValueError: If model_param is not a string, max_num_tokens is not a positive
+      integer, or format is invalid.
+  """
+  if not isinstance(model_param, str):
+    raise ValueError(
+        f"model parameter must be a string, got {type(model_param).__name__}"
+    )
+
+  parts = [p.strip() for p in model_param.split(",")]
+  if len(parts) > 3:
+    raise ValueError(
+        "Too many comma-separated components in model parameter:"
+        f" {model_param!r}"
+    )
+
+  model_id = parts[0]
+  model_id = parts[0]
+  if not model_id:
+    raise ValueError("model_id cannot be empty")
+
+  backend = parts[1] if len(parts) > 1 and parts[1] else None
+
+  max_num_tokens = None
+  if len(parts) > 2 and parts[2]:
+    try:
+      max_num_tokens = int(parts[2])
+    except ValueError:
+      raise ValueError(
+          f"Invalid max_num_tokens in model parameter: {parts[2]!r}"
+      ) from None
+    if max_num_tokens <= 0:
+      raise ValueError(
+          f"max_num_tokens must be a positive integer, got {max_num_tokens}"
+      )
+
+  return model_id, backend, max_num_tokens
+
+
 def _parse_sampler_config(
     body: dict[str, Any],
 ) -> litert_lm.SamplerConfig | None:
@@ -1004,6 +1060,8 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       model_id: str,
       translated_messages: list[dict[str, Any]] | None = None,
       prompt: Any = None,
+      backend: str | None = None,
+      max_num_tokens: int | None = None,
   ) -> litert_lm.Engine | None:
     """Retrieves or initializes the engine for the given model ID.
 
@@ -1011,6 +1069,8 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       model_id: The model identifier string.
       translated_messages: Optional list of already translated messages.
       prompt: Optional prompt payload.
+      backend: Optional requested backend override.
+      max_num_tokens: Optional requested max_num_tokens override.
 
     Returns:
       The LiteRT-LM Engine instance, or None if initialization failed.
@@ -1020,6 +1080,8 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       return serve_util.get_or_initialize_server_engine(
           self.server,
           model_id=model_id,
+          backend=backend,
+          max_num_tokens=max_num_tokens,
       )
     except FileNotFoundError as e:
       self.send_error(404, "".join(traceback.format_exception_only(e)))
@@ -1057,9 +1119,15 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
     if body is None:
       return
 
-    model_id = body.get("model")
-    if not model_id:
+    raw_model_str = body.get("model")
+    if not raw_model_str:
       self.send_error(400, "Missing model")
+      return
+
+    try:
+      model_id, backend, max_num_tokens = _parse_model_parameter(raw_model_str)
+    except ValueError as e:
+      self.send_error(400, f"Invalid model parameter: {e}")
       return
 
     messages = body.get("messages")
@@ -1095,7 +1163,13 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       self.send_error(400, "Missing input or messages")
       return
 
-    engine = self._get_engine(model_id, translated_messages, prompt)
+    engine = self._get_engine(
+        model_id,
+        translated_messages,
+        prompt,
+        backend=backend,
+        max_num_tokens=max_num_tokens,
+    )
     if engine is None:
       return
 
@@ -1169,7 +1243,7 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
         self._handle_chat_completions(
             conv,
             prompt,
-            model_id,
+            raw_model_str,
             stream,
             now_str=now_str,
             created_ts=created_ts,
@@ -1178,7 +1252,7 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
             response_format=response_format,
         )
     except Exception as e:  # pylint: disable=broad-exception-caught
-      self._handle_inference_error(e, model_id, prompt)
+      self._handle_inference_error(e, raw_model_str, prompt)
 
   def _handle_responses_endpoint(self) -> None:
     """Handles POST requests to responses endpoint."""
@@ -1186,11 +1260,17 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
     if body is None:
       return
 
-    model_id = body.get("model")
+    raw_model_str = body.get("model")
     prompt = body.get("input")
 
-    if not model_id or not prompt:
+    if not raw_model_str or not prompt:
       self.send_error(400, "Missing model or input")
+      return
+
+    try:
+      model_id, backend, max_num_tokens = _parse_model_parameter(raw_model_str)
+    except ValueError as e:
+      self.send_error(400, f"Invalid model parameter: {e}")
       return
 
     if isinstance(prompt, dict):
@@ -1200,7 +1280,12 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
         self.send_error(400, f"Invalid prompt: {e}")
         return
 
-    engine = self._get_engine(model_id, prompt=prompt)
+    engine = self._get_engine(
+        model_id,
+        prompt=prompt,
+        backend=backend,
+        max_num_tokens=max_num_tokens,
+    )
     if engine is None:
       return
 
@@ -1244,11 +1329,11 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
             stream,
             now_str=now_str,
             created_ts=created_ts,
-            model_id=model_id,
+            model_id=raw_model_str,
             response_format=response_format,
         )
     except Exception as e:  # pylint: disable=broad-exception-caught
-      self._handle_inference_error(e, model_id, prompt)
+      self._handle_inference_error(e, raw_model_str, prompt)
 
   def do_POST(self) -> None:  # pylint: disable=invalid-name
     """Handles POST requests for OpenAI API compatible endpoints."""

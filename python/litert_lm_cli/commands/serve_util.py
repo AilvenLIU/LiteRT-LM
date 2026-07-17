@@ -93,6 +93,8 @@ def get_or_initialize_server_engine(
     server: LiteRTLMServer,
     *,
     model_id: str,
+    backend: str | None = None,
+    max_num_tokens: int | None = None,
 ) -> litert_lm.Engine:
   """Retrieves the persistent server engine or initializes it on first request.
 
@@ -108,6 +110,8 @@ def get_or_initialize_server_engine(
   Args:
     server: The active custom LiteRTLMServer instance object.
     model_id: The requested model identifier string.
+    backend: Optional requested backend override (e.g. 'cpu', 'gpu', 'npu').
+    max_num_tokens: Optional requested max_num_tokens override.
 
   Returns:
     The shared LiteRT-LM Engine context object.
@@ -120,7 +124,7 @@ def get_or_initialize_server_engine(
   if not m.exists():
     raise FileNotFoundError(f"Model {model_id} not found")
 
-  backend = model.parse_backend(None, model_obj=m)
+  resolved_backend = model.parse_backend(backend, model_obj=m)
   vision_backend = model.parse_backend(
       None,
       model_obj=m,
@@ -137,7 +141,9 @@ def get_or_initialize_server_engine(
       },
       label="audio",
   )
-  max_num_tokens = model.resolve_config_option(None, m, "max_num_tokens")
+  resolved_max_num_tokens = model.resolve_config_option(
+      max_num_tokens, m, "max_num_tokens"
+  )
   cache = model.resolve_config_option(None, m, "cache")
   cache_dir_val = common.cache_dir_value_from_cache_mode(cache)
   speculative_decoding = model.resolve_config_option(
@@ -147,8 +153,8 @@ def get_or_initialize_server_engine(
   if server.litert_lm_engine is not None:
     if (
         server.model_id == model_id
-        and server.backend == backend
-        and server.max_num_tokens == max_num_tokens
+        and server.backend == resolved_backend
+        and server.max_num_tokens == resolved_max_num_tokens
         and server.vision_backend == vision_backend
         and server.audio_backend == audio_backend
     ):
@@ -156,8 +162,8 @@ def get_or_initialize_server_engine(
 
     click.echo(
         click.style(
-            f"Re-initializing engine (model: {model_id}, backend: {backend},"
-            f" max_num_tokens: {max_num_tokens})",
+            f"Re-initializing engine (model: {model_id}, backend:"
+            f" {resolved_backend}, max_num_tokens: {resolved_max_num_tokens})",
             fg="yellow",
         )
     )
@@ -176,8 +182,8 @@ def get_or_initialize_server_engine(
   )
   engine = litert_lm.Engine(
       m.model_path,
-      backend=backend,
-      max_num_tokens=max_num_tokens,
+      backend=resolved_backend,
+      max_num_tokens=resolved_max_num_tokens,
       vision_backend=vision_backend,
       audio_backend=audio_backend,
       cache_dir=cache_dir_val,
@@ -187,8 +193,8 @@ def get_or_initialize_server_engine(
   engine.__enter__()
   server.litert_lm_engine = engine
   server.model_id = model_id
-  server.backend = backend
-  server.max_num_tokens = max_num_tokens
+  server.backend = resolved_backend
+  server.max_num_tokens = resolved_max_num_tokens
   server.vision_backend = vision_backend
   server.audio_backend = audio_backend
   return engine

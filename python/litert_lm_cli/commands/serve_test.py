@@ -671,6 +671,106 @@ class ServeTest(parameterized.TestCase):
     with self.assertRaisesRegex(ValueError, err_msg):
       openai_handler._parse_response_format(body)
 
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="model_only",
+          input_str="gemma3-1b",
+          expected=("gemma3-1b", None, None),
+      ),
+      dict(
+          testcase_name="model_and_backend",
+          input_str="gemma3-1b,gpu",
+          expected=("gemma3-1b", "gpu", None),
+      ),
+      dict(
+          testcase_name="model_backend_and_tokens",
+          input_str="gemma3-1b,gpu,32768",
+          expected=("gemma3-1b", "gpu", 32768),
+      ),
+      dict(
+          testcase_name="model_and_tokens_default_backend",
+          input_str="gemma3-1b,,32768",
+          expected=("gemma3-1b", None, 32768),
+      ),
+      dict(
+          testcase_name="trailing_comma",
+          input_str="gemma3-1b,gpu,",
+          expected=("gemma3-1b", "gpu", None),
+      ),
+      dict(
+          testcase_name="whitespace_stripping",
+          input_str="gemma-2-2b-it, CPU , 2048 ",
+          expected=("gemma-2-2b-it", "CPU", 2048),
+      ),
+  )
+  def test_parse_model_parameter_valid(self, input_str, expected):
+    self.assertEqual(openai_handler._parse_model_parameter(input_str), expected)
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="empty_model_id",
+          input_str="",
+          err_msg="model_id cannot be empty",
+      ),
+      dict(
+          testcase_name="not_a_string",
+          input_str=123,
+          err_msg="model parameter must be a string",
+      ),
+      dict(
+          testcase_name="invalid_max_tokens",
+          input_str="gemma3-1b,gpu,notanint",
+          err_msg="Invalid max_num_tokens",
+      ),
+      dict(
+          testcase_name="non_positive_max_tokens",
+          input_str="gemma3-1b,gpu,0",
+          err_msg="max_num_tokens must be a positive integer",
+      ),
+      dict(
+          testcase_name="negative_max_tokens",
+          input_str="gemma3-1b,gpu,-100",
+          err_msg="max_num_tokens must be a positive integer",
+      ),
+      dict(
+          testcase_name="too_many_parts",
+          input_str="gemma3-1b,gpu,32768,extra",
+          err_msg="Too many comma-separated components",
+      ),
+  )
+  def test_parse_model_parameter_invalid(self, input_str, err_msg):
+    with self.assertRaisesRegex(ValueError, err_msg):
+      openai_handler._parse_model_parameter(input_str)
+
+  def test_get_engine_backend_and_max_tokens_override(self):
+    mock_m = mock.Mock(spec_set=["exists", "model_path", "model_id"])
+    mock_m.exists.return_value = True
+    mock_m.model_path = "/path/to/gemma3-1b"
+    mock_m.model_id = "gemma3-1b"
+
+    mock_model_mod.Model.from_model_id.return_value = mock_m
+
+    mock_engine_instance = mock.MagicMock(spec=interfaces.AbstractEngine)
+    mock_engine_instance.__enter__.return_value = mock_engine_instance
+    mock_litert_lm.Engine.return_value = mock_engine_instance
+
+    server = mock.MagicMock(spec=serve_util.LiteRTLMServer)
+    server.litert_lm_engine = None
+    server.model_id = None
+    server.backend = None
+    server.max_num_tokens = None
+    server.vision_backend = None
+    server.audio_backend = None
+
+    engine = serve_util.get_or_initialize_server_engine(
+        server, model_id="gemma3-1b", backend="gpu", max_num_tokens=32768
+    )
+    self.assertEqual(engine, mock_engine_instance)
+    mock_litert_lm.Engine.assert_called_once()  # pytype: disable=attribute-error
+    _, kwargs = mock_litert_lm.Engine.call_args  # pytype: disable=attribute-error
+    self.assertEqual(kwargs.get("max_num_tokens"), 32768)
+    self.assertEqual(server.max_num_tokens, 32768)
+
 
 if __name__ == "__main__":
   absltest.main()
