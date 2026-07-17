@@ -52,6 +52,7 @@
 #include "litert/cc/litert_layout.h"  // from @litert
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "litert/cc/litert_model.h"  // from @litert
+#include "litert/cc/litert_model_types.h"  // from @litert
 #include "litert/cc/litert_options.h"  // from @litert
 #include "litert/cc/litert_ranked_tensor_type.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
@@ -2060,6 +2061,21 @@ LlmLiteRtNpuCompiledModelExecutor::Decode(
 // with a certain length.
 absl::Status LlmLiteRtNpuCompiledModelExecutor::PrefillInternal(
     absl::string_view prefill_signature, absl::Span<const int> ids) {
+  // We use `kPrefillSize` instead of `ids.size()` because the NPU prefill
+  // execution always processes a fixed block of `kPrefillSize` (128) tokens.
+  // Even if the actual input `ids` is smaller, the hardware cache update
+  // will attempt to write `kPrefillSize` tokens, which can cause out-of-bounds
+  // writes if we are close to the end of the cache.
+  if (current_step_ + kPrefillSize > executor_settings_.GetMaxNumTokens()) {
+    ABSL_LOG(ERROR) << "Prefill length exceeds capacity. current_step_="
+                    << current_step_ << ", kPrefillSize=" << kPrefillSize
+                    << ", max_sequence_length_="
+                    << executor_settings_.GetMaxNumTokens();
+    return absl::InvalidArgumentError(
+        absl::StrCat("Prefill length (", kPrefillSize, ") plus current step (",
+                     current_step_, ") exceeds max sequence length (",
+                     executor_settings_.GetMaxNumTokens(), ")."));
+  }
   auto start_prepare_inputs = absl::Now();
   std::vector<int> tokens_to_embed;
   tokens_to_embed.reserve(ids.size());
@@ -2584,6 +2600,9 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::PrefillCommonPipeline(
 
 absl::Status LlmLiteRtNpuCompiledModelExecutor::DecodeInternal(
     int step, std::shared_ptr<TokenData> token) {
+  if (step >= executor_settings_.GetMaxNumTokens()) {
+    return absl::ResourceExhaustedError("Reached maximum number of tokens.");
+  }
   int id = token->id();
   auto start_prepare_inputs = absl::Now();
 
@@ -3456,6 +3475,69 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::RestoreContext(
   return absl::OkStatus();
 }
 
+absl::StatusOr<int>
+LlmLiteRtNpuCompiledModelExecutor::DetermineMaxSequenceLength(
+    const LlmExecutorSettings& executor_settings, ModelResources& resources,
+    const litert::Model& llm_model) {
+  int ans = 0;
+
+  // (1) Check for the presence of the max_num_tokens in the LlmMetadata
+  if (auto metadata_status = resources.GetLlmMetadata(); metadata_status.ok()) {
+    const proto::LlmMetadata* metadata = *metadata_status;
+    if (metadata && metadata->max_num_tokens() > 0) {
+      ans = metadata->max_num_tokens();
+    }
+  }
+
+  // (2) If not present fall back to iterate through all KV cache input buffers
+  // of the llm_model and get the maximum number.
+  if (ans <= 0) {
+    // We need to go through all KV cache layers because in sliding window
+    // attention models various layers will have a smaller (ringbuffer) cache,
+    // and instead we need to find the true global KV cache.
+    // Once the "Executor metadata" design is implemented the information can
+    // instead be taken from there.
+    LITERT_ASSIGN_OR_RETURN(SimpleSignature prefill_signature,
+                            llm_model.FindSignature(kPrefillSignature));
+    for (auto input_name : prefill_signature.InputNames()) {
+      if (absl::StartsWith(input_name, kv_cache_k_root_name) ||
+          absl::StartsWith(input_name, kv_cache_v_root_name) ||
+          absl::StartsWith(input_name, kv_cache_c_root_name)) {
+        LITERT_ASSIGN_OR_RETURN(const litert::SimpleTensor& tensor,
+                                prefill_signature.InputTensor(input_name));
+        LITERT_ASSIGN_OR_RETURN(::litert::RankedTensorType type,
+                                tensor.RankedTensorType());
+        for (auto dim : type.Layout().Dimensions()) {
+          ans = std::max(ans, dim);
+        }
+      }
+    }
+  }
+
+  // (3) Check the passed in executor setting max num tokens field.
+  int settings_max_num_tokens = executor_settings.GetMaxNumTokens();
+  if (settings_max_num_tokens > 0) {
+    if (ans > 0) {
+      if (settings_max_num_tokens > ans) {
+        ABSL_LOG(WARNING) << "Passed in max_num_tokens ("
+                          << settings_max_num_tokens
+                          << ") is larger than what the model supports (" << ans
+                          << "). Using model limit.";
+      } else {
+        ans = settings_max_num_tokens;
+      }
+    } else {
+      ans = settings_max_num_tokens;
+    }
+  }
+
+  if (ans <= 0) {
+    return absl::InternalError("Failed to determine max sequence length.");
+  }
+
+  return ans;
+}
+
 // static
 absl::StatusOr<std::unique_ptr<LlmLiteRtNpuCompiledModelExecutor>>
 LlmLiteRtNpuCompiledModelExecutor::Create(
@@ -3470,6 +3552,24 @@ LlmLiteRtNpuCompiledModelExecutor::Create(
   LITERT_ASSIGN_OR_RETURN(
       const litert::Model* llm_model,
       resources.GetTFLiteModel(ModelType::kTfLitePrefillDecode));
+
+  LITERT_ASSIGN_OR_RETURN(
+      int max_sequence_length,
+      DetermineMaxSequenceLength(executor_settings, resources, *llm_model));
+
+  // `DetermineMaxSequenceLength` resolves the effective limit by taking the
+  // minimum of the user-requested limit (if > 0) and the model-supported limit.
+  // If they differ (e.g. user limit is 0 or larger than what the model
+  // supports), we override the settings. If the user requested a smaller limit,
+  // it is respected and not overridden.
+  LlmExecutorSettings mutable_settings = executor_settings;
+  if (mutable_settings.GetMaxNumTokens() != max_sequence_length) {
+    ABSL_LOG(WARNING) << "Overriding executor settings max_num_tokens ("
+                      << mutable_settings.GetMaxNumTokens()
+                      << ") with NPU model max sequence length: ("
+                      << max_sequence_length << ")";
+    mutable_settings.SetMaxNumTokens(max_sequence_length);
+  }
 
   // Initialize logits quantization parameters using the 'decode' signature.
   LogitsQuantizationParams quantization_params = {.scale = 1.0f,
@@ -3498,11 +3598,11 @@ LlmLiteRtNpuCompiledModelExecutor::Create(
   LITERT_ASSIGN_OR_RETURN(const bool has_per_layer_embeddings,
                           HasPerLayerEmbedder(*llm_model));
   if (has_per_layer_embeddings) {
-    return CreateForModelHasPerLayerEmbedding(executor_settings, resources, env,
+    return CreateForModelHasPerLayerEmbedding(mutable_settings, resources, env,
                                               llm_model, quantization_params);
   } else {
     return CreateForModelWithoutPerLayerEmbedding(
-        executor_settings, resources, env, llm_model, quantization_params);
+        mutable_settings, resources, env, llm_model, quantization_params);
   }
 };
 

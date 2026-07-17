@@ -525,6 +525,20 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
           gemma_verify_input_buffers,
       const LlmExecutorSettings& settings);
 
+  // Determine the maximum sequence length that the NPU model supports.
+  //
+  // 1. Query the 'LlmMetadata' in the provided 'resources' and check if a max
+  //    sequence length (referred to as 'max_num_tokens') has been set.
+  // 2. Otherwise determine the maximum sequence length supported by checking
+  //    the KV cache tensor buffers.
+  //
+  // Note: If `executor_settings.GetMaxNumTokens()` is set, the minimum of it
+  // and the model's supported limit will be returned. A warning is logged if
+  // the user requested limit is greater than the model's supported limit.
+  static absl::StatusOr<int> DetermineMaxSequenceLength(
+      const LlmExecutorSettings& executor_settings, ModelResources& resources,
+      const litert::Model& llm_model);
+
   // Creates the context for the NPU auxiliary model.
   static absl::StatusOr<NpuAuxiliaryContext> CreateNpuAuxiliaryContext(
       ::litert::Environment& env, const litert::Model& npu_auxiliary_model,
