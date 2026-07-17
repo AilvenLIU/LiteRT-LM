@@ -50,7 +50,6 @@ jobs:
       MODEL_PATH: ./models/gemma4
       MODEL_URL: gs://litert-lm-cicd/models/gemma4/gemma-4-E2B-it.litertlm
 
-
       # Clear ANDROID_NDK_HOME as Windows_x64 has NDK where jobs don't have permission for
       # androidndk rules to create symlinks.
       ANDROID_NDK_HOME:
@@ -71,7 +70,7 @@ jobs:
 
           choco install git make pkgconfiglite openjdk17 ccache bazelisk gcloudsdk 7zip --no-progress -y
 
-          python -m pip install --break-system-packages numpy
+          python -m pip install --break-system-packages numpy pytest==8.3.4
 
       - name: Configure System Paths
         run: |
@@ -286,19 +285,19 @@ jobs:
             //schema/... `
             //c/...
 
-      - name: Upload Bazel Test Logs
+      - name: Run pytest
+        # Execute pytest via the python module (-m) to bypass missing pytest.exe PATH issues
+        run: python -m pytest tools/pytest/ --backend=cpu --model-path=${{ env.MODEL_PATH }}/${{ env.MODEL_KEY }} --build-system=bazel
+
+      - name: Upload bazel test logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bazel-test-logs-windows
           path: bazel-testlogs/**/test.log
 
-      - name: Install pytest
-        run: python -m pip install --break-system-packages pytest==8.3.4
-
-      - name: Run pytest
-        # Execute pytest via the python module (-m) to bypass missing pytest.exe PATH issues
-        run: python -m pytest tools/pytest/ --model-path=${{ env.MODEL_PATH }}/${{ env.MODEL_KEY }} --build-system=bazel
+      - name: Clean build outputs for dynamic linking build
+        run: bazel --output_base="$env:BAZEL_OUTPUT_BASE" clean --expunge
 
       - name: Run bazel build on Windows with dynamic linking
         run: |
@@ -309,6 +308,12 @@ jobs:
             --define=litert_runtime_link_mode=dynamic `
             --define=resolve_symbols_in_exec=false `
             //runtime/engine:litert_lm_main
+
+      - name: Run pytest for dynamic linking
+        # Execute pytest via the python module (-m) to bypass missing pytest.exe PATH issues
+        run: python -m pytest tools/pytest/ -v `
+          --backend=cpu --dynamic --prebuilt `
+          --model-path=${{ env.MODEL_PATH }}/${{ env.MODEL_KEY }} --build-system=bazel
 
       - name: Remove cache if cache is being refreshed
         if: env.REFRESH_CACHE == 'true'

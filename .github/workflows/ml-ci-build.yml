@@ -71,6 +71,10 @@ jobs:
             apt-file && apt-file update
           git lfs install
 
+      - name: Install pytest
+        run: python3 -m pip install --break-system-packages pytest==8.3.4
+
+
       - name: Checkout code.
         uses: actions/checkout@v4
         with:
@@ -259,11 +263,8 @@ jobs:
             --define=resolve_symbols_in_exec=false \
             //runtime/engine:litert_lm_main
 
-      - name: Install pytest
-        run: python3 -m pip install --break-system-packages pytest==8.3.4
-
       - name: Run pytest
-        run: pytest tools/pytest/ --model-path=${{ env.MODEL_PATH }}/${{ env.MODEL_KEY }} --build-system=bazel
+        run: pytest tools/pytest/ --backend=cpu --model-path=${{ env.MODEL_PATH }}/${{ env.MODEL_KEY }} --build-system=bazel
 
 
       - name: Check if litert_lm_main has only LiteRt symbols undefined.

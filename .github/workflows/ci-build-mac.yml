@@ -55,6 +55,9 @@ jobs:
         with:
           lfs: true
 
+      - name: Install pytest
+        run: python3 -m pip install --break-system-packages pytest==8.3.4
+
       - name : Set up cache keys.
         id: cache-keys
         run: |
@@ -150,14 +153,10 @@ jobs:
           cp bazel-bin/runtime/engine/litert_lm_main litert_lm_main.macos_arm64
           gh release upload ${GITHUB_REF_NAME} litert_lm_main.macos_arm64 --clobber
 
-
-      - name: Install pytest
-        run: python3 -m pip install --break-system-packages pytest==8.3.4
-
       - name: Run pytest
         run: |
           if [ -f "${{ env.MODEL_PATH }}" ]; then
-            pytest tools/pytest/ --model-path=${{ env.MODEL_PATH }} --build-system=bazel
+            pytest tools/pytest/ --backend=cpu --model-path=${{ env.MODEL_PATH }} --build-system=bazel
           else
             echo "Skipping pytest on macOS because model file ${{ env.MODEL_PATH }} is not downloaded (unauthenticated PR)."
           fi
