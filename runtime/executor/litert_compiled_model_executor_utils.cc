@@ -22,6 +22,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -551,12 +552,16 @@ absl::Status SetCommonGpuOptions(
       executor_settings.GetActivationDataType().has_value()
           ? executor_settings.GetActivationDataType().value()
           : fallback_activation_data_type.value_or(ActivationDataType::FLOAT32);
-  if (activation_type == ActivationDataType::FLOAT32) {
-    gpu_options.SetPrecision(litert::GpuOptions::Precision::kFp32);
+  // Mixed precision setting overrides the activation data type setting. The
+  // underlying delegate uses fp32 precision to represent mixed precision, so we
+  // set it to fp32 here.
+  if (executor_settings.IsMixedPrecisionEnabled() ||
+      activation_type == ActivationDataType::FLOAT32) {
+    gpu_options.SetPrecision(GpuOptions::Precision::kFp32);
   } else {
     // For FLOAT16, INT16, and INT8 activation data types, calculation
     // precision of the GPU delegate is set to fp16.
-    gpu_options.SetPrecision(litert::GpuOptions::Precision::kFp16);
+    gpu_options.SetPrecision(GpuOptions::Precision::kFp16);
   }
 #if defined(__APPLE__)
   gpu_options.SetPreferTextureWeights(false);

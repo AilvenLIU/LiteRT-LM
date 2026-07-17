@@ -28,6 +28,8 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"  // from @litert
+#include "litert/c/options/litert_gpu_options.h"  // from @litert
 #include "litert/cc/litert_element_type.h"  // from @litert
 #include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_layout.h"  // from @litert
@@ -882,6 +884,14 @@ class DummyExecutorSettings : public ExecutorSettingsBase {
       : ExecutorSettingsBase(*ModelAssets::Create("dummy_path")) {}
 };
 
+LiteRtDelegatePrecision GetGpuPrecision(const litert::GpuOptions& gpu_options) {
+  LiteRtDelegatePrecision precision;
+  EXPECT_EQ(LrtGetGpuAcceleratorCompilationOptionsPrecision(&precision,
+                                                            gpu_options.Get()),
+            kLiteRtStatusOk);
+  return precision;
+}
+
 TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
      SetCpuOptions_ConfigureSuccessfully) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto cpu_options, litert::CpuOptions::Create());
@@ -889,44 +899,132 @@ TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
 }
 
 TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
-     SetCommonGpuOptions_DefaultAndFallbackPrecisions) {
+     SetCommonGpuOptions_SetsAllCommonOptions) {
   DummyExecutorSettings executor_settings;
   LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
 
-  // Without fallback_activation_data_type specified, defaults to FLOAT32.
   EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options));
 
+  bool constant_sharing = false;
+  EXPECT_EQ(LrtGetGpuOptionsConstantTensorsSharing(&constant_sharing,
+                                                   gpu_options.Get()),
+            kLiteRtStatusOk);
+  EXPECT_TRUE(constant_sharing);
+
+  bool madvise = false;
+  EXPECT_EQ(LrtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
+                &madvise, gpu_options.Get()),
+            kLiteRtStatusOk);
+  EXPECT_TRUE(madvise);
+
+  bool convert_weights = false;
+  EXPECT_EQ(LrtGetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
+                &convert_weights, gpu_options.Get()),
+            kLiteRtStatusOk);
+  EXPECT_TRUE(convert_weights);
+
+  bool prefer_texture = false;
+  EXPECT_EQ(LrtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
+                &prefer_texture, gpu_options.Get()),
+            kLiteRtStatusOk);
+#if defined(__APPLE__)
+  EXPECT_FALSE(prefer_texture);
+#else
+  EXPECT_TRUE(prefer_texture);
+#endif
+}
+
+TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
+     SetCommonGpuOptions_DefaultAndFallbackPrecisions) {
+  DummyExecutorSettings executor_settings;
+
+  // Without fallback_activation_data_type specified, defaults to FLOAT32.
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
+    EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options));
+    EXPECT_EQ(GetGpuPrecision(gpu_options), kLiteRtDelegatePrecisionFp32);
+  }
+
   // With FLOAT32 fallback specified, configures kFp32.
-  EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
-                                ActivationDataType::FLOAT32));
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
+    EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
+                                  ActivationDataType::FLOAT32));
+    EXPECT_EQ(GetGpuPrecision(gpu_options), kLiteRtDelegatePrecisionFp32);
+  }
 
   // With FLOAT16, INT16, and INT8 fallback specified, configures kFp16.
-  EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
-                                ActivationDataType::FLOAT16));
-  EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
-                                ActivationDataType::INT16));
-  EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
-                                ActivationDataType::INT8));
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
+    EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
+                                  ActivationDataType::FLOAT16));
+    EXPECT_EQ(GetGpuPrecision(gpu_options), kLiteRtDelegatePrecisionFp16);
+  }
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
+    EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
+                                  ActivationDataType::INT16));
+    EXPECT_EQ(GetGpuPrecision(gpu_options), kLiteRtDelegatePrecisionFp16);
+  }
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
+    EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
+                                  ActivationDataType::INT8));
+    EXPECT_EQ(GetGpuPrecision(gpu_options), kLiteRtDelegatePrecisionFp16);
+  }
 }
 
 TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
      SetCommonGpuOptions_ExplicitActivationPrecisionOverride) {
   DummyExecutorSettings executor_settings;
-  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
 
   // Explicit FLOAT32 overrides fallback of FLOAT16/INT8.
-  executor_settings.SetActivationDataType(ActivationDataType::FLOAT32);
-  EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
-                                ActivationDataType::FLOAT16));
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
+    executor_settings.SetActivationDataType(ActivationDataType::FLOAT32);
+    EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
+                                  ActivationDataType::FLOAT16));
+    EXPECT_EQ(GetGpuPrecision(gpu_options), kLiteRtDelegatePrecisionFp32);
+  }
 
   // Explicit INT8 or FLOAT16 overrides fallback of FLOAT32.
-  executor_settings.SetActivationDataType(ActivationDataType::INT8);
-  EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
-                                ActivationDataType::FLOAT32));
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
+    executor_settings.SetActivationDataType(ActivationDataType::INT8);
+    EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
+                                  ActivationDataType::FLOAT32));
+    EXPECT_EQ(GetGpuPrecision(gpu_options), kLiteRtDelegatePrecisionFp16);
+  }
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
+    executor_settings.SetActivationDataType(ActivationDataType::FLOAT16);
+    EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
+                                  ActivationDataType::FLOAT32));
+    EXPECT_EQ(GetGpuPrecision(gpu_options), kLiteRtDelegatePrecisionFp16);
+  }
+}
 
-  executor_settings.SetActivationDataType(ActivationDataType::FLOAT16);
-  EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
-                                ActivationDataType::FLOAT32));
+TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
+     SetCommonGpuOptions_MixedPrecisionOverride) {
+  DummyExecutorSettings executor_settings;
+  executor_settings.SetEnableMixedPrecision(true);
+
+  // Mixed precision overrides FLOAT16 fallback to FP32.
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
+    EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
+                                  ActivationDataType::FLOAT16));
+    EXPECT_EQ(GetGpuPrecision(gpu_options), kLiteRtDelegatePrecisionFp32);
+  }
+
+  // Mixed precision overrides explicit FLOAT16 activation type to FP32.
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
+    executor_settings.SetActivationDataType(ActivationDataType::FLOAT16);
+    EXPECT_OK(SetCommonGpuOptions(executor_settings, gpu_options,
+                                  ActivationDataType::FLOAT16));
+    EXPECT_EQ(GetGpuPrecision(gpu_options), kLiteRtDelegatePrecisionFp32);
+  }
 }
 
 }  // namespace
