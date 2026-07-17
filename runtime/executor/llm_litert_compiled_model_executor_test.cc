@@ -271,6 +271,67 @@ class FakeInvalidTokenSampler : public Sampler {
   }
 };
 
+class FakeSamplerWithInputHandling : public Sampler {
+ public:
+  bool CanHandleInput() const override { return true; }
+  bool HandlesInput() const override { return inference_func_ != nullptr; }
+
+  absl::Status SetInputTensorsAndInferenceFunc(
+      const TensorBuffer* ids_tensor,
+      const TensorBuffer* prev_input_positions_tensor,
+      const TensorBuffer* input_positions_tensor,
+      const TensorBuffer* prev_mask_tensor, const TensorBuffer* mask_tensor,
+      int (*run_inference_func)(void* arg), void* arg) override {
+    inference_func_ = run_inference_func;
+    arg_ = arg;
+    prev_input_positions_tensor_ = prev_input_positions_tensor;
+    input_positions_tensor_ = input_positions_tensor;
+    if (run_inference_func != nullptr) {
+      set_count_++;
+    } else {
+      reset_count_++;
+    }
+    return absl::OkStatus();
+  }
+
+  absl::Status SampleToIdAndScoreBuffer(const TensorBuffer& logits_tensor,
+                                        TensorBuffer& ids_tensor,
+                                        TensorBuffer* scores_tensor) override {
+    sample_count_++;
+    LITERT_ASSIGN_OR_RETURN(auto lock_and_addr,
+                            TensorBufferScopedLock::Create(
+                                ids_tensor, TensorBuffer::LockMode::kWrite));
+    int* ptr = static_cast<int*>(const_cast<void*>(lock_and_addr.second));
+    ptr[0] = sample_count_;
+
+    if (inference_func_ != nullptr) {
+      inference_called_count_++;
+    }
+    return absl::OkStatus();
+  }
+
+  absl::Status UpdateConfig(
+      const proto::SamplerParameters& sampler_params, int batch_size,
+      std::shared_ptr<std::default_random_engine> rand_gen) override {
+    return absl::OkStatus();
+  }
+
+  int set_count() const { return set_count_; }
+  int reset_count() const { return reset_count_; }
+  int sample_count() const { return sample_count_; }
+  int inference_called_count() const { return inference_called_count_; }
+
+ private:
+  int (*inference_func_)(void* arg) = nullptr;
+  void* arg_ = nullptr;
+  const TensorBuffer* prev_input_positions_tensor_ = nullptr;
+  const TensorBuffer* input_positions_tensor_ = nullptr;
+  int set_count_ = 0;
+  int reset_count_ = 0;
+  int sample_count_ = 0;
+  int inference_called_count_ = 0;
+};
+
 class TestableLlmLiteRtCompiledModelExecutorStatic
     : public LlmLiteRtCompiledModelExecutorStatic {
  public:
@@ -281,7 +342,90 @@ class TestableLlmLiteRtCompiledModelExecutorStatic
     testable->sampler_ = std::move(sampler);
     testable->sampler_handles_input_ = false;
   }
+
+  static void SetSamplerWithInputHandlingForTest(
+      LlmLiteRtCompiledModelExecutorStatic* executor,
+      std::unique_ptr<Sampler> sampler) {
+    auto* testable =
+        static_cast<TestableLlmLiteRtCompiledModelExecutorStatic*>(executor);
+    testable->sampler_ = std::move(sampler);
+    testable->sampler_handles_input_ = true;
+  }
 };
+
+TEST(LlmLiteRtCompiledModelExecutorStaticTest,
+     SamplerInputHandlingMultiTurnTest) {
+  auto model_path =
+      std::filesystem::path(::testing::SrcDir()) / kTestStaticModelPath;
+  ASSERT_OK_AND_ASSIGN(auto model_resources,
+                       CreateExecutorModelResourcesTask(model_path.string()));
+  ASSERT_OK_AND_ASSIGN(auto model_assets,
+                       ModelAssets::Create(model_path.string()));
+  ASSERT_OK_AND_ASSIGN(
+      auto executor_settings,
+      LlmExecutorSettings::CreateDefault(model_assets, Backend::CPU));
+  executor_settings.SetCacheDir(":nocache");
+  executor_settings.SetMaxNumTokens(kMaxNumTokens);
+  executor_settings.SetAdvancedSettings(AdvancedSettings{
+      .sampler_handles_input = true,
+  });
+  ::litert::lm::CpuConfig config;
+  config.number_of_threads = kNumThreads;
+  executor_settings.SetBackendConfig(config);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto env, Environment::Create(std::vector<Environment::Option>()));
+  ASSERT_OK_AND_ASSIGN(auto executor,
+                       LlmLiteRtCompiledModelExecutorStatic::Create(
+                           executor_settings, env, *model_resources));
+  ASSERT_NE(executor, nullptr);
+
+  auto fake_sampler = std::make_unique<FakeSamplerWithInputHandling>();
+  auto* fake_sampler_ptr = fake_sampler.get();
+  TestableLlmLiteRtCompiledModelExecutorStatic::
+      SetSamplerWithInputHandlingForTest(executor.get(),
+                                         std::move(fake_sampler));
+
+  // Turn 1 Prefill
+  ExecutorInputs inputs1;
+  const std::vector<int> turn1_tokens = {1, 2, 3};
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_tokens_buffer1,
+      CopyToTensorBuffer<int>(absl::MakeSpan(turn1_tokens), {1, 3}));
+  inputs1.SetTextData(ExecutorTextData(std::move(input_tokens_buffer1)));
+  EXPECT_OK(executor->Prefill(inputs1));
+
+  // Turn 1 Decode - Step 1
+  ASSERT_OK_AND_ASSIGN(auto out_tokens1_step1, executor->Decode());
+  EXPECT_EQ(fake_sampler_ptr->set_count(), 1);
+  EXPECT_EQ(fake_sampler_ptr->inference_called_count(), 1);
+
+  // Turn 1 Decode - Step 2
+  ASSERT_OK_AND_ASSIGN(auto out_tokens1_step2, executor->Decode());
+  EXPECT_EQ(fake_sampler_ptr->inference_called_count(), 2);
+
+  // Turn 2 Prefill (should reset sampler input handling)
+  ExecutorInputs inputs2;
+  const std::vector<int> turn2_tokens = {4, 5};
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_tokens_buffer2,
+      CopyToTensorBuffer<int>(absl::MakeSpan(turn2_tokens), {1, 2}));
+  inputs2.SetTextData(ExecutorTextData(std::move(input_tokens_buffer2)));
+  EXPECT_OK(executor->Prefill(inputs2));
+
+  // Sampler input handling should be reset during prefill
+  EXPECT_GT(fake_sampler_ptr->reset_count(), 0);
+  EXPECT_FALSE(fake_sampler_ptr->HandlesInput());
+
+  // Turn 2 Decode - Step 1
+  ASSERT_OK_AND_ASSIGN(auto out_tokens2_step1, executor->Decode());
+  // Input handling should be re-enabled on first decode step of Turn 2
+  EXPECT_GT(fake_sampler_ptr->set_count(), 1);
+  EXPECT_EQ(fake_sampler_ptr->inference_called_count(), 3);
+
+  // Turn 2 Decode - Step 2
+  ASSERT_OK_AND_ASSIGN(auto out_tokens2_step2, executor->Decode());
+  EXPECT_EQ(fake_sampler_ptr->inference_called_count(), 4);
+}
 
 TEST(LlmLiteRtCompiledModelExecutorStaticTest,
      ErrorOnInvalidSampledTokenId_True) {
