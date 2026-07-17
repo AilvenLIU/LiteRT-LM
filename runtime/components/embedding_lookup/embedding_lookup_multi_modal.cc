@@ -179,12 +179,14 @@ absl::Status EmbeddingLookupMultiModal::Initialize(
         "Cannot initialize embedding lookup with an embedding buffer that is "
         "null.");
   }
+  LITERT_ASSIGN_OR_RETURN(auto duplicated_buffer,
+                          embedding_buffer->Duplicate());
+  embedding_buffer_ = std::move(duplicated_buffer);
   LITERT_ASSIGN_OR_RETURN(
       auto lock_and_addr,
       ::litert::TensorBufferScopedLock::Create(
-          *const_cast<::litert::TensorBuffer*>(embedding_buffer),
-          ::litert::TensorBuffer::LockMode::kRead));
-  LITERT_ASSIGN_OR_RETURN(auto type, embedding_buffer->TensorType());
+          *embedding_buffer_, ::litert::TensorBuffer::LockMode::kRead));
+  LITERT_ASSIGN_OR_RETURN(auto type, embedding_buffer_->TensorType());
   LITERT_ASSIGN_OR_RETURN(auto num_elements, type.Layout().NumElements());
   embedding_buffer_lock_ = std::move(lock_and_addr.first);
   embedding_ =
