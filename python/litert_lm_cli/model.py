@@ -176,13 +176,17 @@ def model_default_backend(
 
 
 def _create_backend_obj(
-    backend_name: str | None, cpu_thread_count: int | None = None
+    backend_name: str | None,
+    cpu_thread_count: int | None = None,
+    gpu_decode_steps_per_sync: int | None = None,
 ) -> litert_lm.Backend | None:
   """Creates a litert_lm.Backend object from name, or returns None."""
   if backend_name is None:
     return None
   elif backend_name == "gpu":
-    return litert_lm.Backend.GPU()
+    return litert_lm.Backend.GPU(
+        gpu_decode_steps_per_sync=gpu_decode_steps_per_sync
+    )
   elif backend_name == "npu":
     return litert_lm.Backend.NPU()
   else:
@@ -198,6 +202,7 @@ def parse_backend(
         str
     ] = _DEFAULT_TARGET_MODEL_TYPES,
     label: str | None = None,
+    gpu_decode_steps_per_sync: int | None = None,
 ) -> litert_lm.Backend | None:
   """Parses the backend string and resolves it against model constraints.
 
@@ -275,7 +280,9 @@ def parse_backend(
         )
     )
 
-  return _create_backend_obj(resolved_backend.lower(), resolved_threads)
+  return _create_backend_obj(
+      resolved_backend.lower(), resolved_threads, gpu_decode_steps_per_sync
+  )
 
 
 def resolve_config_option(

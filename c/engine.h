@@ -787,6 +787,25 @@ LITERT_LM_C_API_EXPORT
 void litert_lm_engine_settings_set_enable_speculative_decoding(
     LiteRtLmEngineSettings* settings, bool enable_speculative_decoding);
 
+// Sets the number of decode steps per sync for the GPU backend.
+// Note: This setting is currently only supported for the Artisan GPU
+// backend (Artisan).
+//
+// @param settings The engine settings.
+// @param num_decode_steps_per_sync The number of decode steps per sync.
+LITERT_LM_C_API_EXPORT
+void litert_lm_engine_settings_set_gpu_decode_steps_per_sync(
+    LiteRtLmEngineSettings* settings, int num_decode_steps_per_sync);
+
+// Sets whether to wait for weight uploads for the GPU backend.
+// Note: This setting is currently only supported for the Artisan GPU backend.
+//
+// @param settings The engine settings.
+// @param wait_for_weight_uploads Whether to wait for weight uploads.
+LITERT_LM_C_API_EXPORT
+void litert_lm_engine_settings_set_gpu_wait_for_weight_uploads(
+    LiteRtLmEngineSettings* settings, bool wait_for_weight_uploads);
+
 // Sets whether to use ringbuffers for local attention KV cache.
 //
 // When enabled for supported models, a ringbuffer stores only necessary KV

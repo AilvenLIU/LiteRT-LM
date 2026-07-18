@@ -48,6 +48,7 @@ def run_benchmark(
     cpu_thread_count: int | None = None,
     activation_data_type: litert_lm.ActivationDataType | None = None,
     ringbuffers_local_attention: bool | None = None,
+    gpu_decode_steps_per_sync: int | None = None,
 ) -> None:
   """Benchmarks the model."""
   if speculative_decoding is None:
@@ -70,7 +71,10 @@ def run_benchmark(
     cache = model.resolve_config_option(cache, model_obj, "cache")
 
     backend_val = model.parse_backend(
-        backend, model_obj=model_obj, cpu_thread_count=cpu_thread_count
+        backend,
+        model_obj=model_obj,
+        cpu_thread_count=cpu_thread_count,
+        gpu_decode_steps_per_sync=gpu_decode_steps_per_sync,
     )
     assert backend_val is not None
     cache_dir_val = common.cache_dir_value_from_cache_mode(cache)
@@ -176,6 +180,12 @@ def run_benchmark(
         " chosen based on --prefill_tokens and --decode_tokens."
     ),
 )
+@click.option(
+    "--gpu-decode-steps-per-sync",
+    type=click.IntRange(min=1),
+    default=None,
+    help="The number of decode steps per sync for GPU backend.",
+)
 @common.common_inference_options
 def benchmark(
     model_reference: str | None = None,
@@ -193,6 +203,7 @@ def benchmark(
     cpu_thread_count: int | None = None,
     activation_data_type: str | None = None,
     ringbuffers_local_attention: bool | None = None,
+    gpu_decode_steps_per_sync: int | None = None,
 ) -> None:
   """Benchmarks a LiteRT-LM model.
 
@@ -217,6 +228,8 @@ def benchmark(
     activation_data_type: The activation data type to use for inference.
     ringbuffers_local_attention: Whether to use ringbuffers for local attention
       KV cache to minimize memory usage.
+    gpu_decode_steps_per_sync: The number of decode steps per sync for GPU
+      backend.
   """
   if speculative_decoding is None:
     speculative_decoding = enable_speculative_decoding
@@ -263,6 +276,7 @@ def benchmark(
           else None
       ),
       ringbuffers_local_attention=ringbuffers_local_attention,
+      gpu_decode_steps_per_sync=gpu_decode_steps_per_sync,
   )
 
 

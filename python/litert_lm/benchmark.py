@@ -71,6 +71,18 @@ class Benchmark(interfaces.AbstractBenchmark):
       lib.litert_lm_engine_settings_set_enable_speculative_decoding(
           settings, self.enable_speculative_decoding
       )
+    if isinstance(self.backend, interfaces.GPU):
+      if self.backend.gpu_decode_steps_per_sync is not None:
+        lib.litert_lm_engine_settings_set_gpu_decode_steps_per_sync(
+            settings, self.backend.gpu_decode_steps_per_sync
+        )
+      # When benchmarking, we should wait the initialization to complete to make
+      # sure the timing of prefill is correct.
+      # TODO(litertlm@): This should be set to True whenever benchmarking with
+      # GPU backend.
+      lib.litert_lm_engine_settings_set_gpu_wait_for_weight_uploads(
+          settings, True
+      )
     if self.use_ringbuffers_local_attention is not None:
       lib.litert_lm_engine_settings_set_use_ringbuffers_local_attention(
           settings, self.use_ringbuffers_local_attention

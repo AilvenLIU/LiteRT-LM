@@ -957,6 +957,40 @@ void litert_lm_engine_settings_set_enable_speculative_decoding(
   }
 }
 
+void litert_lm_engine_settings_set_gpu_decode_steps_per_sync(
+    LiteRtLmEngineSettings* settings, int num_decode_steps_per_sync) {
+  if (settings && settings->settings) {
+    // Note: This setting is currently only supported for the Artisan GPU
+    // backend.
+    auto backend_config =
+        settings->settings->GetMutableMainExecutorSettings()
+            .MutableBackendConfig<litert::lm::GpuArtisanConfig>();
+    if (backend_config.ok()) {
+      auto config = backend_config.value();
+      config.num_decode_steps_per_sync = num_decode_steps_per_sync;
+      settings->settings->GetMutableMainExecutorSettings().SetBackendConfig(
+          config);
+    }
+  }
+}
+
+void litert_lm_engine_settings_set_gpu_wait_for_weight_uploads(
+    LiteRtLmEngineSettings* settings, bool wait_for_weight_uploads) {
+  if (settings && settings->settings) {
+    // Note: This setting is currently only supported for the Artisan GPU
+    // backend.
+    auto backend_config =
+        settings->settings->GetMutableMainExecutorSettings()
+            .MutableBackendConfig<litert::lm::GpuArtisanConfig>();
+    if (backend_config.ok()) {
+      auto config = backend_config.value();
+      config.wait_for_weight_uploads = wait_for_weight_uploads;
+      settings->settings->GetMutableMainExecutorSettings().SetBackendConfig(
+          config);
+    }
+  }
+}
+
 void litert_lm_engine_settings_set_use_ringbuffers_local_attention(
     LiteRtLmEngineSettings* settings, bool use_ringbuffers_local_attention) {
   if (settings && settings->settings) {

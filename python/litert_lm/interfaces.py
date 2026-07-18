@@ -59,8 +59,16 @@ class CPU(Backend):
   thread_count: int | None = None
 
 
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class GPU(Backend):
-  """GPU hardware backend for LiteRT-LM."""
+  """GPU hardware backend for LiteRT-LM.
+
+  Attributes:
+    gpu_decode_steps_per_sync: The number of decode steps per sync for GPU
+      backend.
+  """
+
+  gpu_decode_steps_per_sync: int | None = None
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
