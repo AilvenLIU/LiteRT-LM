@@ -730,9 +730,8 @@ absl::Status Conversation::SendMessageAsync(
                 // status and do not proceed to decode.
                 (*callback)(responses.status());
               } else if (responses.ok() &&
-                         (responses->GetTaskState() == TaskState::kCancelled ||
-                          responses->GetTaskState() ==
-                              TaskState::kMaxNumTokensReached)) {
+                         IsTaskEndState(responses->GetTaskState()) &&
+                         responses->GetTaskState() != TaskState::kDone) {
                 (*callback)(responses);
               } else if (IsEmptyInputError(responses.status()) ||
                          (responses.ok() &&
@@ -780,8 +779,8 @@ absl::Status Conversation::SendMessageAsync(
         return;
       }
 
-      if (responses->GetTaskState() == TaskState::kCancelled ||
-          responses->GetTaskState() == TaskState::kMaxNumTokensReached) {
+      if (IsTaskEndState(responses->GetTaskState()) &&
+          responses->GetTaskState() != TaskState::kDone) {
         (*internal_callback)(responses);
         return;
       }

@@ -612,8 +612,11 @@ class Conversation {
   absl::StatusOr<BenchmarkInfo*> GetMutableBenchmarkInfo();
 
   // Cancels the ongoing inference process, for asynchronous inference.
-  // Note: the underlying Session is not rollbacked, so the message
-  // from the user is actually sent to the LLM and processed for prefill.
+  //
+  // NOTE: Reusing the Conversation object after calling CancelProcess() is
+  // neither recommended nor supported. Calling CancelProcess() leaves the
+  // underlying session poisoned, and any subsequent calls to SendMessageAsync
+  // on the same Conversation will fail.
   void CancelProcess();
 
   // Clones the conversation. The cloned conversation will be independent of the

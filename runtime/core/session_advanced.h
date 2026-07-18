@@ -178,6 +178,12 @@ class SessionAdvanced : public SessionInterface {
   // Get the current step of the session.
   absl::StatusOr<int> GetCurrentStep() const override;
 
+  // Cancels the ongoing inference process.
+  //
+  // NOTE: Reusing the session after calling CancelProcess() is neither
+  // recommended nor supported. Calling CancelProcess() leaves the session
+  // state poisoned, and subsequent operations may fail or behave incorrectly.
+  //
   // TODO(b/450903294): Add rollback history support for Session and
   // Conversation.
   void CancelProcess() override {
