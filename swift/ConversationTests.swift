@@ -318,7 +318,7 @@ class ConversationTests: XCTestCase {
 
     let response = try await conversation.sendMessage(
       Message("Hello"),
-      repetitionPenaltyConfig: try RepetitionPenaltyConfig(
+      repetitionPenaltyConfig: RepetitionPenaltyConfig(
         repetitionPenalty: 2.0, presencePenalty: 0.6, frequencyPenalty: 0.6, windowSize: 10)
     )
     XCTAssertFalse(response.contents.isEmpty)
@@ -333,7 +333,7 @@ class ConversationTests: XCTestCase {
 
     for try await _ in conversation.sendMessageStream(
       message,
-      repetitionPenaltyConfig: try RepetitionPenaltyConfig(
+      repetitionPenaltyConfig: RepetitionPenaltyConfig(
         repetitionPenalty: 2.0, presencePenalty: 0.6, frequencyPenalty: 0.6, windowSize: 10)
     ) {
       chunkCount += 1
@@ -347,7 +347,7 @@ class ConversationTests: XCTestCase {
 
     let response = try await conversation.sendMessage(
       Message("Hello"),
-      noRepeatNgramConfig: try NoRepeatNgramConfig(noRepeatNgramSize: 5, windowSize: 10)
+      noRepeatNgramConfig: NoRepeatNgramConfig(noRepeatNgramSize: 5, windowSize: 10)
     )
     XCTAssertFalse(response.contents.isEmpty)
   }
@@ -361,7 +361,7 @@ class ConversationTests: XCTestCase {
 
     for try await _ in conversation.sendMessageStream(
       message,
-      noRepeatNgramConfig: try NoRepeatNgramConfig(noRepeatNgramSize: 5, windowSize: 10)
+      noRepeatNgramConfig: NoRepeatNgramConfig(noRepeatNgramSize: 5, windowSize: 10)
     ) {
       chunkCount += 1
     }
@@ -374,7 +374,7 @@ class ConversationTests: XCTestCase {
 
     let response = try await conversation.sendMessage(
       Message("Hello"),
-      suppressTokensConfig: try SuppressTokensConfig(suppressTokens: [1, 2, 3])
+      suppressTokensConfig: SuppressTokensConfig(suppressTokens: [1, 2, 3])
     )
     XCTAssertFalse(response.contents.isEmpty)
   }
@@ -388,7 +388,7 @@ class ConversationTests: XCTestCase {
 
     for try await _ in conversation.sendMessageStream(
       message,
-      suppressTokensConfig: try SuppressTokensConfig(suppressTokens: [1, 2, 3])
+      suppressTokensConfig: SuppressTokensConfig(suppressTokens: [1, 2, 3])
     ) {
       chunkCount += 1
     }
