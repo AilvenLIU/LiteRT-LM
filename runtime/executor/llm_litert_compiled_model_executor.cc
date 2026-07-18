@@ -1466,7 +1466,10 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::InitializeSampler(
   }
   sampler_handles_input_ =
       sampler_handles_input && sampler_->CanHandleInput() &&
-      !signatures_.input_tokens.empty() && runs_embedding_on_gpu;
+      !signatures_.input_tokens.empty() && runs_embedding_on_gpu &&
+      // TODO: b/536136846 - Disable sampler handling input as currently sampler
+      // doesn't support param tensor update.
+      !gpu_optimized_single_buffer_cache_;
   if (sampler_handles_input_) {
     ABSL_VLOG(1) << "Sampler will handle decode input tensors.";
     if (!decode_prev_input_pos_) {
