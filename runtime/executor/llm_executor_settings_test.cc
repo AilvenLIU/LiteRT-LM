@@ -64,6 +64,14 @@ constexpr absl::string_view kModel1TfliteCustomSuffix =
     "/path/to/model1.tflite.custom_suffix";
 #endif
 
+#ifdef __APPLE__
+constexpr absl::string_view kExpectedPreferTextureWeightsString =
+    "prefer_texture_weights: 0";
+#else
+constexpr absl::string_view kExpectedPreferTextureWeightsString =
+    "prefer_texture_weights: 1";
+#endif  // __APPLE__
+
 using absl::StatusCode::kInvalidArgument;
 using ::testing::VariantWith;
 using ::testing::status::StatusIs;
@@ -191,7 +199,8 @@ TEST(LlmExecutorConfigTest, GpuArtisanConfig) {
   GpuArtisanConfig config = CreateGpuArtisanConfig();
   std::stringstream oss;
   oss << config;
-  const std::string expected_output = R"(num_output_candidates: 1
+  const std::string expected_output =
+      absl::StrCat(R"(num_output_candidates: 1
 wait_for_weight_uploads: 1
 num_decode_steps_per_sync: 3
 sequence_batch_size: 16
@@ -200,10 +209,11 @@ max_top_k: 40
 enable_decode_logits: 1
 enable_external_embeddings: 0
 use_submodel: 1
-prefer_texture_weights: 1
+)",
+                   kExpectedPreferTextureWeightsString, R"(
 set_enable_host_mapped_pointer: 1
 disallow_8bit_convs: 1
-)";
+)");
   EXPECT_EQ(oss.str(), expected_output);
 }
 
@@ -233,7 +243,8 @@ max_top_k: 40
 enable_decode_logits: 1
 enable_external_embeddings: 0
 use_submodel: 1
-prefer_texture_weights: 1
+)",
+      kExpectedPreferTextureWeightsString, R"(
 set_enable_host_mapped_pointer: 1
 disallow_8bit_convs: 1
 
@@ -250,7 +261,7 @@ model_assets: model_path: )",
 fake_weights_mode: FAKE_WEIGHTS_NONE
 
 advanced_settings: Not set
-)");  // Original output string.
+)");                                                 // Original output string.
   EXPECT_EQ(oss.str(), expected_output);
 }
 
@@ -306,7 +317,8 @@ max_top_k: 40
 enable_decode_logits: 1
 enable_external_embeddings: 0
 use_submodel: 1
-prefer_texture_weights: 1
+)",
+      kExpectedPreferTextureWeightsString, R"(
 set_enable_host_mapped_pointer: 1
 disallow_8bit_convs: 1
 

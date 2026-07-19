@@ -44,7 +44,9 @@ struct GpuArtisanConfig {
   bool wait_for_weight_uploads = false;
 
   // Number of decode steps per sync. Used by GPU only.
-  uint32_t num_decode_steps_per_sync = 1;
+  // Note: dynamic constraints with constrained decoding currently need this to
+  // be set to 1, but otherwise 3 is a more performant default.
+  uint32_t num_decode_steps_per_sync = 3;
 
   // Sequence batch size for encoding. Used by GPU only. Number of input
   // tokens to process at a time for batch processing. Setting this value to 1
@@ -78,7 +80,15 @@ struct GpuArtisanConfig {
   bool use_submodel = false;
 
   // Whether to prefer texture weights over buffers.
+  // We default to buffer weights on Apple platforms, and textures otherwise.
+  // MLDrift often overrides this internally, so this default is more for code
+  // consistency, since it should match LiteRT-LM's settings in other locations,
+  // like litert_lm/runtime/executor/litert_compiled_model_executor_utils.cc.
+#ifdef __APPLE__
+  bool prefer_texture_weights = false;
+#else
   bool prefer_texture_weights = true;
+#endif  // __APPLE__
 
   // Whether the backend should directly map host memory to the GPU if possible.
   bool set_enable_host_mapped_pointer = true;
