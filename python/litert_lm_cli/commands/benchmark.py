@@ -49,6 +49,8 @@ def run_benchmark(
     activation_data_type: litert_lm.ActivationDataType | None = None,
     ringbuffers_local_attention: bool | None = None,
     gpu_decode_steps_per_sync: int | None = None,
+    runs: int = 1,
+    skip_warmup: bool = False,
 ) -> None:
   """Benchmarks the model."""
   if speculative_decoding is None:
@@ -121,20 +123,47 @@ def run_benchmark(
     if is_android:
       click.echo("Target                     : Android")
 
-    result = benchmark_obj.run()
+    info_list = []
+
+    if not skip_warmup:
+      click.echo("Running warmup..")
+      benchmark_obj.run()
+
+    for i in range(runs):
+      click.echo(f"Running iteration {i + 1} of {runs}..")
+      result = benchmark_obj.run()
+      info_list.append(result)
+
+    if not info_list:
+      raise RuntimeError("No benchmark info collected")
+
+    avg_info = litert_lm.interfaces.BenchmarkInfo(
+        init_time_in_second=info_list[0].init_time_in_second,
+        time_to_first_token_in_second=sum(
+            i.time_to_first_token_in_second for i in info_list
+        ) / len(info_list),
+        last_prefill_token_count=info_list[-1].last_prefill_token_count,
+        last_prefill_tokens_per_second=sum(
+            i.last_prefill_tokens_per_second for i in info_list
+        ) / len(info_list),
+        last_decode_token_count=info_list[-1].last_decode_token_count,
+        last_decode_tokens_per_second=sum(
+            i.last_decode_tokens_per_second for i in info_list
+        ) / len(info_list),
+    )
 
     click.echo("----- Results -----")
     click.echo(
-        f"Prefill speed:        {result.last_prefill_tokens_per_second:.2f}"
+        f"Prefill speed:        {avg_info.last_prefill_tokens_per_second:.2f}"
         " tokens/s"
     )
     click.echo(
-        f"Decode speed:         {result.last_decode_tokens_per_second:.2f}"
+        f"Decode speed:         {avg_info.last_decode_tokens_per_second:.2f}"
         " tokens/s"
     )
-    click.echo(f"Init time:            {result.init_time_in_second:.4f} s")
+    click.echo(f"Init time:            {avg_info.init_time_in_second:.4f} s")
     click.echo(
-        f"Time to first token:  {result.time_to_first_token_in_second:.4f} s"
+        f"Time to first token:  {avg_info.time_to_first_token_in_second:.4f} s"
     )
 
   except Exception:  # pylint: disable=broad-exception-caught
@@ -186,6 +215,17 @@ def run_benchmark(
     default=None,
     help="The number of decode steps per sync for GPU backend.",
 )
+@click.option(
+    "--runs",
+    type=click.IntRange(min=1),
+    default=1,
+    help="The number of benchmarking iterations to run and average.",
+)
+@click.option(
+    "--skip-warmup",
+    is_flag=True,
+    help="Skip the warmup run before benchmarking.",
+)
 @common.common_inference_options
 def benchmark(
     model_reference: str | None = None,
@@ -204,6 +244,8 @@ def benchmark(
     activation_data_type: str | None = None,
     ringbuffers_local_attention: bool | None = None,
     gpu_decode_steps_per_sync: int | None = None,
+    runs: int = 1,
+    skip_warmup: bool = False,
 ) -> None:
   """Benchmarks a LiteRT-LM model.
 
@@ -230,6 +272,8 @@ def benchmark(
       KV cache to minimize memory usage.
     gpu_decode_steps_per_sync: The number of decode steps per sync for GPU
       backend.
+    runs: The number of benchmarking iterations to run and average.
+    skip_warmup: Skip the warmup run before benchmarking.
   """
   if speculative_decoding is None:
     speculative_decoding = enable_speculative_decoding
@@ -277,6 +321,8 @@ def benchmark(
       ),
       ringbuffers_local_attention=ringbuffers_local_attention,
       gpu_decode_steps_per_sync=gpu_decode_steps_per_sync,
+      runs=runs,
+      skip_warmup=skip_warmup,
   )
 
 
