@@ -13,6 +13,8 @@
 # limitations under the License.
 
 # [Google-internal load of `cc_library`]
+load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 
 package(
     default_hdrs_check = "strict",
@@ -186,6 +188,50 @@ cc_test(
         "//runtime/util:scoped_file",
         "//runtime/util:test_utils",
         "@litert//tflite/types:half",
+    ],
+)
+
+# Flags to configure the static GPU accelerator backend for Apple targets (iOS and macOS).
+# By default, iOS uses Metal ("metal") and macOS uses WebGPU ("webgpu").
+# Pass --//runtime/executor:gpu_accelerator=webgpu or =metal to override.
+string_flag(
+    name = "gpu_accelerator",
+    build_setting_default = "default",
+    values = [
+        "default",
+        "metal",
+        "webgpu",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "gpu_accelerator_webgpu_setting",
+    flag_values = {
+        ":gpu_accelerator": "webgpu",
+    },
+)
+
+config_setting(
+    name = "gpu_accelerator_metal_setting",
+    flag_values = {
+        ":gpu_accelerator": "metal",
+    },
+)
+
+selects.config_setting_group(
+    name = "ios_webgpu",
+    match_all = [
+        "@platforms//os:ios",
+        ":gpu_accelerator_webgpu_setting",
+    ],
+)
+
+selects.config_setting_group(
+    name = "macos_metal",
+    match_all = [
+        "@platforms//os:macos",
+        ":gpu_accelerator_metal_setting",
     ],
 )
 
