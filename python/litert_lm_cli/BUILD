@@ -91,7 +91,10 @@ pytype_strict_library(
 pytype_strict_library(
     name = "common",
     srcs = ["common.py"],
-    deps = [requirement("click")],
+    deps = [
+        ":config",
+        requirement("click"),
+    ],
     imports = [".."],
 )
 
@@ -209,6 +212,7 @@ pytype_strict_library(
     name = "main_lib",
     srcs = ["main.py"],
     deps = [
+        ":common",
         ":help_formatter",
         ":version",
         "//python/litert_lm",

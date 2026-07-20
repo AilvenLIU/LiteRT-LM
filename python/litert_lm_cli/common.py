@@ -22,6 +22,32 @@ import textwrap
 
 import click
 
+from litert_lm_cli import config
+
+
+def parse_config_opt(unused_ctx, unused_param, value):
+  """Click callback for --config option to set the custom config path."""
+  if value is not None:
+    config.set_config_path(value)
+  return value
+
+
+def config_option(f):
+  """Decorator for the --config option."""
+  f = click.option(
+      "--config",
+      type=click.Path(exists=True, dir_okay=False, path_type=str),
+      default=None,
+      callback=parse_config_opt,
+      is_eager=True,
+      expose_value=False,
+      help=(
+          "Path to a custom config.json file to use instead of the default"
+          " ~/.litert-lm/config.json."
+      ),
+  )(f)
+  return f
+
 
 def parse_bool_opt(unused_ctx, unused_param, value):
   """Click callback to parse boolean option strings into bool | None.
@@ -112,6 +138,7 @@ def huggingface_options(f):
 
 def common_inference_options(f):
   """Decorator for common options shared across commands."""
+  f = config_option(f)
   f = huggingface_options(f)
   f = click.option(
       "--verbose",

@@ -94,6 +94,7 @@ class AppConfig:
 
 _CACHED_CONFIG: AppConfig | None = None
 _SCHEMA: dict[str, Any] | None = None
+_CUSTOM_CONFIG_PATH: str | None = None
 
 
 def get_cli_base_dir() -> str:
@@ -104,8 +105,20 @@ def get_cli_base_dir() -> str:
   return os.path.join(os.path.expanduser("~"), ".litert-lm")
 
 
+def set_config_path(config_path: str | None) -> None:
+  """Sets a custom config file path and invalidates cached config."""
+  global _CUSTOM_CONFIG_PATH, _CACHED_CONFIG
+  if config_path is not None:
+    _CUSTOM_CONFIG_PATH = os.path.abspath(os.path.expanduser(config_path))
+  else:
+    _CUSTOM_CONFIG_PATH = None
+  _CACHED_CONFIG = None
+
+
 def get_config_path() -> str:
   """Gets the path to the config.json file."""
+  if _CUSTOM_CONFIG_PATH is not None:
+    return _CUSTOM_CONFIG_PATH
   return os.path.join(get_cli_base_dir(), "config.json")
 
 
@@ -248,7 +261,9 @@ def _validate_instance(
           _validate_instance(val, additional_props, root_schema, path + [key])
 
 
-def _validate_schema(config_data: Any, schema: dict[str, Any]) -> None:
+def _validate_schema(
+    config_data: Any, schema: dict[str, Any], config_name: str = "config.json"
+) -> None:
   """Validates config_data against schema in pure Python.
 
   Note: We intentionally do not use `jsonschema` here because `jsonschema`
@@ -257,6 +272,7 @@ def _validate_schema(config_data: Any, schema: dict[str, Any]) -> None:
   Args:
     config_data: The parsed JSON config dictionary to validate.
     schema: The JSON schema dictionary to validate against.
+    config_name: The config filename or path for error reporting.
   """
   try:
     _validate_instance(config_data, schema, schema, [])
@@ -264,35 +280,44 @@ def _validate_schema(config_data: Any, schema: dict[str, Any]) -> None:
     path_str = ".".join(str(p) for p in e.path)
     prefix = f"{path_str}: " if path_str else ""
     raise click.ClickException(
-        f"config.json validation error: {prefix}{e.message}"
+        f"{config_name} validation error: {prefix}{e.message}"
     ) from e
 
 
-def load_config() -> AppConfig:
-  """Loads and validates the config.json file."""
+def load_config(config_path: str | None = None) -> AppConfig:
+  """Loads and validates the configuration file."""
   global _CACHED_CONFIG
-  if _CACHED_CONFIG is not None:
+  if config_path is None and _CACHED_CONFIG is not None:
     return _CACHED_CONFIG
 
-  config_path = get_config_path()
-  if not os.path.exists(config_path):
+  resolved_path = (
+      os.path.abspath(os.path.expanduser(config_path))
+      if config_path is not None
+      else get_config_path()
+  )
+  if not os.path.exists(resolved_path):
     return AppConfig()
 
+  config_name = os.path.basename(resolved_path)
   try:
-    with open(config_path, "r") as f:
-      config_data = json.load(f)
+    with open(resolved_path, "r", encoding="utf-8") as f:
+      content = f.read().strip()
+      if not content:
+        config_data = {}
+      else:
+        config_data = json.loads(content)
   except json.JSONDecodeError as e:
-    raise click.ClickException(f"Failed to parse config.json: {e}") from e
+    raise click.ClickException(f"Failed to parse {config_name}: {e}") from e
   except Exception as e:
-    raise click.ClickException(f"Failed to read config.json: {e}") from e
+    raise click.ClickException(f"Failed to read {config_name}: {e}") from e
 
   if not isinstance(config_data, dict):
     raise click.ClickException(
-        "config.json: Config must be a JSON object (dict)."
+        f"{config_name}: Config must be a JSON object (dict)."
     )
 
   schema = _load_schema()
-  _validate_schema(config_data, schema)
+  _validate_schema(config_data, schema, config_name=config_name)
 
   app_config = AppConfig()
   if KEY_DEFAULT in config_data:
@@ -301,7 +326,8 @@ def load_config() -> AppConfig:
     for model_id, model_data in config_data[KEY_MODELS].items():
       app_config.models[model_id] = _parse_model_config(model_data)
 
-  _CACHED_CONFIG = app_config
+  if config_path is None:
+    _CACHED_CONFIG = app_config
   return app_config
 
 
@@ -328,6 +354,7 @@ def get_model_config(model_id: str) -> ModelConfig:
 
 
 def _clear_cache() -> None:
-  """Clears the cached configuration (primarily for testing)."""
-  global _CACHED_CONFIG
+  """Clears the cached configuration and custom config path (primarily for testing)."""
+  global _CACHED_CONFIG, _CUSTOM_CONFIG_PATH
   _CACHED_CONFIG = None
+  _CUSTOM_CONFIG_PATH = None

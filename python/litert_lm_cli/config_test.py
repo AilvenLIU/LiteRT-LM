@@ -371,6 +371,71 @@ class ConfigTest(parameterized.TestCase):
       expected_err_prefix = f"config.json validation error: {prefix}"
       self.assertIn(expected_err_prefix, custom_error)
 
+  def test_set_and_get_config_path(self):
+    custom_path = os.path.join(self.temp_dir.full_path, "my_config.json")
+    config.set_config_path(custom_path)
+    self.assertEqual(config.get_config_path(), custom_path)
+
+    config.set_config_path(None)
+    self.assertEqual(
+        config.get_config_path(),
+        os.path.join(self.temp_dir.full_path, "config.json"),
+    )
+
+  def test_clear_cache_resets_custom_config_path(self):
+    custom_path = os.path.join(self.temp_dir.full_path, "my_config.json")
+    config.set_config_path(custom_path)
+    self.assertEqual(config.get_config_path(), custom_path)
+
+    config._clear_cache()
+    self.assertEqual(
+        config.get_config_path(),
+        os.path.join(self.temp_dir.full_path, "config.json"),
+    )
+
+  def test_load_config_with_custom_path_arg(self):
+    custom_path = os.path.join(self.temp_dir.full_path, "custom.json")
+    with open(custom_path, "w", encoding="utf-8") as f:
+      f.write('{"default": {"backend": "npu"}}')
+
+    app_cfg = config.load_config(custom_path)
+    self.assertEqual(app_cfg.default.backend, "npu")
+
+  def test_load_config_with_set_config_path(self):
+    custom_path = os.path.join(self.temp_dir.full_path, "custom.json")
+    with open(custom_path, "w", encoding="utf-8") as f:
+      f.write('{"models": {"my-model": {"backend": "gpu"}}}')
+
+    config.set_config_path(custom_path)
+    model_cfg = config.get_model_config("my-model")
+    self.assertEqual(model_cfg.backend, "gpu")
+
+  def test_custom_config_invalid_json_error_message(self):
+    custom_path = os.path.join(self.temp_dir.full_path, "my_custom.json")
+    with open(custom_path, "w", encoding="utf-8") as f:
+      f.write("invalid json")
+
+    config.set_config_path(custom_path)
+    with self.assertRaises(click.ClickException) as ctx:
+      config.load_config()
+    self.assertIn("Failed to parse my_custom.json", str(ctx.exception))
+
+  def test_load_config_empty_file(self):
+    empty_path = os.path.join(self.temp_dir.full_path, "empty.json")
+    with open(empty_path, "w", encoding="utf-8") as f:
+      f.write("")
+
+    app_cfg = config.load_config(empty_path)
+    self.assertEqual(app_cfg, config.AppConfig())
+
+  def test_load_config_dev_null(self):
+    if not os.path.exists("/dev/null"):
+      self.skipTest("/dev/null not available")
+    config.set_config_path("/dev/null")
+    app_cfg = config.load_config()
+    self.assertEqual(app_cfg, config.AppConfig())
+    model_cfg = config.get_model_config("some-model")
+    self.assertEqual(model_cfg, config.ModelConfig())
 
 if __name__ == "__main__":
   absltest.main()

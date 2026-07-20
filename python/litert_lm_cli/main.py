@@ -20,6 +20,7 @@ import sys
 import click
 
 import litert_lm
+from litert_lm_cli import common
 from litert_lm_cli import help_formatter
 from litert_lm_cli import version
 from litert_lm_cli.commands import benchmark as _benchmark_module
@@ -47,6 +48,7 @@ _import_module = importlib.import_module(
         help_option_names=["-h", "--help"],
     ),
 )
+@common.config_option
 @click.version_option(version=version.VERSION)
 def cli():
   """CLI tool for LiteRT-LM models."""
