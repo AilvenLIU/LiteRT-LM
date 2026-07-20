@@ -45,7 +45,6 @@ pytype_strict_library(
     data = ["config_schema.json"],
     deps = [
         requirement("click"),
-        requirement("jsonschema"),
     ],
     imports = [".."],
 )
@@ -154,6 +153,7 @@ py_test(
         "@absl_py//absl/testing:absltest",
         "@absl_py//absl/testing:parameterized",
         requirement("click"),
+        requirement("jsonschema"),
     ],
     imports = [".."],
 )
@@ -312,6 +312,5 @@ genrule(
         echo 'prompt_toolkit' >> $@
         echo 'typing-extensions' >> $@
         echo 'questionary' >> $@
-        echo 'jsonschema' >> $@
     """,
 )

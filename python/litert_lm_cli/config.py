@@ -22,7 +22,6 @@ import pkgutil
 from typing import Any
 
 import click
-import jsonschema
 
 KEY_DEFAULT = "default"
 KEY_MODELS = "models"
@@ -146,6 +145,107 @@ def _parse_model_config(data: dict[str, Any]) -> ModelConfig:
   )
 
 
+class _SchemaValidationError(Exception):
+  """Internal error raised during JSON schema validation."""
+
+  def __init__(self, message: str, path: list[str | int]):
+    super().__init__(message)
+    self.message = message
+    self.path = path
+
+
+def _validate_instance(
+    instance: Any,
+    schema: dict[str, Any],
+    root_schema: dict[str, Any],
+    path: list[str | int],
+) -> None:
+  """Validates a JSON instance against a schema definition in pure Python."""
+  if "$ref" in schema:
+    ref = schema["$ref"]
+    if ref.startswith("#/definitions/"):
+      def_name = ref.split("/")[-1]
+      target_schema = root_schema.get("definitions", {}).get(def_name)
+      if target_schema is not None:
+        _validate_instance(instance, target_schema, root_schema, path)
+        return
+
+  expected_type = schema.get("type")
+  if expected_type:
+    if expected_type == "object":
+      if not isinstance(instance, dict):
+        raise _SchemaValidationError(
+            f"{instance!r} is not of type 'object'", path
+        )
+    elif expected_type == "string":
+      if not isinstance(instance, str):
+        raise _SchemaValidationError(
+            f"{instance!r} is not of type 'string'", path
+        )
+    elif expected_type == "integer":
+      if not isinstance(instance, int) or isinstance(instance, bool):
+        raise _SchemaValidationError(
+            f"{instance!r} is not of type 'integer'", path
+        )
+    elif expected_type == "number":
+      if not isinstance(instance, (int, float)) or isinstance(instance, bool):
+        raise _SchemaValidationError(
+            f"{instance!r} is not of type 'number'", path
+        )
+    elif expected_type == "boolean":
+      if not isinstance(instance, bool):
+        raise _SchemaValidationError(
+            f"{instance!r} is not of type 'boolean'", path
+        )
+
+  if "enum" in schema:
+    if instance not in schema["enum"]:
+      raise _SchemaValidationError(
+          f"{instance!r} is not one of {schema['enum']!r}", path
+      )
+
+  if "minimum" in schema:
+    if isinstance(instance, (int, float)) and not isinstance(instance, bool):
+      if instance < schema["minimum"]:
+        raise _SchemaValidationError(
+            f"{instance} is less than the minimum of {schema['minimum']}", path
+        )
+
+  if "maximum" in schema:
+    if isinstance(instance, (int, float)) and not isinstance(instance, bool):
+      if instance > schema["maximum"]:
+        raise _SchemaValidationError(
+            f"{instance} is greater than the maximum of {schema['maximum']}",
+            path,
+        )
+
+  if isinstance(instance, dict):
+    properties = schema.get("properties", {})
+    for prop_name, prop_schema in properties.items():
+      if prop_name in instance:
+        _validate_instance(
+            instance[prop_name], prop_schema, root_schema, path + [prop_name]
+        )
+
+    additional_props = schema.get("additionalProperties", True)
+    if isinstance(additional_props, dict):
+      for key, val in instance.items():
+        if key not in properties:
+          _validate_instance(val, additional_props, root_schema, path + [key])
+
+
+def _validate_schema(config_data: Any, schema: dict[str, Any]) -> None:
+  """Validates config_data against schema, raising ClickException on error."""
+  try:
+    _validate_instance(config_data, schema, schema, [])
+  except _SchemaValidationError as e:
+    path_str = ".".join(str(p) for p in e.path)
+    prefix = f"{path_str}: " if path_str else ""
+    raise click.ClickException(
+        f"config.json validation error: {prefix}{e.message}"
+    ) from e
+
+
 def load_config() -> AppConfig:
   """Loads and validates the config.json file."""
   global _CACHED_CONFIG
@@ -170,14 +270,7 @@ def load_config() -> AppConfig:
     )
 
   schema = _load_schema()
-  try:
-    jsonschema.validate(instance=config_data, schema=schema)
-  except jsonschema.ValidationError as e:
-    path_str = ".".join(str(p) for p in e.path)
-    prefix = f"{path_str}: " if path_str else ""
-    raise click.ClickException(
-        f"config.json validation error: {prefix}{e.message}"
-    ) from e
+  _validate_schema(config_data, schema)
 
   app_config = AppConfig()
   if KEY_DEFAULT in config_data:

@@ -18,6 +18,7 @@ import os
 from absl.testing import absltest
 from absl.testing import parameterized
 import click
+import jsonschema
 
 from litert_lm_cli import config
 
@@ -282,6 +283,82 @@ class ConfigTest(parameterized.TestCase):
             default=config.ModelConfig(backend="gpu"),
         ),
     )
+
+  @parameterized.named_parameters(
+      ("valid_empty", {}),
+      (
+          "valid_default",
+          {"default": {"backend": "gpu", "cpu_thread_count": 4}},
+      ),
+      (
+          "valid_full",
+          {
+              "default": {
+                  "audio_backend": "cpu",
+                  "vision_backend": "gpu",
+                  "cache": "memory",
+                  "max_num_tokens": 1024,
+                  "temperature": 0.7,
+                  "top_p": 0.9,
+                  "top_k": 40,
+                  "seed": 12345,
+                  "speculative_decoding": True,
+              },
+              "models": {
+                  "m1": {"cpu_thread_count": 8, "cache": "disk"},
+              },
+          },
+      ),
+      ("invalid_default_type", {"default": 123}),
+      ("invalid_backend_enum", {"default": {"backend": "tpu"}}),
+      ("invalid_thread_count_type", {"default": {"cpu_thread_count": "four"}}),
+      ("invalid_thread_count_min", {"default": {"cpu_thread_count": 0}}),
+      ("invalid_cache_enum", {"default": {"cache": "redis"}}),
+      ("invalid_max_tokens_min", {"default": {"max_num_tokens": 0}}),
+      ("invalid_temp_min", {"default": {"temperature": -0.5}}),
+      ("invalid_top_p_max", {"default": {"top_p": 1.5}}),
+      ("invalid_top_k_min", {"default": {"top_k": 0}}),
+      (
+          "invalid_speculative_bool",
+          {"default": {"speculative_decoding": "true"}},
+      ),
+      ("invalid_models_type", {"models": []}),
+      ("invalid_model_entry_type", {"models": {"m1": 123}}),
+  )
+  def test_differential_validation_with_jsonschema(self, config_data):
+    """Diff test verifying our pure-Python validator matches jsonschema."""
+    schema = config._load_schema()
+
+    jsonschema_error = None
+    jsonschema_path = None
+    try:
+      jsonschema.validate(instance=config_data, schema=schema)
+    except jsonschema.ValidationError as e:
+      jsonschema_error = e.message
+      jsonschema_path = list(e.path)
+
+    custom_error = None
+    try:
+      config._validate_schema(config_data, schema)
+    except click.ClickException as e:
+      custom_error = str(e)
+
+    if jsonschema_error is None:
+      self.assertIsNone(
+          custom_error,
+          f"Expected config_data {config_data} to be valid, but got:"
+          f" {custom_error}",
+      )
+    else:
+      self.assertIsNotNone(
+          custom_error,
+          f"Expected config_data {config_data} to fail validation with"
+          f" {jsonschema_error}, but it passed custom validation.",
+      )
+      path_str = ".".join(str(p) for p in jsonschema_path)
+      prefix = f"{path_str}: " if path_str else ""
+      expected_err_prefix = f"config.json validation error: {prefix}"
+      self.assertIn(expected_err_prefix, custom_error)
 
 
 if __name__ == "__main__":
