@@ -55,6 +55,20 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
     int32_t zero_point = 0;
   };
 
+  // The prefill family of signature names resolved for the prefill length the
+  // model was compiled with (e.g. 128 or 256). The length is detected from the
+  // compiled model at load time rather than hardcoded, so models compiled with
+  // different prefill lengths all work.
+  struct ResolvedPrefillSignatures {
+    int size = 0;
+    std::string prefill;
+    std::string embedder;
+    std::string embedder_per_layer;
+    std::string mask;
+    std::string rope;
+    std::string cache_update;
+  };
+
   // Holds the latency breakdown stats for the executor.
   // TODO: b/405424188 - Use 'litert::lm::BenchmarkInfo' instead.
   struct LatencyStats {
@@ -328,6 +342,7 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
       InferenceContext llm_inference_context,
       InferenceContext cache_update_inference_context,
       SortedPrefillSignatureMap prefill_signature_map,
+      ResolvedPrefillSignatures prefill_signatures,
       std::unique_ptr<EmbeddingLookupManager> embedding_lookup_manager,
       std::unique_ptr<EmbeddingLookupManager>
           per_layer_embedding_lookup_manager,
@@ -366,6 +381,7 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
         cache_update_inference_context_(
             std::move(cache_update_inference_context)),
         prefill_signature_map_(std::move(prefill_signature_map)),
+        prefill_signatures_(std::move(prefill_signatures)),
         kv_quant_params_(std::move(kv_quant_params)),
         ple_table_ptrs_(std::move(ple_table_ptrs)),
         ple_quant_params_(std::move(ple_quant_params)),
@@ -496,6 +512,7 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
   // - settings: The executor settings.
   static absl::StatusOr<EmbedderContext> CreateEmbedderContextWithBufferSharing(
       ::litert::Environment& env, const litert::Model& embedder_model,
+      const ResolvedPrefillSignatures& prefill_signatures,
       absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
           gemma_prefill_input_buffers,
       absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
@@ -550,6 +567,7 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
   // 'gemma_decode_input_buffers'.
   static absl::StatusOr<InferenceContext> CreateMaskContextWithBufferSharing(
       const NpuAuxiliaryContext& npu_auxiliary_context,
+      const ResolvedPrefillSignatures& prefill_signatures,
       absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
           gemma_prefill_input_buffers,
       absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
@@ -559,6 +577,7 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
 
   static absl::StatusOr<InferenceContext> CreateRopeContextWithBufferSharing(
       const NpuAuxiliaryContext& npu_auxiliary_context,
+      const ResolvedPrefillSignatures& prefill_signatures,
       absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
           gemma_prefill_input_buffers,
       absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
@@ -570,6 +589,7 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
   static absl::StatusOr<InferenceContext>
   CreateLlmInferenceContextWithBufferSharing(
       ::litert::Environment& env, ::litert::CompiledModel& llm_compiled_model,
+      const ResolvedPrefillSignatures& prefill_signatures,
       absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
           input_kv_cache_buffers,
       absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
@@ -605,6 +625,7 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
       ::litert::CompiledModel& compiled_model_llm,
       InferenceContext& llm_inference_context,
       ::litert::CompiledModel& compiled_model_auxiliary,
+      const ResolvedPrefillSignatures& prefill_signatures,
       const InferenceContext& rope_inference_context,
       const InferenceContext& mask_inference_context,
       const InferenceContext& cache_update_inference_context);
@@ -643,6 +664,7 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
   static absl::Status AllocateTransformerBuffers(
       litert::Environment& env, const litert::Model* transformer_model,
       CompiledModel& llm_compiled_model,
+      const ResolvedPrefillSignatures& prefill_signatures,
       absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
           gemma_prefill_input_buffers,
       absl::flat_hash_map<absl::string_view, ::litert::TensorBuffer>&
@@ -665,14 +687,16 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
   CreateForModelHasPerLayerEmbedding(
       const LlmExecutorSettings& executor_settings, ModelResources& resources,
       litert::Environment& env, const litert::Model* transformer_model,
-      LogitsQuantizationParams quantization_params);
+      LogitsQuantizationParams quantization_params,
+      const ResolvedPrefillSignatures& prefill_signatures);
 
   // Create the executor for Gemma3.
   static absl::StatusOr<std::unique_ptr<LlmLiteRtNpuCompiledModelExecutor>>
   CreateForModelWithoutPerLayerEmbedding(
       const LlmExecutorSettings& executor_settings, ModelResources& resources,
       litert::Environment& env, const litert::Model* transformer_model,
-      LogitsQuantizationParams quantization_params);
+      LogitsQuantizationParams quantization_params,
+      const ResolvedPrefillSignatures& prefill_signatures);
 
   LlmExecutorSettings executor_settings_;
   NpuConfig npu_config_;
@@ -700,6 +724,9 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
   InferenceContext llm_inference_context_;
   InferenceContext cache_update_inference_context_;
   SortedPrefillSignatureMap prefill_signature_map_;
+  // The prefill-family signature names resolved for the prefill length the
+  // model was compiled with.
+  ResolvedPrefillSignatures prefill_signatures_;
 
   absl::flat_hash_map<absl::string_view, HWQuantParams> kv_quant_params_;
   bool use_hw_ple_for_npu_ = false;

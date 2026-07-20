@@ -1,4 +1,5 @@
 // Copyright 2025 The ODML Authors.
+// Copyright (C) 2026 Samsung Electronics Co. LTD.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,6 +25,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "litert/cc/litert_layout.h"  // from @litert
 #include "runtime/components/prompt_template.h"
 #include "runtime/conversation/io_types.h"
 #include "runtime/conversation/model_data_processor/config_registry.h"
@@ -37,6 +39,8 @@
 #include "runtime/conversation/model_data_processor/gemma4_data_processor_config.h"
 #include "runtime/conversation/model_data_processor/generic_data_processor.h"
 #include "runtime/conversation/model_data_processor/generic_data_processor_config.h"
+#include "runtime/conversation/model_data_processor/lfm2_data_processor.h"
+#include "runtime/conversation/model_data_processor/lfm2_data_processor_config.h"
 #include "runtime/conversation/model_data_processor/model_data_processor.h"
 #include "runtime/conversation/model_data_processor/qwen3_data_processor.h"
 #include "runtime/conversation/model_data_processor/qwen3_data_processor_config.h"
@@ -518,12 +522,64 @@ absl::StatusOr<DataProcessorConfig> CreateQwen3DataProcessorConfig(
   return config;
 }
 
+absl::StatusOr<DataProcessorConfig> CreateLfm2DataProcessorConfig(
+    const proto::LlmModelType& model_type) {
+  if (!model_type.has_lfm2()) {
+    return absl::InvalidArgumentError(
+        "Lfm2 LlmModelType is required to create Lfm2DataProcessorConfig.");
+  }
+  Lfm2DataProcessorConfig config;
+  const proto::Lfm2& lfm2 = model_type.lfm2();
+  const auto& default_lfm2 = proto::Lfm2::default_instance();
+  if (lfm2.has_start_of_image_token()) {
+    ABSL_ASSIGN_OR_RETURN(config.boi_token,
+                          GetTokenString(lfm2.start_of_image_token()));
+  }
+  if (lfm2.has_end_of_image_token()) {
+    ABSL_ASSIGN_OR_RETURN(config.eoi_token,
+                          GetTokenString(lfm2.end_of_image_token()));
+  }
+  if (lfm2.patch_width() != default_lfm2.patch_width()) {
+    config.patch_width = lfm2.patch_width();
+  }
+  if (lfm2.patch_height() != default_lfm2.patch_height()) {
+    config.patch_height = lfm2.patch_height();
+  }
+  if (lfm2.max_num_patches() != default_lfm2.max_num_patches()) {
+    config.max_num_patches = lfm2.max_num_patches();
+  }
+  if (lfm2.pooling_kernel_size() != default_lfm2.pooling_kernel_size()) {
+    config.pooling_kernel_size = lfm2.pooling_kernel_size();
+  }
+  if (lfm2.image_tensor_height() != default_lfm2.image_tensor_height()) {
+    config.image_height = lfm2.image_tensor_height();
+  }
+  if (lfm2.image_tensor_width() != default_lfm2.image_tensor_width()) {
+    config.image_width = lfm2.image_tensor_width();
+  }
+  if (!lfm2.normalization_mean().empty()) {
+    config.normalization_mean.assign(lfm2.normalization_mean().begin(),
+                                     lfm2.normalization_mean().end());
+  }
+  if (!lfm2.normalization_std().empty()) {
+    config.normalization_std.assign(lfm2.normalization_std().begin(),
+                                    lfm2.normalization_std().end());
+  }
+  if (lfm2.normalization_rescale_factor() !=
+      default_lfm2.normalization_rescale_factor()) {
+    config.normalization_rescale_factor = lfm2.normalization_rescale_factor();
+  }
+  return config;
+}
+
 absl::StatusOr<DataProcessorConfig> CreateDataProcessorConfigFromLlmModelType(
     const proto::LlmModelType& model_type) {
   switch (model_type.model_type_case()) {
     case proto::LlmModelType::kGemma3:
     case proto::LlmModelType::kGemma3N:
       return CreateGemma3DataProcessorConfig(model_type);
+    case proto::LlmModelType::kLfm2:
+      return CreateLfm2DataProcessorConfig(model_type);
     case proto::LlmModelType::kGemma4:
       return CreateGemma4DataProcessorConfig(model_type);
     case proto::LlmModelType::kQwen3:
@@ -550,6 +606,11 @@ absl::StatusOr<std::unique_ptr<ModelDataProcessor>> CreateModelDataProcessor(
     return Gemma3DataProcessor::Create(
         std::get<Gemma3DataProcessorConfig>(config), preface, tokenizer,
         stop_token_ids, enable_constrained_decoding);
+  } else if (std::holds_alternative<Lfm2DataProcessorConfig>(config)) {
+    ABSL_VLOG(1) << "Creating Lfm2DataProcessor";
+    return Lfm2DataProcessor::Create(std::get<Lfm2DataProcessorConfig>(config),
+                                     preface, tokenizer, stop_token_ids,
+                                     enable_constrained_decoding);
   } else if (std::holds_alternative<Qwen3DataProcessorConfig>(config)) {
     ABSL_VLOG(1) << "Creating Qwen3DataProcessor";
     return Qwen3DataProcessor::Create(

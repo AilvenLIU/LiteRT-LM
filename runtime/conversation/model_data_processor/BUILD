@@ -41,6 +41,7 @@ cc_library(
         ":gemma3_data_processor_config",
         ":gemma4_data_processor_config",
         ":generic_data_processor_config",
+        ":lfm2_data_processor_config",
         ":qwen3_data_processor_config",
     ],
 )
@@ -170,6 +171,13 @@ cc_library(
 )
 
 cc_library(
+    name = "lfm2_data_processor_config",
+    hdrs = [
+        "lfm2_data_processor_config.h",
+    ],
+)
+
+cc_library(
     name = "model_data_processor",
     hdrs = ["model_data_processor.h"],
     deps = [
@@ -207,6 +215,8 @@ cc_library(
         ":gemma4_data_processor_config",
         ":generic_data_processor",
         ":generic_data_processor_config",
+        ":lfm2_data_processor",
+        ":lfm2_data_processor_config",
         ":model_data_processor",
         ":qwen3_data_processor",
         ":qwen3_data_processor_config",
@@ -214,6 +224,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/status:statusor",
+        "@litert//litert/cc:litert_layout",
         "@litert//support/tokenizer",
         "//runtime/components:prompt_template",
         "//runtime/conversation:io_types",
@@ -235,6 +246,7 @@ cc_test(
         ":gemma3_data_processor_config",
         ":gemma4_data_processor_config",
         ":generic_data_processor_config",
+        ":lfm2_data_processor_config",
         ":model_data_processor",
         ":model_data_processor_factory",
         ":qwen3_data_processor_config",
@@ -359,6 +371,40 @@ cc_test(
         "//runtime/conversation:io_types",
         "//runtime/engine:io_types",
         "//runtime/util:test_utils",
+    ],
+)
+
+cc_library(
+    name = "lfm2_data_processor",
+    srcs = ["lfm2_data_processor.cc"],
+    hdrs = ["lfm2_data_processor.h"],
+    deps = [
+        ":data_utils",
+        ":lfm2_data_processor_config",
+        ":model_data_processor",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@nlohmann_json//:json",
+        "@litert//litert/cc:litert_layout",
+        "@litert//support/preprocessor:image_preprocessor",
+        "@litert//support/preprocessor:stb_image_preprocessor",
+        "@litert//support/tokenizer",
+        "@litert//support/tokenizer:sentencepiece_tokenizer",
+        "//runtime/components:prompt_template",
+        "//runtime/components/logits_processor/constrained_decoding:constraint",
+        "//runtime/components/tool_use:parser_utils",
+        "//runtime/components/tool_use:python_tool_format_utils",
+        "//runtime/conversation:io_types",
+        "//runtime/conversation:prompt_utils",
+        "//runtime/engine:io_types",
+        "//runtime/util:litert_status_util",
+        "//runtime/util:memory_mapped_file",
+        "@com_googlesource_code_re2//:re2",
+        "@sentencepiece//:sentencepiece_model_cc_proto",
     ],
 )
 

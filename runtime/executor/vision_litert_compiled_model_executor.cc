@@ -244,8 +244,12 @@ absl::Status VisionLiteRtCompiledModelExecutor::VisionEncoder::Initialize() {
 
   LITERT_ASSIGN_OR_RETURN(compiled_model_,
                           CompiledModel::Create(env_, model_.Get(), options));
-  if (!vision_executor_properties_.patch_num_shrink_factor.has_value()) {
-    // Only create input buffer at initialization for non-VIT models.
+  if (model_.GetNumSignatures() == 1) {
+    // A single signature encoder(non-ViT model + single input LFM2-VL)
+    // uses a single buffer encode path, so buffers must be created in advance,
+    // but multi-signature(ViT) encoders create buffers for each signature
+    // in map-based encode at that time, so signature 0 buffers should not
+    // be created in advance.
     LITERT_ASSIGN_OR_RETURN(input_buffers_,
                             compiled_model_.CreateInputBuffers(0));
     LITERT_ASSIGN_OR_RETURN(output_buffers_,
@@ -466,10 +470,10 @@ VisionLiteRtCompiledModelExecutor::GetExpectedInputDimension() const {
 absl::StatusOr<ExecutorVisionData> VisionLiteRtCompiledModelExecutor::Encode(
     const absl::flat_hash_map<std::string, litert::TensorBuffer>& input_maps) {
 
-  if (!input_maps.contains(kPositionsXy)) {
-    return absl::InvalidArgumentError(
-        absl::StrCat(kPositionsXy, " is not found in the input maps."));
-  }
+  // Note: `positions_xy` is only required by transformer (ViT) encoders. Single
+  // input encoders (e.g. LFM2 VL) do not provide it, so we only validate the
+  // mandatory `images` tensor here and feed whatever inputs the caller provides
+  // to the matching encoder signature below.
   if (!input_maps.contains(kImages)) {
     return absl::InvalidArgumentError(
         absl::StrCat(kImages, " is not found in the input maps."));
@@ -588,11 +592,13 @@ absl::StatusOr<ExecutorVisionData> VisionLiteRtCompiledModelExecutor::Encode(
           "patch_num_shrink_factor is not set in the vision executor "
           "properties.");
     }
-    LITERT_ASSIGN_OR_RETURN(auto positions_tensor_type,
-                            input_maps.at(kPositionsXy).TensorType());
-    const int& num_patches_from_input =
-        positions_tensor_type.Layout().Dimensions()[1];
-    const int& patch_num_shrink_factor =
+    // Derive the number of input patches from the image tensor. The positions
+    // tensor is not available for single input encoders (e.g. LFM2 VL).
+    LITERT_ASSIGN_OR_RETURN(auto image_tensor_type,
+                            input_maps.at(kImages).TensorType());
+    const int num_patches_from_input =
+        image_tensor_type.Layout().Dimensions()[1];
+    const int patch_num_shrink_factor =
         vision_executor_properties_.patch_num_shrink_factor.value();
     // Round up the number of patches so we have at least one patch.
     num_patches = (num_patches_from_input + patch_num_shrink_factor - 1) /
@@ -641,11 +647,18 @@ absl::StatusOr<ExecutorVisionData> VisionLiteRtCompiledModelExecutor::Encode(
 
     LITERT_ASSIGN_OR_RETURN(auto adapter_output_tensor_type,
                             adapter_output_tensor_buffers[0].TensorType());
+
+    // The embedding size is the last dimension of the adapter output,
+    // regardless of whether the adapter produces a 2-D ([num_tokens,
+    // embedding_size]) or 3-D ([batch_size, num_tokens, embedding_size])
+    // tensor.
+    const auto& adapter_output_dimensions =
+        adapter_output_tensor_type.Layout().Dimensions();
+    const int adapter_output_embedding_size =
+        adapter_output_dimensions[adapter_output_dimensions.size() - 1];
     RankedTensorType output_tensor_type(
         GetElementType<float>(),
-        Layout(
-            Dimensions({1, num_patches,
-                        adapter_output_tensor_type.Layout().Dimensions()[2]})));
+        Layout(Dimensions({1, num_patches, adapter_output_embedding_size})));
     LITERT_ASSIGN_OR_RETURN(
         auto output_tensor,
         TensorBuffer::CreateManaged(

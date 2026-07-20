@@ -523,6 +523,12 @@ load("@litert//third_party/intel_openvino:openvino.bzl", "openvino_configure")
 
 openvino_configure()
 
+# SAMSUNG EXYNOS_AI_LITECORE----------------------------------------------------------------------
+load("@litert//third_party/exynos_ai_litecore:workspace.bzl", "exynos_ai_litecore")
+
+exynos_ai_litecore()
+
+
 http_archive(
     name = "nanobind_json",
     build_file = "@//:BUILD.nanobind_json",
