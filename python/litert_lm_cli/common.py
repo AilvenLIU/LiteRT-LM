@@ -190,6 +190,20 @@ def common_inference_options(f):
           " using a GPU backend."
       ),
   )(f)
+  f = click.option(
+      "--ringbuffers-local-attention",
+      is_flag=False,
+      flag_value="true",
+      type=click.Choice(["true", "false"], case_sensitive=False),
+      default=None,
+      callback=parse_bool_opt,
+      help=(
+          "Whether to use ringbuffers for local attention KV cache to minimize"
+          " memory usage on supported models. When disabled, memory is"
+          " allocated for the full context length, enabling instant rewinding"
+          " at higher memory cost."
+      ),
+  )(f)
   return f
 
 

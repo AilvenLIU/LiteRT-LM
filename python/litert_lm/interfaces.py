@@ -364,6 +364,10 @@ class AbstractEngine(abc.ABC):
       bos_token_id: The BOS token id for the model if one is configured.
       eos_token_ids: Stop token sequences configured for the model.
       activation_data_type: The activation data type used for model execution.
+      use_ringbuffers_local_attention: Whether to use ringbuffers for local
+        attention KV cache on supported models to minimize memory usage. When
+        disabled, memory is allocated for the full context length, enabling
+        instant rewinding at higher memory cost.
   """
 
   model_path: str
@@ -376,6 +380,7 @@ class AbstractEngine(abc.ABC):
   enable_speculative_decoding: bool | None = None
   lora_rank_config: LoraRankConfig | None = None
   activation_data_type: ActivationDataType | None = None
+  use_ringbuffers_local_attention: bool | None = None
 
   def __enter__(self) -> AbstractEngine:
     """Initializes the engine resources."""
@@ -782,6 +787,10 @@ class AbstractBenchmark(abc.ABC):
         prompt is shorter than `prefill_tokens`, the remaining tokens are padded
         with zero. If it is longer, the prompt is truncated to `prefill_tokens`.
       activation_data_type: The activation data type used for model execution.
+      use_ringbuffers_local_attention: Whether to use ringbuffers for local
+        attention KV cache on supported models to minimize memory usage. When
+        disabled, memory is allocated for the full context length, enabling
+        instant rewinding at higher memory cost.
   """
 
   model_path: str
@@ -793,6 +802,7 @@ class AbstractBenchmark(abc.ABC):
   enable_speculative_decoding: bool | None = None
   prompt: str = "How are you"
   activation_data_type: ActivationDataType | None = None
+  use_ringbuffers_local_attention: bool | None = None
 
   @abc.abstractmethod
   def run(self) -> BenchmarkInfo:

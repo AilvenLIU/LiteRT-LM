@@ -119,6 +119,28 @@ class EngineTest(LiteRtLmTestBase):
     mock_set_num_threads.assert_called_once_with(mock.ANY, 4)
     mock_set_audio_num_threads.assert_called_once_with(mock.ANY, 2)
 
+  def test_engine_init_with_use_ringbuffers_local_attention(self):
+    lib = litert_lm._ffi._get_lib()
+    orig_fn = lib.litert_lm_engine_settings_set_use_ringbuffers_local_attention
+
+    mock_set_ringbuffers = self.enter_context(
+        mock.patch.object(
+            lib,
+            "litert_lm_engine_settings_set_use_ringbuffers_local_attention",
+            autospec=True,
+            side_effect=orig_fn,
+        )
+    )
+
+    litert_lm.Engine(
+        self.model_path,
+        backend=litert_lm.Backend.CPU(),
+        use_ringbuffers_local_attention=True,
+        cache_dir=":nocache",
+    )
+
+    mock_set_ringbuffers.assert_called_once_with(mock.ANY, True)
+
   @mock.patch("sys.platform", "win32")
   def test_engine_init_with_npu_backend(self):
     lib = litert_lm._ffi._get_lib()

@@ -189,6 +189,10 @@ def _setup_lib_signatures(lib):
       ctypes.c_void_p,
       ctypes.c_bool,
   ]
+  lib.litert_lm_engine_settings_set_use_ringbuffers_local_attention.argtypes = [
+      ctypes.c_void_p,
+      ctypes.c_bool,
+  ]
   lib.litert_lm_engine_settings_set_activation_data_type.argtypes = [
       ctypes.c_void_p,
       ctypes.c_int,

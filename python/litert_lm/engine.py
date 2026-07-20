@@ -68,6 +68,7 @@ class Engine(interfaces.AbstractEngine):
       lora_rank_config: interfaces.LoraRankConfig | None = None,
       activation_data_type: ActivationDataType | None = None,
       enable_benchmark: bool = False,
+      use_ringbuffers_local_attention: bool | None = None,
       **kwargs,
   ):
     backend = _normalize_backend(backend)
@@ -84,6 +85,7 @@ class Engine(interfaces.AbstractEngine):
         audio_backend=audio_backend,
         lora_rank_config=lora_rank_config,
         activation_data_type=activation_data_type,
+        use_ringbuffers_local_attention=use_ringbuffers_local_attention,
         **kwargs,
     )
 
@@ -128,6 +130,11 @@ class Engine(interfaces.AbstractEngine):
     ):
       self._lib.litert_lm_engine_settings_set_audio_num_threads(
           settings, self.audio_backend.thread_count
+      )
+
+    if self.use_ringbuffers_local_attention is not None:
+      self._lib.litert_lm_engine_settings_set_use_ringbuffers_local_attention(
+          settings, self.use_ringbuffers_local_attention
       )
 
     if self.max_num_tokens is not None:

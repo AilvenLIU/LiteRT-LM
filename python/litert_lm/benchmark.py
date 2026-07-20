@@ -71,6 +71,10 @@ class Benchmark(interfaces.AbstractBenchmark):
       lib.litert_lm_engine_settings_set_enable_speculative_decoding(
           settings, self.enable_speculative_decoding
       )
+    if self.use_ringbuffers_local_attention is not None:
+      lib.litert_lm_engine_settings_set_use_ringbuffers_local_attention(
+          settings, self.use_ringbuffers_local_attention
+      )
 
     engine_ptr = lib.litert_lm_engine_create(settings)
     lib.litert_lm_engine_settings_delete(settings)

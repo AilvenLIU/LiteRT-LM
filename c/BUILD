@@ -140,6 +140,7 @@ cc_test(
         "//runtime/conversation:thinking_config",
         "//runtime/engine:engine_settings",
         "//runtime/executor:executor_settings_base",
+        "//runtime/executor:llm_executor_settings",
     ],
 )
 

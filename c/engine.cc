@@ -957,6 +957,27 @@ void litert_lm_engine_settings_set_enable_speculative_decoding(
   }
 }
 
+void litert_lm_engine_settings_set_use_ringbuffers_local_attention(
+    LiteRtLmEngineSettings* settings, bool use_ringbuffers_local_attention) {
+  if (settings && settings->settings) {
+    auto& main_settings = settings->settings->GetMutableMainExecutorSettings();
+    auto config =
+        main_settings.MutableBackendConfig<litert::lm::GpuArtisanConfig>();
+    if (config.ok()) {
+      litert::lm::GpuArtisanConfig gpu_artisan_config = *config;
+      // TODO: Rename gpu_artisan_config.use_autosized_ringbuffers to
+      // match the C API naming (e.g. use_ringbuffers_local_attention).
+      gpu_artisan_config.use_autosized_ringbuffers =
+          use_ringbuffers_local_attention;
+      main_settings.SetBackendConfig(gpu_artisan_config);
+    } else {
+      ABSL_LOG(INFO) << "Failed to get GpuArtisanConfig to set "
+                        "use_ringbuffers_local_attention: "
+                     << config.status();
+    }
+  }
+}
+
 void litert_lm_engine_settings_set_lora_rank(LiteRtLmEngineSettings* settings,
                                              int lora_rank) {
   if (settings && settings->settings) {

@@ -189,6 +189,7 @@ def get_or_initialize_server_engine(
       cache_dir=cache_dir_val,
       enable_speculative_decoding=speculative_decoding,
       enable_benchmark=True,
+      use_ringbuffers_local_attention=True,
   )
   engine.__enter__()
   server.litert_lm_engine = engine

@@ -33,6 +33,7 @@
 #include "runtime/conversation/thinking_config.h"
 #include "runtime/engine/engine_settings.h"
 #include "runtime/executor/executor_settings_base.h"
+#include "runtime/executor/llm_executor_settings.h"
 
 namespace {
 
@@ -265,6 +266,30 @@ TEST(EngineCTest, SetEnableSpeculativeDecoding) {
                    .GetAdvancedSettings()
                    .value_or(litert::lm::AdvancedSettings())
                    .enable_speculative_decoding);
+}
+
+TEST(EngineCTest, SetUseRingbuffersLocalAttention) {
+  const std::string task_path = "test_model_path_1";
+  EngineSettingsPtr settings(
+      litert_lm_engine_settings_create(task_path.c_str(), "gpu_artisan",
+                                       /* vision_backend_str */ nullptr,
+                                       /* audio_backend_str */ nullptr),
+      &litert_lm_engine_settings_delete);
+  ASSERT_NE(settings, nullptr);
+
+  litert_lm_engine_settings_set_use_ringbuffers_local_attention(settings.get(),
+                                                                true);
+  auto config1 = settings->settings->GetMainExecutorSettings()
+                     .GetBackendConfig<litert::lm::GpuArtisanConfig>();
+  ASSERT_TRUE(config1.ok());
+  EXPECT_TRUE(config1->use_autosized_ringbuffers);
+
+  litert_lm_engine_settings_set_use_ringbuffers_local_attention(settings.get(),
+                                                                false);
+  auto config2 = settings->settings->GetMainExecutorSettings()
+                     .GetBackendConfig<litert::lm::GpuArtisanConfig>();
+  ASSERT_TRUE(config2.ok());
+  EXPECT_FALSE(config2->use_autosized_ringbuffers);
 }
 
 TEST(EngineCTest, CreateSettingsFromRawFileDescriptor) {

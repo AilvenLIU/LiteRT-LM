@@ -769,6 +769,7 @@ class ServeTest(parameterized.TestCase):
     mock_litert_lm.Engine.assert_called_once()  # pytype: disable=attribute-error
     _, kwargs = mock_litert_lm.Engine.call_args  # pytype: disable=attribute-error
     self.assertEqual(kwargs.get("max_num_tokens"), 32768)
+    self.assertTrue(kwargs.get("use_ringbuffers_local_attention"))
     self.assertEqual(server.max_num_tokens, 32768)
 
 

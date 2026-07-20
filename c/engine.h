@@ -787,6 +787,24 @@ LITERT_LM_C_API_EXPORT
 void litert_lm_engine_settings_set_enable_speculative_decoding(
     LiteRtLmEngineSettings* settings, bool enable_speculative_decoding);
 
+// Sets whether to use ringbuffers for local attention KV cache.
+//
+// When enabled for supported models, a ringbuffer stores only necessary KV
+// cache memory for local attention layers, minimizing memory usage. When
+// disabled, memory is allocated for the full context length, enabling instant
+// rewinding at the cost of higher memory usage.
+//
+// Note: This feature is backend-agnostic in interface design, but currently
+// only supported by the GPU Artisan backend. Enabling it on unsupported models
+// or backends will be ignored with a warning.
+//
+// @param settings The engine settings.
+// @param use_ringbuffers_local_attention Whether to use ringbuffers for local
+// attention.
+LITERT_LM_C_API_EXPORT
+void litert_lm_engine_settings_set_use_ringbuffers_local_attention(
+    LiteRtLmEngineSettings* settings, bool use_ringbuffers_local_attention);
+
 // Sets the LoRA rank for the engine.
 //
 // @param settings The engine settings.

@@ -166,6 +166,39 @@ class CommonInferenceOptionsTest(parameterized.TestCase):
         result.output,
     )
 
+  def test_ringbuffers_local_attention_options(self):
+    @click.command()
+    @common.common_inference_options
+    def dummy_cmd(**kwargs):
+      click.echo(
+          f'ringbuffers_local_attention:'
+          f" {kwargs.get('ringbuffers_local_attention')}"
+      )
+
+    runner = CliRunner()
+
+    # Flag mode (no value)
+    result = runner.invoke(dummy_cmd, ['--ringbuffers-local-attention'])
+    self.assertEqual(result.exit_code, 0)
+    self.assertIn('ringbuffers_local_attention: True', result.output)
+
+    # Choice true mode
+    result = runner.invoke(dummy_cmd, ['--ringbuffers-local-attention', 'true'])
+    self.assertEqual(result.exit_code, 0)
+    self.assertIn('ringbuffers_local_attention: True', result.output)
+
+    # Choice false mode
+    result = runner.invoke(
+        dummy_cmd, ['--ringbuffers-local-attention', 'false']
+    )
+    self.assertEqual(result.exit_code, 0)
+    self.assertIn('ringbuffers_local_attention: False', result.output)
+
+    # Not set mode (default is None)
+    result = runner.invoke(dummy_cmd, [])
+    self.assertEqual(result.exit_code, 0)
+    self.assertIn('ringbuffers_local_attention: None', result.output)
+
 
 if __name__ == '__main__':
   absltest.main()

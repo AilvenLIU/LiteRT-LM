@@ -47,6 +47,7 @@ def run_benchmark(
     cache: str | None = None,
     cpu_thread_count: int | None = None,
     activation_data_type: litert_lm.ActivationDataType | None = None,
+    ringbuffers_local_attention: bool | None = None,
 ) -> None:
   """Benchmarks the model."""
   if speculative_decoding is None:
@@ -95,6 +96,7 @@ def run_benchmark(
           enable_speculative_decoding=speculative_decoding,
           max_num_tokens=max_num_tokens,
           activation_data_type=activation_data_type,
+          use_ringbuffers_local_attention=ringbuffers_local_attention,
       )
 
     click.echo(
@@ -190,6 +192,7 @@ def benchmark(
     cache: str | None = None,
     cpu_thread_count: int | None = None,
     activation_data_type: str | None = None,
+    ringbuffers_local_attention: bool | None = None,
 ) -> None:
   """Benchmarks a LiteRT-LM model.
 
@@ -212,6 +215,8 @@ def benchmark(
     cache: The cache mode to use (no, memory, or disk).
     cpu_thread_count: The number of threads to use for CPU backend.
     activation_data_type: The activation data type to use for inference.
+    ringbuffers_local_attention: Whether to use ringbuffers for local attention
+      KV cache to minimize memory usage.
   """
   if speculative_decoding is None:
     speculative_decoding = enable_speculative_decoding
@@ -257,6 +262,7 @@ def benchmark(
           if activation_data_type
           else None
       ),
+      ringbuffers_local_attention=ringbuffers_local_attention,
   )
 
 
