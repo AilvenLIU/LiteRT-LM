@@ -28,6 +28,7 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_model.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "litert/cc/options/litert_cpu_options.h"  // from @litert
@@ -223,6 +224,13 @@ struct GpuModelCacheData {
 absl::StatusOr<GpuModelCacheData> GetGpuModelCacheData(
     const ExecutorSettingsBase& executor_settings,
     absl::string_view cache_name);
+
+// Initializes the embedding lookup and per-layer embedding lookup managers from
+// the given model resources and environment.
+absl::Status InitializeEmbeddingLookups(
+    ::litert::Environment& env, ModelResources& resources,
+    std::unique_ptr<EmbeddingLookupManager>& embedding_lookup,
+    std::unique_ptr<EmbeddingLookupManager>& per_layer_embedding_lookup);
 
 }  // namespace litert::lm
 

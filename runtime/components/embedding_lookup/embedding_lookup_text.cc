@@ -53,7 +53,7 @@ using ::litert::TensorBuffer;
 absl::Status EmbeddingLookupText::LookupInternal(int token,
                                                  absl::Span<uint8_t> buffer) {
   if (!compiled_model_.has_value() || input_buffers_.size() != 1 ||
-      output_buffers_.size() != 1) {
+      output_buffers_.empty()) {
     return absl::InvalidArgumentError(
         "The Embedding model must be initialized before being used.");
   }
@@ -242,7 +242,7 @@ absl::Status EmbeddingLookupText::LookupPrefill(absl::Span<const int> tokens,
   // the remaining tokens as if they were 0.
   size_t starting_token = byte_offset / bytes_per_token + tokens.size();
   size_t num_tokens_to_fill = prefill_output_layout.Dimensions()[1];
-  for (int i = starting_token; i < num_tokens_to_fill; ++i) {
+  for (size_t i = starting_token; i < num_tokens_to_fill; ++i) {
     memcpy(prefill_output_ptr, default_embedding_vector_.data(),
            bytes_per_token);
     prefill_output_ptr += bytes_per_token;
@@ -337,7 +337,7 @@ absl::Status EmbeddingLookupText::Initialize() {
   LITERT_ASSIGN_OR_RETURN(output_buffer_type_, output_buffers_[0].TensorType());
   const auto& output_buffer_layout = output_buffer_type_.value().Layout();
 
-  if (output_buffers_.size() != 1) {
+  if (output_buffers_.empty()) {
     return absl::InvalidArgumentError(absl::StrCat(
         "The Embedding model must have exactly one output tensor but got ",
         output_buffers_.size()));

@@ -57,7 +57,6 @@ cc_library(
         "@litert//litert/cc:litert_options",
         "@litert//litert/cc:litert_ranked_tensor_type",
         "@litert//litert/cc:litert_tensor_buffer",
-        "@litert//litert/cc/internal:litert_handle",
         "@litert//litert/cc/internal:scoped_file",
         "@litert//litert/cc/options:litert_qualcomm_options",
         "//runtime/util:litert_status_util",

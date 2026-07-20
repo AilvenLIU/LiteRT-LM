@@ -70,7 +70,6 @@
 #include "runtime/util/convert_tensor_buffer.h"
 #include "runtime/util/log_tensor_buffer.h"
 #include "runtime/util/lora_util.h"
-#include "runtime/util/scoped_file.h"
 #include "runtime/util/status_macros.h"  // IWYU pragma: keep
 #include "runtime/util/tensor_buffer_util.h"
 #include "tflite/types/half.h"  // from @litert
@@ -85,65 +84,6 @@ using ::absl::Span;
 constexpr absl::string_view kPrefillSignatureRunner = "prefill";
 constexpr absl::string_view kDecodeSignatureRunner = "decode";
 constexpr int kDynamicDimValue = -1;
-
-absl::Status InitializeEmbeddingLookups(
-    litert::Environment& env, ModelResources& resources,
-    std::unique_ptr<EmbeddingLookupManager>& embedding_lookup,
-    std::unique_ptr<EmbeddingLookupManager>& per_layer_embedding_lookup) {
-  absl::flat_hash_map<int, const Model*> end_of_multi_modal_embedding_models;
-  {
-    auto end_of_audio_model =
-        resources.GetTFLiteModel(ModelType::kTfLiteEndOfAudio);
-    if (end_of_audio_model.ok()) {
-      end_of_multi_modal_embedding_models.insert(
-          {ExecutorAudioData::kEndToken, end_of_audio_model.value()});
-    }
-  }
-  {
-    auto end_of_vision_model =
-        resources.GetTFLiteModel(ModelType::kTfLiteEndOfVision);
-    if (end_of_vision_model.ok()) {
-      end_of_multi_modal_embedding_models.insert(
-          {ExecutorVisionData::kEndToken, end_of_vision_model.value()});
-    }
-  }
-
-  auto text_embedder_model =
-      resources.GetTFLiteModel(ModelType::kTfLiteEmbedder);
-  if (text_embedder_model.ok()) {
-    ABSL_ASSIGN_OR_RETURN(
-        embedding_lookup,
-        EmbeddingLookupManager::Create(env, *text_embedder_model,
-                                       end_of_multi_modal_embedding_models));
-  }
-
-  // Create per layer embedding lookups from the resources.
-  auto per_layer_embedder_model =
-      resources.GetTFLiteModel(ModelType::kTfLitePerLayerEmbedder);
-  if (per_layer_embedder_model.ok()) {
-    std::optional<ScopedFile> per_layer_external_weight_file;
-    Options::ScopedWeightSectionMap per_layer_external_weight_sections;
-    auto section_offset =
-        resources.GetWeightsSectionOffset(ModelType::kTfLitePerLayerEmbedder);
-    if (section_offset.ok()) {
-      per_layer_external_weight_sections["tflite_weights"] = {
-          section_offset.value().first,
-          section_offset.value().second - section_offset.value().first};
-      LITERT_ASSIGN_OR_RETURN(auto scoped_file, resources.GetScopedFile());
-      LITERT_ASSIGN_OR_RETURN(auto duplicated_scoped_file,
-                              scoped_file.get().Duplicate());
-      per_layer_external_weight_file = std::move(duplicated_scoped_file);
-    }
-    ABSL_ASSIGN_OR_RETURN(per_layer_embedding_lookup,
-                          EmbeddingLookupManager::Create(
-                              env, *per_layer_embedder_model,
-                              /*fully_supports_multi_modal=*/false,
-                              /*signature_key=*/std::nullopt,
-                              std::move(per_layer_external_weight_file),
-                              std::move(per_layer_external_weight_sections)));
-  }
-  return absl::OkStatus();
-}
 
 absl::StatusOr<bool> HasDynamicDim(const Model& model,
                                    absl::string_view signature,

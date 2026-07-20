@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"  // from @com_google_absl
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
@@ -38,9 +39,11 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_element_type.h"  // from @litert
+#include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_expected.h"  // from @litert
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "litert/cc/litert_model.h"  // from @litert
+#include "litert/cc/litert_options.h"  // from @litert
 #include "litert/cc/litert_ranked_tensor_type.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "litert/cc/options/litert_cpu_options.h"  // from @litert
@@ -54,15 +57,16 @@
 #include "runtime/components/model_resources_litert_lm.h"  // IWYU pragma: keep
 #include "runtime/components/model_resources_task.h"
 #include "runtime/executor/executor_settings_base.h"
+#include "runtime/executor/llm_executor_io_types.h"
 #include "runtime/util/convert_tensor_buffer.h"
 #include "runtime/util/file_format_util.h"
 #include "runtime/util/file_util.h"
 #include "runtime/util/litert_lm_loader.h"
-#include "tflite/delegates/xnnpack/xnnpack_delegate.h"  // from @litert
 #include "runtime/util/model_asset_bundle_resources.h"
 #include "runtime/util/scoped_file.h"
 #include "runtime/util/status_macros.h"  //NOLINT
 #include "runtime/util/tensor_buffer_util.h"
+#include "tflite/delegates/xnnpack/xnnpack_delegate.h"  // from @litert
 #include "tflite/types/half.h"  // from @litert
 
 namespace litert::lm {
@@ -776,6 +780,66 @@ absl::StatusOr<GpuModelCacheData> GetGpuModelCacheData(
     }
   }
   return cache_data;
+}
+
+absl::Status InitializeEmbeddingLookups(
+    ::litert::Environment& env, ModelResources& resources,
+    std::unique_ptr<EmbeddingLookupManager>& embedding_lookup,
+    std::unique_ptr<EmbeddingLookupManager>& per_layer_embedding_lookup) {
+  absl::flat_hash_map<int, const Model*> end_of_multi_modal_embedding_models;
+  {
+    auto end_of_audio_model =
+        resources.GetTFLiteModel(ModelType::kTfLiteEndOfAudio);
+    if (end_of_audio_model.ok()) {
+      end_of_multi_modal_embedding_models.insert(
+          {ExecutorAudioData::kEndToken, end_of_audio_model.value()});
+    }
+  }
+  {
+    auto end_of_vision_model =
+        resources.GetTFLiteModel(ModelType::kTfLiteEndOfVision);
+    if (end_of_vision_model.ok()) {
+      end_of_multi_modal_embedding_models.insert(
+          {ExecutorVisionData::kEndToken, end_of_vision_model.value()});
+    }
+  }
+
+  auto text_embedder_model =
+      resources.GetTFLiteModel(ModelType::kTfLiteEmbedder);
+  if (text_embedder_model.ok()) {
+    ABSL_ASSIGN_OR_RETURN(
+        embedding_lookup,
+        EmbeddingLookupManager::Create(env, *text_embedder_model,
+                                       end_of_multi_modal_embedding_models));
+  }
+
+  // Create per layer embedding lookups from the resources.
+  auto per_layer_embedder_model =
+      resources.GetTFLiteModel(ModelType::kTfLitePerLayerEmbedder);
+  if (per_layer_embedder_model.ok()) {
+    std::optional<ScopedFile> per_layer_external_weight_file;
+    Options::ScopedWeightSectionMap per_layer_external_weight_sections;
+    auto section_offset =
+        resources.GetWeightsSectionOffset(ModelType::kTfLitePerLayerEmbedder);
+    if (section_offset.ok()) {
+      per_layer_external_weight_sections["tflite_weights"] = {
+          section_offset.value().first,
+          section_offset.value().second - section_offset.value().first};
+      LITERT_ASSIGN_OR_RETURN(auto scoped_file, resources.GetScopedFile());
+      LITERT_ASSIGN_OR_RETURN(auto duplicated_scoped_file,
+                              scoped_file.get().Duplicate());
+      per_layer_external_weight_file = std::move(duplicated_scoped_file);
+    }
+    ABSL_ASSIGN_OR_RETURN(per_layer_embedding_lookup,
+                          EmbeddingLookupManager::Create(
+                              env, *per_layer_embedder_model,
+                              /*fully_supports_multi_modal=*/false,
+                              /*signature_key=*/std::nullopt,
+                              std::move(per_layer_external_weight_file),
+                              std::move(per_layer_external_weight_sections)));
+  }
+
+  return absl::OkStatus();
 }
 
 }  // namespace litert::lm
