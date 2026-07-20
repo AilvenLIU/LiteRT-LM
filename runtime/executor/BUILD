@@ -666,8 +666,11 @@ cc_test(
         ":llm_executor_settings_utils",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
         "@litert//litert/c/options:litert_gpu_options",
         "@litert//litert/test:matchers",
+        "//runtime/util:file_util",
+        "//runtime/util:scoped_file",
         "//runtime/util:test_utils",
     ],
 )
