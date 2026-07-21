@@ -10,6 +10,8 @@ package(default_visibility = ["//visibility:public"])
 #     name = "LiteRTLMFoundationModels_Swift",
 #     srcs = [
 #         "LiteRTLanguageModel.swift",
+#         "LiteRTSegments.swift",
+#         "CGImagePNG.swift",
 #     ],
 #     copts = ["-enable-testing"],
 #     module_name = "LiteRTLMFoundationModels",
