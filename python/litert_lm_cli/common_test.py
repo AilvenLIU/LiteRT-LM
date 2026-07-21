@@ -199,6 +199,33 @@ class CommonInferenceOptionsTest(parameterized.TestCase):
     self.assertEqual(result.exit_code, 0)
     self.assertIn('ringbuffers_local_attention: None', result.output)
 
+  def test_gpu_decode_steps_per_sync_options(self):
+    @click.command()
+    @common.common_inference_options
+    def dummy_cmd(**kwargs):
+      val = kwargs.get('gpu_decode_steps_per_sync')
+      click.echo(f'gpu_decode_steps_per_sync: {val}')
+
+    runner = CliRunner()
+
+    # Valid int value
+    result = runner.invoke(dummy_cmd, ['--gpu-decode-steps-per-sync', '4'])
+    self.assertEqual(result.exit_code, 0)
+    self.assertIn('gpu_decode_steps_per_sync: 4', result.output)
+
+    # Not set mode (default is None)
+    result = runner.invoke(dummy_cmd, [])
+    self.assertEqual(result.exit_code, 0)
+    self.assertIn('gpu_decode_steps_per_sync: None', result.output)
+
+    # Invalid value (< 1)
+    result = runner.invoke(dummy_cmd, ['--gpu-decode-steps-per-sync', '0'])
+    self.assertNotEqual(result.exit_code, 0)
+    self.assertIn(
+        "Error: Invalid value for '--gpu-decode-steps-per-sync'",
+        result.output,
+    )
+
 
 if __name__ == '__main__':
   absltest.main()

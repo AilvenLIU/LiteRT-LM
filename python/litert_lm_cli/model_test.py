@@ -288,6 +288,30 @@ class ParseBackendWithConfigTest(parameterized.TestCase):
     # Reset mocks
     mock_get_model_config.reset_mock()
 
+    # 5. Config-defined gpu_decode_steps_per_sync should be used if CLI is None
+    mock_get_model_config.return_value = config.ModelConfig(
+        backend="gpu", gpu_decode_steps_per_sync=4
+    )
+    result = model.parse_backend(backend=None, model_obj=mock_model)
+    self.assertIsInstance(result, litert_lm.Backend.GPU)
+    self.assertEqual(result.gpu_decode_steps_per_sync, 4)
+
+    # Reset mocks
+    mock_get_model_config.reset_mock()
+
+    # 6. Explicit CLI gpu_decode_steps_per_sync overrides config
+    mock_get_model_config.return_value = config.ModelConfig(
+        backend="gpu", gpu_decode_steps_per_sync=4
+    )
+    result = model.parse_backend(
+        backend=None, gpu_decode_steps_per_sync=8, model_obj=mock_model
+    )
+    self.assertIsInstance(result, litert_lm.Backend.GPU)
+    self.assertEqual(result.gpu_decode_steps_per_sync, 8)
+
+    # Reset mocks
+    mock_get_model_config.reset_mock()
+
     # 5. Config threads should be used with default backend
     mock_model_default.return_value = "cpu"
     mock_get_model_config.return_value = config.ModelConfig(cpu_thread_count=4)

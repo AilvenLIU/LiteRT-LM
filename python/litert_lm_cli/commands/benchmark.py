@@ -210,12 +210,6 @@ def run_benchmark(
     ),
 )
 @click.option(
-    "--gpu-decode-steps-per-sync",
-    type=click.IntRange(min=1),
-    default=None,
-    help="The number of decode steps per sync for GPU backend.",
-)
-@click.option(
     "--runs",
     type=click.IntRange(min=1),
     default=1,
@@ -271,7 +265,7 @@ def benchmark(
     ringbuffers_local_attention: Whether to use ringbuffers for local attention
       KV cache to minimize memory usage.
     gpu_decode_steps_per_sync: The number of decode steps per sync for GPU
-      backend.
+      backend. Only applied to supported GPU models. Otherwise, ignored.
     runs: The number of benchmarking iterations to run and average.
     skip_warmup: Skip the warmup run before benchmarking.
   """

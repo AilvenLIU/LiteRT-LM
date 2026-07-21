@@ -72,7 +72,7 @@ class ConfigTest(parameterized.TestCase):
         '{"default": {"audio_backend": "cpu", "vision_backend": "gpu",'
         ' "cache": "memory", "max_num_tokens": 1024, "temperature": 0.7,'
         ' "top_p": 0.9, "top_k": 40, "seed": 12345,'
-        ' "speculative_decoding": true}}'
+        ' "gpu_decode_steps_per_sync": 4, "speculative_decoding": true}}'
     )
     self.assertEqual(
         config.load_config(),
@@ -86,6 +86,7 @@ class ConfigTest(parameterized.TestCase):
                 top_p=0.9,
                 top_k=40,
                 seed=12345,
+                gpu_decode_steps_per_sync=4,
                 speculative_decoding=True,
             )
         ),
@@ -186,6 +187,11 @@ class ConfigTest(parameterized.TestCase):
           "top_k_invalid",
           '{"default": {"top_k": 0}}',
           "default.top_k: 0 is less than the minimum of 1",
+      ),
+      (
+          "gpu_decode_steps_per_sync_invalid",
+          '{"default": {"gpu_decode_steps_per_sync": 0}}',
+          "default.gpu_decode_steps_per_sync: 0 is less than the minimum of 1",
       ),
       (
           "speculative_decoding_not_bool",
@@ -302,6 +308,7 @@ class ConfigTest(parameterized.TestCase):
                   "top_p": 0.9,
                   "top_k": 40,
                   "seed": 12345,
+                  "gpu_decode_steps_per_sync": 4,
                   "speculative_decoding": True,
               },
               "models": {
@@ -318,6 +325,10 @@ class ConfigTest(parameterized.TestCase):
       ("invalid_temp_min", {"default": {"temperature": -0.5}}),
       ("invalid_top_p_max", {"default": {"top_p": 1.5}}),
       ("invalid_top_k_min", {"default": {"top_k": 0}}),
+      (
+          "invalid_gpu_decode_steps_min",
+          {"default": {"gpu_decode_steps_per_sync": 0}},
+      ),
       (
           "invalid_speculative_bool",
           {"default": {"speculative_decoding": "true"}},

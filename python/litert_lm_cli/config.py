@@ -35,6 +35,7 @@ KEY_TEMPERATURE = "temperature"
 KEY_TOP_P = "top_p"
 KEY_TOP_K = "top_k"
 KEY_SEED = "seed"
+KEY_GPU_DECODE_STEPS_PER_SYNC = "gpu_decode_steps_per_sync"
 KEY_SPECULATIVE_DECODING = "speculative_decoding"
 
 
@@ -52,6 +53,7 @@ class ModelConfig:
   top_p: float | None = None
   top_k: int | None = None
   seed: int | None = None
+  gpu_decode_steps_per_sync: int | None = None
   speculative_decoding: bool | None = None
 
   def merge_from(self, other: ModelConfig) -> None:
@@ -76,6 +78,8 @@ class ModelConfig:
       self.top_k = other.top_k
     if other.seed is not None:
       self.seed = other.seed
+    if other.gpu_decode_steps_per_sync is not None:
+      self.gpu_decode_steps_per_sync = other.gpu_decode_steps_per_sync
     if other.speculative_decoding is not None:
       self.speculative_decoding = other.speculative_decoding
 
@@ -141,6 +145,7 @@ def _parse_model_config(data: dict[str, Any]) -> ModelConfig:
       top_p=data.get(KEY_TOP_P),
       top_k=data.get(KEY_TOP_K),
       seed=data.get(KEY_SEED),
+      gpu_decode_steps_per_sync=data.get(KEY_GPU_DECODE_STEPS_PER_SYNC),
       speculative_decoding=data.get(KEY_SPECULATIVE_DECODING),
   )
 

@@ -58,6 +58,10 @@
         "seed": {
           "type": "integer"
         },
+        "gpu_decode_steps_per_sync": {
+          "type": "integer",
+          "minimum": 1
+        },
         "speculative_decoding": {
           "type": "boolean"
         }

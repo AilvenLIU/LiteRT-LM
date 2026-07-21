@@ -177,6 +177,15 @@ def common_inference_options(f):
       ),
   )(f)
   f = click.option(
+      "--gpu-decode-steps-per-sync",
+      type=click.IntRange(min=1),
+      default=None,
+      help=(
+          "The number of decode steps per sync for GPU backend. Only applied"
+          " to supported GPU models. Otherwise, ignored."
+      ),
+  )(f)
+  f = click.option(
       "--activation-data-type",
       type=click.Choice(
           ["fp32", "fp16", "int16", "int8"], case_sensitive=False
