@@ -12,72 +12,95 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "omni/asr/token_merger.h"
+#include "omni/asr/levenshtein_text_merger.h"
 
 #include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "omni/asr/detokenizer.h"
+#include "omni/asr/text_merger.h"
 
 namespace litert_lm::omni::asr {
 namespace {
 
-TEST(TokenMergerTest, InitialChunkReturnsUnconfirmedOnly) {
-  TokenMerger merger;
-  std::vector<std::string> curr_chunk = {"hello", "world"};
+std::vector<Detokenizer::Word> ToWords(
+    const std::vector<std::string>& strings) {
+  std::vector<Detokenizer::Word> words;
+  words.reserve(strings.size());
+  for (const auto& s : strings) {
+    words.push_back({s, -1});
+  }
+  return words;
+}
 
-  MergeResult result = merger.Merge(curr_chunk);
+TEST(LevenshteinTextMergerTest, InitialChunkReturnsUnconfirmedOnly) {
+  LevenshteinTextMerger merger;
+  auto curr_chunk = ToWords({"hello", "world"});
+
+  TextMerger::MergeResult result;
+  ASSERT_TRUE(merger.Merge(curr_chunk, &result).ok());
 
   EXPECT_EQ(result.confirmed_text, "");
   EXPECT_EQ(result.unconfirmed_text, "hello world");
 }
 
-TEST(TokenMergerTest, SequentialMergeFlow) {
-  TokenMerger merger;
+TEST(LevenshteinTextMergerTest, SequentialMergeFlow) {
+  LevenshteinTextMerger merger;
 
   // Chunk 1: "hello world this is"
-  MergeResult res1 = merger.Merge({"hello", "world", "this", "is"});
+  TextMerger::MergeResult res1;
+  ASSERT_TRUE(
+      merger.Merge(ToWords({"hello", "world", "this", "is"}), &res1).ok());
   EXPECT_EQ(res1.confirmed_text, "");
   EXPECT_EQ(res1.unconfirmed_text, "hello world this is");
 
   // Chunk 2: overlaps at "this is", adds "a test"
-  MergeResult res2 = merger.Merge({"this", "is", "a", "test"});
+  TextMerger::MergeResult res2;
+  ASSERT_TRUE(merger.Merge(ToWords({"this", "is", "a", "test"}), &res2).ok());
   EXPECT_EQ(res2.confirmed_text, "hello world");
   EXPECT_EQ(res2.unconfirmed_text, "this is a test");
 
   // Chunk 3: overlaps at "a test", adds "of streaming"
-  MergeResult res3 = merger.Merge({"a", "test", "of", "streaming"});
+  TextMerger::MergeResult res3;
+  ASSERT_TRUE(
+      merger.Merge(ToWords({"a", "test", "of", "streaming"}), &res3).ok());
   EXPECT_EQ(res3.confirmed_text, "this is");
   EXPECT_EQ(res3.unconfirmed_text, "a test of streaming");
 
   // End of stream flush
-  MergeResult res_flush = merger.Flush();
+  TextMerger::MergeResult res_flush;
+  ASSERT_TRUE(merger.Flush(&res_flush).ok());
   EXPECT_EQ(res_flush.confirmed_text, "a test of streaming");
   EXPECT_EQ(res_flush.unconfirmed_text, "");
 }
 
-TEST(TokenMergerTest, ResetClearsState) {
-  TokenMerger merger;
+TEST(LevenshteinTextMergerTest, ResetClearsState) {
+  LevenshteinTextMerger merger;
 
-  merger.Merge({"hello", "world"});
+  TextMerger::MergeResult dummy_res;
+  EXPECT_TRUE(merger.Merge(ToWords({"hello", "world"}), &dummy_res).ok());
   EXPECT_FALSE(merger.unconfirmed_words().empty());
 
   merger.Reset();
   EXPECT_TRUE(merger.unconfirmed_words().empty());
 
   // First merge after reset behaves as initial chunk
-  MergeResult result = merger.Merge({"new", "stream"});
+  TextMerger::MergeResult result;
+  ASSERT_TRUE(merger.Merge(ToWords({"new", "stream"}), &result).ok());
   EXPECT_EQ(result.confirmed_text, "");
   EXPECT_EQ(result.unconfirmed_text, "new stream");
 }
 
-TEST(TokenMergerTest, NoOverlapConfirmsPreviousState) {
-  TokenMerger merger;
+TEST(LevenshteinTextMergerTest, NoOverlapConfirmsPreviousState) {
+  LevenshteinTextMerger merger;
 
-  merger.Merge({"apple", "banana"});
+  TextMerger::MergeResult res1;
+  EXPECT_TRUE(merger.Merge(ToWords({"apple", "banana"}), &res1).ok());
 
   // Chunk 2 has no overlap
-  MergeResult result = merger.Merge({"cat", "dog"});
+  TextMerger::MergeResult result;
+  ASSERT_TRUE(merger.Merge(ToWords({"cat", "dog"}), &result).ok());
   EXPECT_EQ(result.confirmed_text, "apple banana");
   EXPECT_EQ(result.unconfirmed_text, "cat dog");
 }

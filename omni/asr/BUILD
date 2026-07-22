@@ -18,6 +18,52 @@
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
+    name = "audio_source",
+    hdrs = ["audio_source.h"],
+    deps = [
+        "@com_google_absl//absl/status",
+    ],
+)
+
+cc_library(
+    name = "audio_preprocessor",
+    hdrs = ["audio_preprocessor.h"],
+    deps = [
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "speech_decoder",
+    hdrs = ["speech_decoder.h"],
+    deps = [
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "detokenizer",
+    hdrs = ["detokenizer.h"],
+    deps = [
+        ":speech_decoder",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "text_merger",
+    hdrs = ["text_merger.h"],
+    deps = [
+        ":detokenizer",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
     name = "levenshtein_align",
     srcs = ["levenshtein_align.cc"],
     hdrs = ["levenshtein_align.h"],
@@ -36,21 +82,59 @@ cc_test(
 )
 
 cc_library(
-    name = "token_merger",
-    srcs = ["token_merger.cc"],
-    hdrs = ["token_merger.h"],
+    name = "levenshtein_text_merger",
+    srcs = ["levenshtein_text_merger.cc"],
+    hdrs = ["levenshtein_text_merger.h"],
     deps = [
+        ":detokenizer",
         ":levenshtein_align",
+        ":text_merger",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
     ],
 )
 
 cc_test(
-    name = "token_merger_test",
-    srcs = ["token_merger_test.cc"],
+    name = "levenshtein_text_merger_test",
+    srcs = ["levenshtein_text_merger_test.cc"],
     deps = [
-        ":token_merger",
+        ":detokenizer",
+        ":levenshtein_text_merger",
+        ":text_merger",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "asr_session",
+    srcs = ["asr_session.cc"],
+    hdrs = ["asr_session.h"],
+    deps = [
+        ":audio_preprocessor",
+        ":audio_source",
+        ":detokenizer",
+        ":speech_decoder",
+        ":text_merger",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@litert//litert/cc:litert_macros",
+    ],
+)
+
+cc_test(
+    name = "asr_session_test",
+    srcs = ["asr_session_test.cc"],
+    deps = [
+        ":asr_session",
+        ":audio_preprocessor",
+        ":audio_source",
+        ":detokenizer",
+        ":levenshtein_text_merger",
+        ":speech_decoder",
+        ":text_merger",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:span",
     ],
 )
