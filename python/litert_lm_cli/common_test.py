@@ -199,6 +199,11 @@ class CommonInferenceOptionsTest(parameterized.TestCase):
     self.assertEqual(result.exit_code, 0)
     self.assertIn('ringbuffers_local_attention: None', result.output)
 
+    # Verify option is hidden in help output
+    result = runner.invoke(dummy_cmd, ['--help'])
+    self.assertEqual(result.exit_code, 0)
+    self.assertNotIn('--ringbuffers-local-attention', result.output)
+
   def test_gpu_decode_steps_per_sync_options(self):
     @click.command()
     @common.common_inference_options
