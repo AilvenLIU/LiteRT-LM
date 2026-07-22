@@ -20,57 +20,71 @@
       "properties": {
         "backend": {
           "type": "string",
-          "enum": ["cpu", "gpu", "npu"]
+          "enum": ["cpu", "gpu", "npu"],
+          "$comment": "Added in version 0.15.0"
         },
         "cpu_thread_count": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "$comment": "Added in version 0.15.0"
         },
         "audio_backend": {
           "type": "string",
-          "enum": ["cpu", "gpu", "npu"]
+          "enum": ["cpu", "gpu", "npu"],
+          "$comment": "Added in version 0.15.0"
         },
         "vision_backend": {
           "type": "string",
-          "enum": ["cpu", "gpu", "npu"]
+          "enum": ["cpu", "gpu", "npu"],
+          "$comment": "Added in version 0.15.0"
         },
         "cache": {
           "type": "string",
-          "enum": ["disk", "memory", "no"]
+          "enum": ["disk", "memory", "no"],
+          "$comment": "Added in version 0.15.0"
         },
         "max_num_tokens": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "$comment": "Added in version 0.15.0"
         },
         "temperature": {
           "type": "number",
-          "minimum": 0.0
+          "minimum": 0.0,
+          "$comment": "Added in version 0.15.0"
         },
         "top_p": {
           "type": "number",
           "minimum": 0.0,
-          "maximum": 1.0
+          "maximum": 1.0,
+          "$comment": "Added in version 0.15.0"
         },
         "top_k": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "$comment": "Added in version 0.15.0"
         },
         "seed": {
-          "type": "integer"
+          "type": "integer",
+          "$comment": "Added in version 0.15.0"
         },
         "gpu_decode_steps_per_sync": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "$comment": "Added in version 0.15.0"
         },
         "speculative_decoding": {
-          "type": "boolean"
+          "type": "boolean",
+          "$comment": "Added in version 0.15.0"
         },
         "thinking": {
-          "type": "boolean"
+          "type": "boolean",
+          "$comment": "Added in version 0.15.0"
         },
         "thinking_budget": {
           "type": "integer",
-          "minimum": -1
+          "minimum": -1,
+          "$comment": "Added in version 0.15.0"
         }
       },
       "additionalProperties": true
