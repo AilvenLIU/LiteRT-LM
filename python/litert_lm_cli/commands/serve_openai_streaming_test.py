@@ -24,6 +24,7 @@ import urllib.request
 from absl.testing import absltest
 
 import litert_lm
+from litert_lm_cli import config as cli_config
 from litert_lm_cli import model
 from litert_lm_cli.commands import openai_handler
 from litert_lm_cli.commands import serve_util
@@ -252,6 +253,41 @@ class ServeOpenAIStreamingTest(absltest.TestCase):
 
     with self.assertRaises(ValueError):
       openai_handler._parse_thinking_config({"reasoning_effort": True})
+
+    # Test fallback to config.json when reasoning_effort is not provided
+    with mock.patch.object(cli_config, "get_model_config") as mock_get_cfg:
+      mock_get_cfg.return_value = cli_config.ModelConfig(thinking=True)
+      cfg = openai_handler._parse_thinking_config({}, model_id="gemma3")
+      self.assertIsNotNone(cfg)
+      self.assertTrue(cfg.enable_thinking)
+      self.assertEqual(cfg.thinking_token_budget, -1)
+
+      mock_get_cfg.return_value = cli_config.ModelConfig(thinking_budget=10)
+      cfg = openai_handler._parse_thinking_config({}, model_id="gemma3")
+      self.assertIsNotNone(cfg)
+      self.assertTrue(cfg.enable_thinking)
+      self.assertEqual(cfg.thinking_token_budget, 10)
+
+      mock_get_cfg.return_value = cli_config.ModelConfig(thinking_budget=0)
+      cfg = openai_handler._parse_thinking_config({}, model_id="gemma3")
+      self.assertIsNotNone(cfg)
+      self.assertFalse(cfg.enable_thinking)
+      self.assertEqual(cfg.thinking_token_budget, 0)
+
+      mock_get_cfg.return_value = cli_config.ModelConfig(thinking=False)
+      cfg = openai_handler._parse_thinking_config({"model": "gemma3"})
+      self.assertIsNotNone(cfg)
+      self.assertFalse(cfg.enable_thinking)
+      self.assertEqual(cfg.thinking_token_budget, 0)
+
+      # When reasoning_effort is explicitly given, it overrides config.json
+      mock_get_cfg.return_value = cli_config.ModelConfig(thinking=False)
+      cfg = openai_handler._parse_thinking_config(
+          {"reasoning_effort": "low", "model": "gemma3"}
+      )
+      self.assertIsNotNone(cfg)
+      self.assertTrue(cfg.enable_thinking)
+      self.assertEqual(cfg.thinking_token_budget, -1)
 
   def test_openai_responses_invalid_reasoning_effort(self):
     mock_from_id = self.enter_context(

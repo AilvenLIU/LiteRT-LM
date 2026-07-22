@@ -34,14 +34,12 @@ from typing import Any
 import urllib.request
 
 import click
-
 # Migrate to built-in "typing" when min python version is 3.12.
 from typing_extensions import override
 
 import litert_lm
-from litert_lm_cli import (
-    model as cli_model,
-)
+from litert_lm_cli import config as cli_config
+from litert_lm_cli import model as cli_model
 from litert_lm_cli.commands import serve_util
 
 
@@ -141,37 +139,64 @@ def _parse_sampler_config(
 
 def _parse_thinking_config(
     body: dict[str, Any],
+    model_id: str | None = None,
 ) -> litert_lm.ThinkingConfig | None:
-  """Parses and validates thinking/reasoning parameters from the request body."""
+  """Parses and validates thinking/reasoning parameters from the request body or config.json."""
   reasoning_effort = body.get("reasoning_effort")
-  if reasoning_effort is None:
+  if reasoning_effort is not None:
+    if not isinstance(reasoning_effort, str):
+      raise ValueError(
+          "reasoning_effort must be a string, got"
+          f" {type(reasoning_effort).__name__}"
+      )
+
+    effort_lower = reasoning_effort.lower()
+    if effort_lower == "none":
+      return litert_lm.ThinkingConfig(
+          enable_thinking=False,
+          thinking_token_budget=0,
+      )
+
+    supported_efforts = ("minimal", "low", "medium", "high", "xhigh")
+    if effort_lower in supported_efforts:
+      # TODO: b/514760339 - Support fine-grained reasoning effort token budget
+      # mappings.
+      return litert_lm.ThinkingConfig(
+          enable_thinking=True,
+          thinking_token_budget=-1,
+      )
+
+    raise ValueError(
+        f"Invalid reasoning_effort value: {reasoning_effort!r}. "
+        "Supported strings: none, minimal, low, medium, high, xhigh."
+    )
+
+  if model_id is None and isinstance(body.get("model"), str):
+    try:
+      model_id = _parse_model_parameter(body["model"])[0]
+    except ValueError:
+      model_id = body["model"]
+
+  model_cfg = (
+      cli_config.get_model_config(model_id)
+      if model_id
+      else cli_config.load_config().default
+  )
+
+  thinking = model_cfg.thinking
+  thinking_budget = model_cfg.thinking_budget
+
+  if thinking is None and thinking_budget is None:
     return None
 
-  if not isinstance(reasoning_effort, str):
-    raise ValueError(
-        "reasoning_effort must be a string, got"
-        f" {type(reasoning_effort).__name__}"
-    )
+  if thinking is None:
+    thinking = thinking_budget != 0
+  if thinking_budget is None:
+    thinking_budget = -1 if thinking else 0
 
-  effort_lower = reasoning_effort.lower()
-  if effort_lower == "none":
-    return litert_lm.ThinkingConfig(
-        enable_thinking=False,
-        thinking_token_budget=0,
-    )
-
-  supported_efforts = ("minimal", "low", "medium", "high", "xhigh")
-  if effort_lower in supported_efforts:
-    # TODO: b/514760339 - Support fine-grained reasoning effort token budget
-    # mappings.
-    return litert_lm.ThinkingConfig(
-        enable_thinking=True,
-        thinking_token_budget=-1,
-    )
-
-  raise ValueError(
-      f"Invalid reasoning_effort value: {reasoning_effort!r}. "
-      "Supported strings: none, minimal, low, medium, high, xhigh."
+  return litert_lm.ThinkingConfig(
+      enable_thinking=thinking,
+      thinking_token_budget=thinking_budget,
   )
 
 
@@ -1194,7 +1219,7 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       return
 
     try:
-      thinking_config = _parse_thinking_config(body)
+      thinking_config = _parse_thinking_config(body, model_id=model_id)
     except ValueError as e:
       self.send_error(
           400,
@@ -1289,7 +1314,7 @@ class OpenAIHandler(serve_util.CORSRequestHandler):
       return
 
     try:
-      thinking_config = _parse_thinking_config(body)
+      thinking_config = _parse_thinking_config(body, model_id=model_id)
     except ValueError as e:
       self.send_error(
           400,

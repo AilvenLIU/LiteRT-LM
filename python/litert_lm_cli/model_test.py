@@ -407,7 +407,10 @@ class ParseBackendWithConfigTest(parameterized.TestCase):
         top_p=0.9,
         top_k=40,
         seed=42,
+        gpu_decode_steps_per_sync=4,
         speculative_decoding=True,
+        thinking=True,
+        thinking_budget=50,
     )
 
     # Explicit value provided by user
@@ -430,8 +433,18 @@ class ParseBackendWithConfigTest(parameterized.TestCase):
     )
     self.assertEqual(model.resolve_config_option(None, mock_model, "top_k"), 40)
     self.assertEqual(model.resolve_config_option(None, mock_model, "seed"), 42)
+    self.assertEqual(
+        model.resolve_config_option(
+            None, mock_model, "gpu_decode_steps_per_sync"
+        ),
+        4,
+    )
     self.assertTrue(
         model.resolve_config_option(None, mock_model, "speculative_decoding")
+    )
+    self.assertTrue(model.resolve_config_option(None, mock_model, "thinking"))
+    self.assertEqual(
+        model.resolve_config_option(None, mock_model, "thinking_budget"), 50
     )
 
     # Unset field returns None

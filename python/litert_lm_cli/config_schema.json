@@ -64,6 +64,13 @@
         },
         "speculative_decoding": {
           "type": "boolean"
+        },
+        "thinking": {
+          "type": "boolean"
+        },
+        "thinking_budget": {
+          "type": "integer",
+          "minimum": -1
         }
       },
       "additionalProperties": true

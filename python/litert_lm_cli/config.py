@@ -37,6 +37,8 @@ KEY_TOP_K = "top_k"
 KEY_SEED = "seed"
 KEY_GPU_DECODE_STEPS_PER_SYNC = "gpu_decode_steps_per_sync"
 KEY_SPECULATIVE_DECODING = "speculative_decoding"
+KEY_THINKING = "thinking"
+KEY_THINKING_BUDGET = "thinking_budget"
 
 
 @dataclasses.dataclass
@@ -55,6 +57,8 @@ class ModelConfig:
   seed: int | None = None
   gpu_decode_steps_per_sync: int | None = None
   speculative_decoding: bool | None = None
+  thinking: bool | None = None
+  thinking_budget: int | None = None
 
   def merge_from(self, other: ModelConfig) -> None:
     """Merges values from another config, overwriting if set."""
@@ -82,6 +86,10 @@ class ModelConfig:
       self.gpu_decode_steps_per_sync = other.gpu_decode_steps_per_sync
     if other.speculative_decoding is not None:
       self.speculative_decoding = other.speculative_decoding
+    if other.thinking is not None:
+      self.thinking = other.thinking
+    if other.thinking_budget is not None:
+      self.thinking_budget = other.thinking_budget
 
 
 @dataclasses.dataclass
@@ -160,6 +168,8 @@ def _parse_model_config(data: dict[str, Any]) -> ModelConfig:
       seed=data.get(KEY_SEED),
       gpu_decode_steps_per_sync=data.get(KEY_GPU_DECODE_STEPS_PER_SYNC),
       speculative_decoding=data.get(KEY_SPECULATIVE_DECODING),
+      thinking=data.get(KEY_THINKING),
+      thinking_budget=data.get(KEY_THINKING_BUDGET),
   )
 
 

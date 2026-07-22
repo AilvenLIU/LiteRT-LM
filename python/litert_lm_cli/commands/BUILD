@@ -35,6 +35,7 @@ pytype_strict_library(
         "//python/litert_lm",
         "//python/litert_lm_builder:litertlm_builder",
         "//python/litert_lm_cli:common",
+        "//python/litert_lm_cli:config",
         "//python/litert_lm_cli:help_formatter",
         "//python/litert_lm_cli:model",
         requirement("click"),
@@ -173,6 +174,7 @@ py_test(
     deps = [
         ":serve",
         "//python/litert_lm",
+        "//python/litert_lm_cli:config",
         "//python/litert_lm_cli:model",
         "@absl_py//absl/testing:absltest",
     ],

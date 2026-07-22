@@ -74,7 +74,8 @@ class ConfigTest(parameterized.TestCase):
         '{"default": {"audio_backend": "cpu", "vision_backend": "gpu",'
         ' "cache": "memory", "max_num_tokens": 1024, "temperature": 0.7,'
         ' "top_p": 0.9, "top_k": 40, "seed": 12345,'
-        ' "gpu_decode_steps_per_sync": 4, "speculative_decoding": true}}'
+        ' "gpu_decode_steps_per_sync": 4, "speculative_decoding": true,'
+        ' "thinking": true, "thinking_budget": 5}}'
     )
     self.assertEqual(
         config.load_config(),
@@ -90,6 +91,8 @@ class ConfigTest(parameterized.TestCase):
                 seed=12345,
                 gpu_decode_steps_per_sync=4,
                 speculative_decoding=True,
+                thinking=True,
+                thinking_budget=5,
             )
         ),
     )
@@ -199,6 +202,21 @@ class ConfigTest(parameterized.TestCase):
           "speculative_decoding_not_bool",
           '{"default": {"speculative_decoding": "true"}}',
           "default.speculative_decoding: 'true' is not of type 'boolean'",
+      ),
+      (
+          "thinking_not_bool",
+          '{"default": {"thinking": "true"}}',
+          "default.thinking: 'true' is not of type 'boolean'",
+      ),
+      (
+          "thinking_budget_not_int",
+          '{"default": {"thinking_budget": "ten"}}',
+          "default.thinking_budget: 'ten' is not of type 'integer'",
+      ),
+      (
+          "thinking_budget_invalid",
+          '{"default": {"thinking_budget": -2}}',
+          "default.thinking_budget: -2 is less than the minimum of -1",
       ),
   )
   def test_get_config_invalid_schema(self, json_data, expected_error):
@@ -312,6 +330,8 @@ class ConfigTest(parameterized.TestCase):
                   "seed": 12345,
                   "gpu_decode_steps_per_sync": 4,
                   "speculative_decoding": True,
+                  "thinking": True,
+                  "thinking_budget": 5,
               },
               "models": {
                   "m1": {"cpu_thread_count": 8, "cache": "disk"},
@@ -334,6 +354,18 @@ class ConfigTest(parameterized.TestCase):
       (
           "invalid_speculative_bool",
           {"default": {"speculative_decoding": "true"}},
+      ),
+      (
+          "invalid_thinking_bool",
+          {"default": {"thinking": "true"}},
+      ),
+      (
+          "invalid_thinking_budget_type",
+          {"default": {"thinking_budget": "five"}},
+      ),
+      (
+          "invalid_thinking_budget_min",
+          {"default": {"thinking_budget": -2}},
       ),
       ("invalid_models_type", {"models": []}),
       ("invalid_model_entry_type", {"models": {"m1": 123}}),

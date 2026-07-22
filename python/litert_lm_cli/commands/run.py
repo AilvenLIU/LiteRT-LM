@@ -231,6 +231,10 @@ def run_interactive(
         temperature, model_obj, "temperature"
     )
     seed = model.resolve_config_option(seed, model_obj, "seed")
+    thinking = model.resolve_config_option(thinking, model_obj, "thinking")
+    thinking_budget = model.resolve_config_option(
+        thinking_budget, model_obj, "thinking_budget"
+    )
 
     backend_val = model.parse_backend(
         backend,
