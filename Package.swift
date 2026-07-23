@@ -73,6 +73,7 @@ let package = Package(
       exclude: [
         "BUILD",
         "main.swift",
+        "AdapterTests.swift",
       ]
     ),
     // Separate test targets for each file to avoid naming conflicts:

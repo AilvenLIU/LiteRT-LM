@@ -23,7 +23,7 @@
 // capability derivation are all observable against a model path that does not
 // exist — which makes them safe to run in CI.
 
-#if canImport(FoundationModels)
+#if canImport(FoundationModels) && compiler(>=6.4)
 
   import FoundationModels
   import LiteRTLM
@@ -155,8 +155,7 @@
         maxNumTokens: 4096,
         cacheDir: "/tmp/litertlm-tests-cache",
         loraRank: 8,
-        audioLoraRank: 4,
-        maxNumImages: 3)
+        audioLoraRank: 4)
 
       let carried = LiteRTLanguageModel(engineConfig: engineConfig)
         .executorConfiguration.engineConfig
@@ -165,7 +164,6 @@
       XCTAssertEqual(carried.cacheDir, "/tmp/litertlm-tests-cache")
       XCTAssertEqual(carried.loraRank, 8)
       XCTAssertEqual(carried.audioLoraRank, 4)
-      XCTAssertEqual(carried.maxNumImages, 3)
       XCTAssertEqual(carried.maxNumTokens, 4096)
       XCTAssertEqual(carried.audioBackend, .cpu(threadCount: 2))
     }

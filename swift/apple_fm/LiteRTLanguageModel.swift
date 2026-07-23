@@ -58,7 +58,7 @@
 
     /// Build from an `EngineConfig` (the primary initializer). The whole config is
     /// carried through to the engine verbatim — including `cacheDir`, `loraRank`,
-    /// `audioLoraRank` and `maxNumImages`.
+    /// and `audioLoraRank`.
     ///
     /// - Parameters:
     ///   - engineConfig: How to build the LiteRT engine.
