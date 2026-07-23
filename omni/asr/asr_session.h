@@ -16,7 +16,10 @@
 #define THIRD_PARTY_ODML_LITERT_LM_OMNI_ASR_ASR_SESSION_H_
 
 #include <memory>
+#include <vector>
 
+#include "absl/functional/any_invocable.h"  // from @com_google_absl
+#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "omni/asr/audio_preprocessor.h"
 #include "omni/asr/audio_source.h"
@@ -44,14 +47,17 @@ class AsrSession {
   // Resets session and component state for a new audio stream.
   void Reset();
 
-  // Processes the next audio chunk from AudioSource.
+  // Processes the next audio chunk from AudioSource synchronously.
   // Returns absl::OutOfRangeError when audio stream ends.
   absl::StatusOr<TextMerger::MergeResult> ProcessNextChunk();
 
-  // TODO: b/524681030 - Add async API, e.g.
-  //    absl::Status ProcessNextChunkAsync(
-  //         absl::AnyInvocable<void(absl::StatusOr<TextMerger::MergeResult>)>
-  //         callback);
+  // Processes the next audio chunk from AudioSource asynchronously.
+  // Note: Callbacks can be invoked on any thread, and may be called
+  // synchronously before returning on the same thread especially on error.
+  // It is the caller's responsibility to synchronize resources properly.
+  void ProcessNextChunkAsync(
+      absl::AnyInvocable<void(absl::StatusOr<TextMerger::MergeResult>) &&>
+          callback);
 
   // Flushes remaining unconfirmed text at stream end.
   absl::StatusOr<TextMerger::MergeResult> Flush();

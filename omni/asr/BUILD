@@ -21,6 +21,8 @@ cc_library(
     name = "audio_source",
     hdrs = ["audio_source.h"],
     deps = [
+        "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
     ],
 )
@@ -29,6 +31,8 @@ cc_library(
     name = "audio_preprocessor",
     hdrs = ["audio_preprocessor.h"],
     deps = [
+        "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/types:span",
     ],
@@ -38,6 +42,8 @@ cc_library(
     name = "speech_decoder",
     hdrs = ["speech_decoder.h"],
     deps = [
+        "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/types:span",
     ],
@@ -116,6 +122,7 @@ cc_library(
         ":detokenizer",
         ":speech_decoder",
         ":text_merger",
+        "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@litert//litert/cc:litert_macros",
@@ -134,6 +141,7 @@ cc_test(
         ":speech_decoder",
         ":text_merger",
         "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/types:span",

@@ -16,13 +16,29 @@
 
 #include <memory>
 #include <utility>
+#include <vector>
 
+#include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "litert/cc/litert_macros.h"  // from @litert
+#include "omni/asr/detokenizer.h"
+#include "omni/asr/speech_decoder.h"
 #include "omni/asr/text_merger.h"
 
 namespace litert_lm::omni::asr {
+namespace {
+
+#define CALL_CALLBACK_IF_ERROR(cb, status_expr) \
+  do {                                          \
+    const auto& _status_val = (status_expr);    \
+    if (!_status_val.ok()) {                    \
+      std::move(cb)(_status_val.status());      \
+      return;                                   \
+    }                                           \
+  } while (0)
+
+}  // namespace
 
 absl::StatusOr<std::unique_ptr<AsrSession>> AsrSession::Create(
     Components components) {
@@ -48,6 +64,14 @@ absl::StatusOr<std::unique_ptr<AsrSession>> AsrSession::Create(
 AsrSession::AsrSession(Components components)
     : components_(std::move(components)) {}
 
+void AsrSession::Reset() {
+  components_.audio_source->Reset();
+  components_.preprocessor->Reset();
+  components_.speech_decoder->Reset();
+  components_.detokenizer->Reset();
+  components_.text_merger->Reset();
+}
+
 absl::StatusOr<TextMerger::MergeResult> AsrSession::ProcessNextChunk() {
   LITERT_ASSIGN_OR_RETURN(auto pcm_chunk,
                           components_.audio_source->GetNextChunk());
@@ -60,10 +84,30 @@ absl::StatusOr<TextMerger::MergeResult> AsrSession::ProcessNextChunk() {
   return components_.text_merger->Merge(words);
 }
 
-void AsrSession::Reset() {
-  components_.preprocessor->Reset();
-  components_.speech_decoder->Reset();
-  components_.text_merger->Reset();
+void AsrSession::ProcessNextChunkAsync(
+    absl::AnyInvocable<void(absl::StatusOr<TextMerger::MergeResult>) &&>
+        callback) {
+  components_.audio_source->GetNextChunkAsync(
+      [this, cb = std::move(callback)](
+          absl::StatusOr<std::vector<float>> pcm_chunk) mutable {
+        CALL_CALLBACK_IF_ERROR(cb, pcm_chunk);
+        components_.preprocessor->PreprocessAsync(
+            *pcm_chunk,
+            [this, cb = std::move(cb)](
+                absl::StatusOr<std::vector<float>> mel_features) mutable {
+              CALL_CALLBACK_IF_ERROR(cb, mel_features);
+              components_.speech_decoder->DecodeAsync(
+                  *mel_features,
+                  [this, cb = std::move(cb)](
+                      absl::StatusOr<std::vector<SpeechDecoder::DecodedToken>>
+                          tokens) mutable {
+                    CALL_CALLBACK_IF_ERROR(cb, tokens);
+                    auto words = components_.detokenizer->Detokenize(*tokens);
+                    CALL_CALLBACK_IF_ERROR(cb, words);
+                    std::move(cb)(components_.text_merger->Merge(*words));
+                  });
+            });
+      });
 }
 
 absl::StatusOr<TextMerger::MergeResult> AsrSession::Flush() {

@@ -21,6 +21,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -40,11 +41,20 @@ class DummyAudioSource : public AudioSource {
   explicit DummyAudioSource(std::vector<std::vector<float>> chunks)
       : chunks_(std::move(chunks)) {}
 
+  void Reset() override {}
+
   absl::StatusOr<std::vector<float>> GetNextChunk() override {
     if (chunk_index_ >= chunks_.size()) {
       return absl::OutOfRangeError("End of audio stream reached.");
     }
     return chunks_[chunk_index_++];
+  }
+
+  void GetNextChunkAsync(
+      absl::AnyInvocable<void(absl::StatusOr<std::vector<float>>) &&> callback)
+      override {
+    auto res = GetNextChunk();
+    std::move(callback)(res);
   }
 
   int GetSampleRateHz() const override { return 16000; }
@@ -64,6 +74,14 @@ class DummyAudioPreprocessor : public AudioPreprocessor {
       absl::Span<const float> pcm_samples) override {
     return std::vector<float>(pcm_samples.begin(), pcm_samples.end());
   }
+
+  void PreprocessAsync(
+      absl::Span<const float> pcm_samples,
+      absl::AnyInvocable<void(absl::StatusOr<std::vector<float>>) &&> callback)
+      override {
+    auto res = Preprocess(pcm_samples);
+    std::move(callback)(res);
+  }
 };
 
 // Dummy SpeechDecoder returning dummy DecodedToken IDs.
@@ -80,12 +98,23 @@ class DummySpeechDecoder : public SpeechDecoder {
     }
     return tokens;
   }
+
+  void DecodeAsync(
+      absl::Span<const float> mel_features,
+      absl::AnyInvocable<
+          void(absl::StatusOr<std::vector<SpeechDecoder::DecodedToken>>) &&>
+          callback) override {
+    auto res = Decode(mel_features);
+    std::move(callback)(res);
+  }
 };
 
 // Dummy Detokenizer mapping token IDs to string words with std::optional
 // timestamp.
 class DummyDetokenizer : public Detokenizer {
  public:
+  void Reset() override {}
+
   absl::StatusOr<std::vector<Detokenizer::Word>> Detokenize(
       absl::Span<const SpeechDecoder::DecodedToken> tokens) override {
     std::vector<Detokenizer::Word> words;
@@ -137,6 +166,52 @@ TEST(AsrSessionTest, FullSessionEndToEndFlow) {
   ASSERT_TRUE(res_flush.ok());
   EXPECT_EQ(res_flush->confirmed_text, "word_2 word_3");
   EXPECT_EQ(res_flush->unconfirmed_text, "");
+}
+
+TEST(AsrSessionTest, ProcessNextChunkAsyncFlow) {
+  std::vector<std::vector<float>> chunks = {
+      {1.0f, 2.0f},
+      {2.0f, 3.0f},
+  };
+
+  AsrSession::Components components;
+  components.audio_source = std::make_unique<DummyAudioSource>(chunks);
+  components.preprocessor = std::make_unique<DummyAudioPreprocessor>();
+  components.speech_decoder = std::make_unique<DummySpeechDecoder>();
+  components.detokenizer = std::make_unique<DummyDetokenizer>();
+  components.text_merger = std::make_unique<LevenshteinTextMerger>();
+
+  auto session_status = AsrSession::Create(std::move(components));
+  ASSERT_TRUE(session_status.ok());
+  auto session = std::move(*session_status);
+
+  // Async Chunk 1
+  bool called1 = false;
+  session->ProcessNextChunkAsync([&called1](auto res) {
+    called1 = true;
+    ASSERT_TRUE(res.ok());
+    EXPECT_EQ(res->confirmed_text, "");
+    EXPECT_EQ(res->unconfirmed_text, "word_1 word_2");
+  });
+  EXPECT_TRUE(called1);
+
+  // Async Chunk 2
+  bool called2 = false;
+  session->ProcessNextChunkAsync([&called2](auto res) {
+    called2 = true;
+    ASSERT_TRUE(res.ok());
+    EXPECT_EQ(res->confirmed_text, "word_1");
+    EXPECT_EQ(res->unconfirmed_text, "word_2 word_3");
+  });
+  EXPECT_TRUE(called2);
+
+  // Async Chunk 3 (End of stream)
+  bool called3 = false;
+  session->ProcessNextChunkAsync([&called3](auto res) {
+    called3 = true;
+    EXPECT_TRUE(absl::IsOutOfRange(res.status()));
+  });
+  EXPECT_TRUE(called3);
 }
 
 TEST(AsrSessionTest, FailsWhenMissingComponent) {

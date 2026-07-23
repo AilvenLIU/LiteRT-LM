@@ -36,6 +36,9 @@ class Detokenizer {
 
   virtual ~Detokenizer() = default;
 
+  // Resets internal cached state for a new audio stream.
+  virtual void Reset() = 0;
+
   // Converts token IDs into words with timestamps.
   virtual absl::StatusOr<std::vector<Word>> Detokenize(
       absl::Span<const SpeechDecoder::DecodedToken> tokens) = 0;
