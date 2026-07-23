@@ -101,7 +101,7 @@ export class LitertLmSettingsEditor extends LitElement {
   } satisfies CpuConfig;
 
   private gpuConfig: GpuConfig = {
-    max_top_k: 1,
+    max_top_k: 64,
     external_tensor_mode: false,
   } satisfies GpuConfig;
 
@@ -111,7 +111,7 @@ export class LitertLmSettingsEditor extends LitElement {
     num_decode_steps_per_sync: 1,
     sequence_batch_size: 0,
     supported_lora_ranks: [],
-    max_top_k: 1,
+    max_top_k: 64,
     enable_decode_logits: false,
     enable_external_embeddings: false,
     use_submodel: false,

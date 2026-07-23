@@ -62,9 +62,9 @@ struct GpuArtisanConfig {
   // Maximum top k, which is the max Top-K value supported for all
   // sessions created with the engine, used by GPU only. If a session with
   // Top-K value larger than this is being asked to be created, it will be
-  // rejected(throw error). The max top k will be 1, which means only greedy
-  // decoding is supported for any sessions created with this engine.
-  uint32_t max_top_k = 1;
+  // rejected(throw error). The max top k will be 64, which means limited
+  // sampling is supported by default.
+  uint32_t max_top_k = 64;
 
   // Enables decode logits.
   // AiCore uses decode logits, so this is enabled for AiCore.
@@ -108,10 +108,10 @@ struct GpuConfig {
   // Maximum top k, which is the max Top-K value supported for all
   // sessions created with the engine, used by GPU only. If a session with
   // Top-K value larger than this is being asked to be created, it will be
-  // rejected(throw error). The default max top k will be 1, which
-  // means only greedy decoding is supported for any sessions created with
+  // rejected(throw error). The default max top k will be 64, which
+  // means limited sampling is supported for any sessions created with
   // this engine.
-  uint32_t max_top_k = 1;
+  uint32_t max_top_k = 64;
 
   // Whether to use external tensor mode.
   bool external_tensor_mode = false;

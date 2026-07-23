@@ -222,8 +222,8 @@ absl::StatusOr<LlmExecutorSettings> LlmExecutorSettings::CreateDefault(
     settings.SetBackendConfig(config);
   } else if (backend == Backend::GPU) {
     GpuConfig config;
-    // Default max top k to 1 for GPU.
-    config.max_top_k = 1;
+    // Default max top k to 64 for GPU.
+    config.max_top_k = 64;
     settings.SetBackendConfig(config);
   } else if (backend == Backend::NPU) {
     settings.SetBackendConfig(NpuConfig());
