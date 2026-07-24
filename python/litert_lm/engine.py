@@ -58,7 +58,7 @@ class Engine(interfaces.AbstractEngine):
       ) = interfaces.Backend.CPU(),
       max_num_tokens: int | None = None,
       max_num_images: int | None = None,
-      cache_dir: str = "",
+      cache_dir: str | None = None,
       vision_backend: (
           interfaces.Backend | type[interfaces.Backend] | None
       ) = None,

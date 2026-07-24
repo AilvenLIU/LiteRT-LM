@@ -382,7 +382,7 @@ class AbstractEngine(abc.ABC):
   backend: Backend
   max_num_tokens: int | None = None
   max_num_images: int | None = None
-  cache_dir: str = ""
+  cache_dir: str | None = None
   vision_backend: Backend | None = None
   audio_backend: Backend | None = None
   enable_speculative_decoding: bool | None = None
@@ -806,7 +806,7 @@ class AbstractBenchmark(abc.ABC):
   prefill_tokens: int = 256
   decode_tokens: int = 256
   max_num_tokens: int | None = None
-  cache_dir: str = ""
+  cache_dir: str | None = None
   enable_speculative_decoding: bool | None = None
   prompt: str = "How are you"
   activation_data_type: ActivationDataType | None = None
