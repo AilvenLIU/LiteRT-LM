@@ -30,6 +30,7 @@ namespace litert::omni::tts {
 // Generic acoustic prediction output payload for acoustic predictor.
 struct AcousticOutput {
   std::vector<std::vector<int>> rvq_frames;
+  std::vector<float> codec_features;
 };
 
 // Abstract interface for acoustic feature prediction (e.g. Talker LM /
