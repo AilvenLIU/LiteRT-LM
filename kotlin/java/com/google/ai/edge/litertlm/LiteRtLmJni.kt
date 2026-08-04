@@ -386,4 +386,16 @@ internal object LiteRtLmJni {
 
   /** Returns true if the loaded LiteRT-LM file supports speculative decoding. */
   external fun nativeHasSpeculativeDecodingSupport(capabilitiesPointer: Long): Boolean
+
+  /** Creates a new LiteRT-LM embedding engine. */
+  external fun nativeCreateEmbeddingEngine(modelPath: String, backend: String): Long
+
+  /** Deletes a LiteRT-LM embedding engine. */
+  external fun nativeDeleteEmbeddingEngine(enginePointer: Long)
+
+  /** Computes text embedding using LiteRT-LM embedding engine. */
+  external fun nativeComputeTextEmbedding(enginePointer: Long, text: String): FloatArray
+
+  /** Computes image embedding using LiteRT-LM embedding engine. */
+  external fun nativeComputeImageEmbedding(enginePointer: Long, imageBytes: ByteArray): FloatArray
 }
