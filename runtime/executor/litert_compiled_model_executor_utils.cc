@@ -268,6 +268,33 @@ absl::StatusOr<SortedPrefillSignatureMap> GetPrefillRunnerSetFromModel(
   return prefill_runner_set;
 }
 
+absl::StatusOr<SortedPrefillSignatureMap> GetPrefillRunnerSetFromModel(
+    CompiledModel& model, absl::string_view signature_name_base,
+    absl::string_view input_positions_name) {
+  SortedPrefillSignatureMap prefill_runner_set;
+  LITERT_ASSIGN_OR_RETURN(auto signatures, model.GetSignatures());
+  for (auto& signature : signatures) {
+    if (auto signature_key = signature.Key();
+        absl::StartsWith(signature_key, signature_name_base)) {
+      LITERT_ASSIGN_OR_RETURN(auto ranked_tensor_type,
+                              signature.InputTensorType(input_positions_name));
+      if (ranked_tensor_type.Layout().Rank() == 2) {
+        // [batch_size, max_seq_len]
+        prefill_runner_set[ranked_tensor_type.Layout().Dimensions()[1]] =
+            std::string(signature_key);
+      } else if (ranked_tensor_type.Layout().Rank() == 1) {
+        // [max_seq_len]
+        prefill_runner_set[ranked_tensor_type.Layout().Dimensions()[0]] =
+            std::string(signature_key);
+      } else {
+        return absl::FailedPreconditionError(
+            "Unsupported input tokens tensor dimension.");
+      }
+    }
+  }
+  return prefill_runner_set;
+}
+
 absl::StatusOr<std::vector<std::pair<std::string, int>>>
 GetOptimizedPrefillWorkGroups(
     const SortedPrefillSignatureMap& prefill_runner_set, int input_length,
