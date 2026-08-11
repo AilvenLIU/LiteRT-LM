@@ -29,6 +29,7 @@
 #include "runtime/executor/embedding_executor_base.h"
 #include "runtime/executor/llm_executor_io_types.h"
 #include "runtime/executor/vision_executor.h"
+#include "runtime/proto/embedding_metadata.pb.h"
 #include "runtime/util/litert_util.h"
 #include "support/tokenizer/tokenizer.h"
 
@@ -57,7 +58,8 @@ class EmbeddingEngineImpl : public EmbeddingEngine {
       std::unique_ptr<EmbeddingExecutorBase> embedding_executor,
       std::unique_ptr<VisionExecutor> vision_executor = nullptr,
       std::unique_ptr<AudioExecutor> audio_executor = nullptr,
-      std::optional<BenchmarkInfo> benchmark_info = std::nullopt);
+      std::optional<BenchmarkInfo> benchmark_info = std::nullopt,
+      std::optional<proto::EmbeddingMetadata> metadata = std::nullopt);
 
   ~EmbeddingEngineImpl() override = default;
 
@@ -77,6 +79,10 @@ class EmbeddingEngineImpl : public EmbeddingEngine {
   // Returns the mutable benchmark info of the engine.
   BenchmarkInfo* GetMutableBenchmarkInfo() override;
 
+  // Returns the embedding metadata of the engine.
+  const std::optional<proto::EmbeddingMetadata>& GetEmbeddingMetadata()
+      const override;
+
  private:
   absl::StatusOr<ExecutorInputs> ProcessAndCombineContents(
       const std::vector<InputData>& contents);
@@ -90,6 +96,7 @@ class EmbeddingEngineImpl : public EmbeddingEngine {
   std::unique_ptr<VisionExecutor> vision_executor_;
   std::unique_ptr<AudioExecutor> audio_executor_;
   std::optional<BenchmarkInfo> benchmark_info_;
+  std::optional<proto::EmbeddingMetadata> metadata_;
 };
 
 }  // namespace litert::lm

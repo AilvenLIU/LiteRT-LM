@@ -40,6 +40,7 @@
 #include "runtime/engine/embedding_engine_settings.h"
 #include "runtime/engine/io_types.h"
 #include "runtime/executor/executor_settings_base.h"
+#include "runtime/proto/embedding_metadata.pb.h"
 #include "runtime/util/litert_lm_loader.h"
 #include "runtime/util/litert_util.h"
 #include "runtime/util/scoped_file.h"
@@ -127,6 +128,11 @@ class FakeModelResources : public ModelResources {
 
   absl::StatusOr<const proto::LlmMetadata*> GetLlmMetadata() override {
     return delegate_->GetLlmMetadata();
+  }
+
+  absl::StatusOr<const proto::EmbeddingMetadata*> GetEmbeddingMetadata()
+      override {
+    return delegate_->GetEmbeddingMetadata();
   }
 
   absl::StatusOr<const proto::ExecutorMetadata*> GetExecutorMetadata()
@@ -282,6 +288,31 @@ TEST(EmbeddingEngineImplTest, CreateWithSettingsSuccess) {
 
   auto engine = EmbeddingEngineImpl::Create(std::move(settings));
   EXPECT_OK(engine.status());
+}
+
+TEST(EmbeddingEngineImplTest, GetEmbeddingMetadataFromSettings) {
+  const std::string& model_path = (std::filesystem::path(::testing::SrcDir()) /
+                                   std::string(kTestEmbeddingModelPath))
+                                      .string();
+  ASSERT_OK_AND_ASSIGN(auto model_assets, ModelAssets::Create(model_path));
+  ASSERT_OK_AND_ASSIGN(auto resources, CreateTestModelResources(model_path));
+  ASSERT_OK_AND_ASSIGN(auto env, CreateTestEnvironment());
+  auto tokenizer = std::make_unique<MockTokenizer>();
+  ASSERT_OK_AND_ASSIGN(auto settings, EmbeddingEngineSettings::CreateDefault(
+                                          model_assets, Backend::CPU));
+
+  proto::EmbeddingMetadata expected_metadata;
+  expected_metadata.mutable_embedding_model_type();
+  settings.GetMutableEmbeddingMetadata() = expected_metadata;
+
+  ASSERT_OK_AND_ASSIGN(
+      auto engine,
+      EmbeddingEngineImpl::Create(std::move(resources), std::move(env),
+                                  std::move(tokenizer), std::move(settings)));
+
+  const auto& metadata = engine->GetEmbeddingMetadata();
+  ASSERT_TRUE(metadata.has_value());
+  EXPECT_TRUE(metadata->has_embedding_model_type());
 }
 
 TEST(EmbeddingEngineImplTest, ComputeEmbeddingSuccess) {

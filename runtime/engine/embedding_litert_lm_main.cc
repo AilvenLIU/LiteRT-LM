@@ -86,19 +86,26 @@ using ::litert::lm::ModelResources;
 using ::litert::lm::ModelType;
 using ::litert::lm::OwnedEnvironment;
 using ::litert::lm::ScopedFile;
+using ::litert::lm::proto::EmbeddingMetadata;
+using ::litert::support::ImagePreprocessor;
+using ::litert::support::ImagePreprocessParameter;
 using ::litert::support::Tokenizer;
 
 absl::StatusOr<std::optional<InputText>> GetStartOfImageToken(
-    ModelResources& resources) {
-  auto metadata = resources.GetEmbeddingMetadata();
-  if (!metadata.ok() || *metadata == nullptr) {
+    const std::optional<EmbeddingMetadata>& metadata) {
+  if (!metadata.has_value() || !metadata->has_embedding_model_type()) {
     return std::nullopt;
   }
-  const auto* embedding_metadata = *metadata;
-  if (!embedding_metadata->has_embedding_model_type()) {
+  const auto& model_type = metadata->embedding_model_type();
+  return std::nullopt;
+}
+
+absl::StatusOr<std::optional<ImagePreprocessParameter>>
+GetImagePreprocessParameter(const std::optional<EmbeddingMetadata>& metadata) {
+  if (!metadata.has_value() || !metadata->has_embedding_model_type()) {
     return std::nullopt;
   }
-  const auto& model_type = embedding_metadata->embedding_model_type();
+  const auto& model_type = metadata->embedding_model_type();
   return std::nullopt;
 }
 
@@ -175,14 +182,18 @@ absl::Status MainHelper(int argc, char** argv) {
       auto settings, EmbeddingEngineSettings::CreateDefault(
                          model_assets, backend, vision_backend, audio_backend));
 
-  LITERT_ASSIGN_OR_RETURN(std::optional<InputText> start_of_image_token,
-                          GetStartOfImageToken(*resources));
-
   std::cout << "Initializing EmbeddingEngine..." << std::endl;
   LITERT_ASSIGN_OR_RETURN(
       auto engine,
       EmbeddingEngineImpl::Create(std::move(resources), std::move(owned_env),
                                   std::move(tokenizer), std::move(settings)));
+
+  const auto& embedding_metadata = engine->GetEmbeddingMetadata();
+  LITERT_ASSIGN_OR_RETURN(std::optional<InputText> start_of_image_token,
+                          GetStartOfImageToken(embedding_metadata));
+  LITERT_ASSIGN_OR_RETURN(
+      std::optional<ImagePreprocessParameter> image_preprocess_parameter,
+      GetImagePreprocessParameter(embedding_metadata));
 
   const std::string prompt = absl::GetFlag(FLAGS_input_prompt);
   const std::string image_path = absl::GetFlag(FLAGS_image_path);
@@ -209,23 +220,19 @@ absl::Status MainHelper(int argc, char** argv) {
                             std::istreambuf_iterator<char>());
     InputImage raw_image(std::move(image_bytes));
 
-    auto preprocessor = ::litert::support::ImagePreprocessor::Create();
+    auto preprocessor = ImagePreprocessor::Create();
     if (preprocessor == nullptr) {
       return absl::InternalError("Failed to create image preprocessor.");
     }
 
-    ::litert::support::ImagePreprocessParameter preprocess_param;
-    preprocess_param.SetPatchifyConfig(
-        ::litert::support::ImagePreprocessParameter::PatchifyConfig{
-            .patch_width = 16,
-            .patch_height = 16,
-            .max_num_patches = 2520,
-            .pooling_kernel_size = 3,
-        });
+    if (!image_preprocess_parameter.has_value()) {
+      return absl::InvalidArgumentError(
+          "Image preprocessing parameter is not found in embedding metadata.");
+    }
 
     LITERT_ASSIGN_OR_RETURN(
         InputImage processed_image,
-        preprocessor->Preprocess(raw_image, preprocess_param));
+        preprocessor->Preprocess(raw_image, *image_preprocess_parameter));
 
     if (start_of_image_token.has_value()) {
       contents.emplace_back(std::move(*start_of_image_token));

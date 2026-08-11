@@ -40,6 +40,7 @@
 #include "runtime/executor/llm_executor_io_types.h"
 #include "runtime/executor/vision_executor.h"
 #include "runtime/executor/vision_litert_compiled_model_executor.h"
+#include "runtime/proto/embedding_metadata.pb.h"
 #include "runtime/proto/engine.pb.h"
 #include "runtime/util/convert_tensor_buffer.h"
 #include "runtime/util/executor_data_util.h"
@@ -115,6 +116,16 @@ absl::StatusOr<std::unique_ptr<EmbeddingEngine>> EmbeddingEngineImpl::Create(
         BenchmarkInfo::InitPhase::kExecutor));
   }
 
+  // Initialize metadata.
+  std::optional<proto::EmbeddingMetadata> metadata =
+      settings.GetEmbeddingMetadata();
+  if (!metadata.has_value()) {
+    auto metadata_status = resources->GetEmbeddingMetadata();
+    if (metadata_status.ok() && *metadata_status != nullptr) {
+      metadata = **metadata_status;
+    }
+  }
+
   // Initialize the vision executor.
   std::unique_ptr<VisionExecutor> vision_executor = nullptr;
   if (resources->GetTFLiteModel(ModelType::kTfLiteVisionEncoder).ok() &&
@@ -150,7 +161,7 @@ absl::StatusOr<std::unique_ptr<EmbeddingEngine>> EmbeddingEngineImpl::Create(
   return std::make_unique<EmbeddingEngineImpl>(
       std::move(env), std::move(tokenizer), std::move(embedding_executor),
       std::move(vision_executor), std::move(audio_executor),
-      std::move(benchmark_info));
+      std::move(benchmark_info), std::move(metadata));
 }
 
 // static
@@ -214,13 +225,15 @@ EmbeddingEngineImpl::EmbeddingEngineImpl(
     std::unique_ptr<EmbeddingExecutorBase> embedding_executor,
     std::unique_ptr<VisionExecutor> vision_executor,
     std::unique_ptr<AudioExecutor> audio_executor,
-    std::optional<BenchmarkInfo> benchmark_info)
+    std::optional<BenchmarkInfo> benchmark_info,
+    std::optional<proto::EmbeddingMetadata> metadata)
     : env_(std::move(env)),
       tokenizer_(std::move(tokenizer)),
       embedding_executor_(std::move(embedding_executor)),
       vision_executor_(std::move(vision_executor)),
       audio_executor_(std::move(audio_executor)),
-      benchmark_info_(std::move(benchmark_info)) {}
+      benchmark_info_(std::move(benchmark_info)),
+      metadata_(std::move(metadata)) {}
 
 absl::StatusOr<ExecutorInputs> EmbeddingEngineImpl::ProcessAndCombineContents(
     const std::vector<InputData>& contents) {
@@ -426,6 +439,11 @@ BenchmarkInfo* EmbeddingEngineImpl::GetMutableBenchmarkInfo() {
     benchmark_info_ = BenchmarkInfo(proto::BenchmarkParams());
   }
   return &(*benchmark_info_);
+}
+
+const std::optional<proto::EmbeddingMetadata>&
+EmbeddingEngineImpl::GetEmbeddingMetadata() const {
+  return metadata_;
 }
 
 }  // namespace litert::lm
