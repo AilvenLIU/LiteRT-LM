@@ -183,7 +183,8 @@ absl::Status KokoroAcousticStage::ScheduleInternal() {
 
   // Step 1: Phonemize raw input text using the persistent KokoroPhonemizer into
   // token IDs.
-  std::vector<int> full_token_ids = phonemizer_->TextToPhonemeIds(input_text);
+  LITERT_ASSIGN_OR_RETURN(std::vector<int> full_token_ids,
+                          phonemizer_->TextToPhonemeIds(input_text));
 
   // Step 2: Determine bucketing capacity and slice token IDs into sentence
   // chunks.

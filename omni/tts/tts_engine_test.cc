@@ -17,6 +17,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -81,8 +82,7 @@ class DummyTextFrontend
 class DummyAcousticPredictor
     : public SingleThreadedStageWithDeque<DummyAcousticOutput> {
  public:
-  explicit DummyAcousticPredictor(
-      Stage<DummyFrontendOutput>* text_frontend)
+  explicit DummyAcousticPredictor(Stage<DummyFrontendOutput>* text_frontend)
       : text_frontend_(*text_frontend) {}
 
  protected:
@@ -111,8 +111,7 @@ class DummyAcousticPredictor
 class DummyLatentDecoder
     : public SingleThreadedStageWithDeque<DummyLatentOutput> {
  public:
-  explicit DummyLatentDecoder(
-      Stage<DummyAcousticOutput>* acoustic_predictor)
+  explicit DummyLatentDecoder(Stage<DummyAcousticOutput>* acoustic_predictor)
       : acoustic_predictor_(*acoustic_predictor) {}
 
  protected:
@@ -199,7 +198,7 @@ TtsSession::Components CreateDummyComponents() {
 
 TEST(TtsEngineTest, CreateFailsWithUnsupportedModelType) {
   TtsEngineSettings settings;
-  settings.model_type = ModelType::UNSPECIFIED;
+  settings.model_config = std::monostate{};
 
   auto engine = TtsEngine::Create(settings);
   EXPECT_FALSE(engine.ok());
