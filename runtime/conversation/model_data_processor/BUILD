@@ -472,6 +472,7 @@ cc_library(
         ":gemma3_data_processor_config",
         ":model_data_processor",
         ":multimodal_processor_helper",
+        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
@@ -519,6 +520,7 @@ cc_test(
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
         "@nlohmann_json//:json",
         "@litert//litert/cc:litert_layout",
         "//runtime/components:prompt_template",
@@ -528,6 +530,7 @@ cc_test(
         "//runtime/util:test_utils",
         "//support/preprocessor:audio_preprocessor_miniaudio",
         "//support/preprocessor:image_preprocessor",
+        "//support/tokenizer",
     ],
 )
 
@@ -581,11 +584,13 @@ cc_test(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
         "@nlohmann_json//:json",
         "//runtime/components:prompt_template",
         "//runtime/conversation:io_types",
         "//runtime/engine:io_types",
         "//runtime/util:test_utils",
+        "//support/tokenizer",
     ],
 )
 

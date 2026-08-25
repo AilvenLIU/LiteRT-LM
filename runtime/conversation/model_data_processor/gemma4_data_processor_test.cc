@@ -25,6 +25,8 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "nlohmann/json.hpp"  // from @nlohmann_json
 #include "runtime/components/prompt_template.h"
 #include "runtime/conversation/io_types.h"
@@ -32,6 +34,7 @@
 #include "runtime/conversation/model_data_processor/test_utils.h"
 #include "runtime/engine/io_types.h"
 #include "runtime/util/test_utils.h"  // NOLINT
+#include "support/tokenizer/tokenizer.h"
 
 namespace litert::lm {
 namespace {
@@ -67,6 +70,24 @@ MATCHER_P(HasInputImage, max_num_patches, "") {
   }
   return true;
 }
+
+class FakeNonSentencePieceTokenizer : public ::litert::support::Tokenizer {
+ public:
+  ::litert::support::TokenizerType GetTokenizerType() const override {
+    return ::litert::support::TokenizerType::kHuggingFace;
+  }
+  absl::StatusOr<std::vector<int>> TextToTokenIds(
+      absl::string_view text) override {
+    return std::vector<int>{};
+  }
+  absl::StatusOr<int> TokenToId(absl::string_view token) override { return 0; }
+  absl::StatusOr<std::string> TokenIdsToText(
+      absl::Span<const int> token_ids, bool skip_special_tokens) override {
+    return "";
+  }
+  std::vector<std::string> GetTokens() const override { return {}; }
+  int GetVocabSize() const override { return 0; }
+};
 
 class Gemma4DataProcessorTest : public ::testing::Test {
  protected:
