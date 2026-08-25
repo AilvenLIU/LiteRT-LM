@@ -36,6 +36,7 @@
 #include "runtime/util/status_macros.h"
 #include "schema/core/litertlm_header_schema_generated.h"
 #include "schema/core/litertlm_read.h"
+#include "tflite/schema/schema_generated.h"  // from @litert
 
 namespace litert::lm::schema::capabilities {
 namespace {
@@ -50,6 +51,23 @@ std::string FormatFloatForReport(float val) {
     absl::StrAppend(&s, ".0");
   }
   return s;
+}
+
+// Check if the number is a magic number.
+// The number is a magic number if it is prime and greater than 10.
+bool IsMagicNumber(int64_t number) {
+  if (number < 11) {
+    return false;
+  }
+  if (number % 2 == 0) {
+    return false;
+  }
+  for (int64_t i = 3; i * i <= number; i += 2) {
+    if (number % i == 0) {
+      return false;
+    }
+  }
+  return true;
 }
 
 }  // namespace
@@ -75,6 +93,10 @@ absl::StatusOr<ModelCapabilities> InspectModel(std::istream& litertlm_stream) {
   uint64_t llm_metadata_begin = 0;
   uint64_t llm_metadata_end = 0;
 
+  bool found_main_tflite = false;
+  uint64_t main_tflite_begin = 0;
+  uint64_t main_tflite_end = 0;
+
   bool has_vision = false;
   bool has_audio = false;
   bool has_video = false;
@@ -91,6 +113,7 @@ absl::StatusOr<ModelCapabilities> InspectModel(std::istream& litertlm_stream) {
       llm_metadata_end = section->end_offset();
     } else if (section->data_type() == AnySectionDataType_TFLiteModel) {
       // Scan TFLite model attributes to detect media and speculative features.
+      bool is_adapter = false;
       if (const auto* items = section->items()) {
         for (size_t j = 0; j < items->size(); ++j) {
           const KeyValuePair* item = items->Get(j);
@@ -102,17 +125,26 @@ absl::StatusOr<ModelCapabilities> InspectModel(std::istream& litertlm_stream) {
             if (model_type == "tf_lite_vision_adapter" ||
                 model_type == "tf_lite_vision_encoder") {
               has_vision = true;
+              is_adapter = true;
             } else if (model_type == "tf_lite_audio_adapter" ||
                        model_type == "tf_lite_audio_encoder_hw") {
               has_audio = true;
+              is_adapter = true;
             } else if (model_type == "tf_lite_video_adapter" ||
                        model_type == "tf_lite_video_encoder") {
               has_video = true;
+              is_adapter = true;
             } else if (model_type == "tf_lite_mtp_drafter") {
               has_speculative_decoding = true;
+              is_adapter = true;
             }
           }
         }
+      }
+      if (!is_adapter) {
+        main_tflite_begin = section->begin_offset();
+        main_tflite_end = section->end_offset();
+        found_main_tflite = true;
       }
     }
   }
@@ -175,9 +207,60 @@ absl::StatusOr<ModelCapabilities> InspectModel(std::istream& litertlm_stream) {
                 max_num_patches / (pooling_kernel_size * pooling_kernel_size);
           }
         }
+        llm_cap.max_context_tokens = proto_metadata.max_num_tokens();
+        llm_cap.is_dynamic_context = IsMagicNumber(llm_cap.max_context_tokens);
       }
     }
   }
+
+  // 3. Inspect TFLite model for source of truth on context size.
+  if (found_main_tflite && main_tflite_end > main_tflite_begin) {
+    size_t size = main_tflite_end - main_tflite_begin;
+    litertlm_stream.seekg(main_tflite_begin);
+    auto buffer = std::make_unique<char[]>(size);
+    litertlm_stream.read(buffer.get(), size);
+    if (litertlm_stream) {
+      const tflite::Model* tflite_model = tflite::GetModel(buffer.get());
+      if (tflite_model) {
+        if (tflite_model->signature_defs()) {
+          for (const auto* sig : *tflite_model->signature_defs()) {
+            if (sig == nullptr || sig->signature_key() == nullptr) continue;
+            absl::string_view sig_key = sig->signature_key()->string_view();
+            if (absl::StartsWith(sig_key, "prefill")) {
+              if (sig->inputs()) {
+                for (const auto* input : *sig->inputs()) {
+                  if (input == nullptr || input->name() == nullptr) continue;
+                  absl::string_view input_name = input->name()->string_view();
+                  if (absl::StrContains(input_name, "mask")) {
+                    uint32_t tensor_idx = input->tensor_index();
+                    uint32_t subgraph_idx = sig->subgraph_index();
+                    if (tflite_model->subgraphs() &&
+                        subgraph_idx < tflite_model->subgraphs()->size()) {
+                      const auto* subgraph =
+                          tflite_model->subgraphs()->Get(subgraph_idx);
+                      if (subgraph && tensor_idx < subgraph->tensors()->size()) {
+                        const auto* tensor =
+                            subgraph->tensors()->Get(tensor_idx);
+                        if (tensor && tensor->shape()) {
+                          int rank = tensor->shape()->size();
+                          if (rank > 0) {
+                            int64_t dim = tensor->shape()->Get(rank - 1);
+                            llm_cap.max_context_tokens = dim;
+                            llm_cap.is_dynamic_context = IsMagicNumber(dim);
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   info.llm_capability = llm_cap;
 
   return info;
@@ -232,6 +315,9 @@ std::ostream& operator<<(std::ostream& os,
      << "  Sampler Top K:          " << llm_cap.default_sampler_params.k << "\n"
      << "  Sampler Top P:          "
      << FormatFloatForReport(llm_cap.default_sampler_params.p) << "\n"
+     << "  Max Context Tokens:     " << llm_cap.max_context_tokens << "\n"
+     << "  Is Dynamic Context:     "
+     << (llm_cap.is_dynamic_context ? "YES" : "NO") << "\n"
      << "  Input Modalities:       " << llm_cap.input_modalities << "\n";
   return os;
 }

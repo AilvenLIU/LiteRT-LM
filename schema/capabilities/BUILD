@@ -40,6 +40,7 @@ cc_library(
         "//runtime/util:litert_status_util",
         "//schema/core:litertlm_header_schema",
         "//schema/core:litertlm_read",
+        "@litert//tflite/schema:schema_fbs",
     ],
 )
 
