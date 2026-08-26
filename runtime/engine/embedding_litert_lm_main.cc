@@ -45,6 +45,7 @@
 #include "runtime/engine/embedding_engine_settings.h"
 #include "runtime/engine/io_types.h"
 #include "runtime/executor/executor_settings_base.h"
+#include "runtime/executor/executor_stats.h"
 #include "runtime/executor/litert_compiled_model_executor_utils.h"
 #include "runtime/util/litert_util.h"
 #include "runtime/util/scoped_file.h"
@@ -64,6 +65,8 @@ ABSL_FLAG(bool, use_mmap, true,
           "Whether to use memory-mapped file for model loading.");
 ABSL_FLAG(std::string, dispatch_library_dir, "",
           "Path to directory containing LiteRT dispatch libraries.");
+ABSL_FLAG(bool, benchmark, false,
+          "Whether to benchmark and collect latency and execution statistics.");
 
 namespace {
 
@@ -72,6 +75,7 @@ using ::litert::lm::BuildLiteRtCompiledModelResources;
 using ::litert::lm::EmbeddingEngineImpl;
 using ::litert::lm::EmbeddingEngineSettings;
 using ::litert::lm::EmbeddingResponse;
+using ::litert::lm::ExecutorStats;
 using ::litert::lm::InputData;
 using ::litert::lm::InputImage;
 using ::litert::lm::InputText;
@@ -197,6 +201,11 @@ absl::Status MainHelper(int argc, char** argv) {
     contents.emplace_back(InputImage(std::move(image_bytes)));
   }
 
+  const bool is_benchmark = absl::GetFlag(FLAGS_benchmark);
+  if (is_benchmark) {
+    LITERT_RETURN_IF_ERROR(engine->StartProfiling());
+  }
+
   auto response_result = engine->ComputeEmbedding(
       contents, {.normalize = absl::GetFlag(FLAGS_normalize)});
   if (!response_result.ok()) {
@@ -205,6 +214,14 @@ absl::Status MainHelper(int argc, char** argv) {
     return response_result.status();
   }
   EmbeddingResponse response = *std::move(response_result);
+
+  std::optional<ExecutorStats> stats = std::nullopt;
+  if (is_benchmark) {
+    auto stats_result = engine->StopProfiling();
+    if (stats_result.ok()) {
+      stats = *std::move(stats_result);
+    }
+  }
 
   std::cout << "\n================ RESULT ================" << std::endl;
   std::cout << "Input length: " << response.input_length << std::endl;
@@ -228,6 +245,11 @@ absl::Status MainHelper(int argc, char** argv) {
   }
   std::cout << "]" << std::endl;
   std::cout << "========================================" << std::endl;
+
+  // Print the latency stats if benchmark is enabled.
+  if (stats.has_value()) {
+    std::cout << *stats << std::endl;
+  }
 
   return absl::OkStatus();
 }

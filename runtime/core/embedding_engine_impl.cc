@@ -27,6 +27,7 @@
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/optional.h"  // from @com_google_absl
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "runtime/components/model_resources.h"
@@ -39,6 +40,7 @@
 #include "runtime/executor/embedding_executor_settings.h"
 #include "runtime/executor/embedding_litert_compiled_model_executor.h"
 #include "runtime/executor/executor_settings_base.h"
+#include "runtime/executor/executor_stats.h"
 #include "runtime/executor/litert_compiled_model_executor_utils.h"
 #include "runtime/executor/llm_executor_io_types.h"
 #include "runtime/executor/model_signature_utils.h"
@@ -278,8 +280,7 @@ absl::StatusOr<std::unique_ptr<EmbeddingEngine>> EmbeddingEngineImpl::Create(
   if (metadata.has_value()) {
     LITERT_ASSIGN_OR_RETURN(special_tokens,
                             ExtractSpecialTokens(*metadata, *tokenizer));
-    image_preprocess_parameter =
-        ExtractImagePreprocessParameter(*metadata);
+    image_preprocess_parameter = ExtractImagePreprocessParameter(*metadata);
     LITERT_ASSIGN_OR_RETURN(audio_preprocessor,
                             ExtractAudioPreprocessor(*metadata));
   }
@@ -440,10 +441,9 @@ absl::StatusOr<std::vector<InputData>> EmbeddingEngineImpl::InsertSpecialTokens(
     const std::vector<InputData>& contents) const {
   std::vector<InputData> new_contents;
   if (!special_tokens_.bos_token_ids.empty()) {
-    LITERT_ASSIGN_OR_RETURN(
-        auto bos_tensor,
-        litert::support::Tokenizer::TokenIdsToTensorBuffer(
-            special_tokens_.bos_token_ids));
+    LITERT_ASSIGN_OR_RETURN(auto bos_tensor,
+                            litert::support::Tokenizer::TokenIdsToTensorBuffer(
+                                special_tokens_.bos_token_ids));
     new_contents.push_back(InputText(std::move(bos_tensor)));
   }
   for (const auto& item : contents) {
@@ -489,10 +489,9 @@ absl::StatusOr<std::vector<InputData>> EmbeddingEngineImpl::InsertSpecialTokens(
     }
   }
   if (!special_tokens_.eos_token_ids.empty()) {
-    LITERT_ASSIGN_OR_RETURN(
-        auto eos_tensor,
-        litert::support::Tokenizer::TokenIdsToTensorBuffer(
-            special_tokens_.eos_token_ids));
+    LITERT_ASSIGN_OR_RETURN(auto eos_tensor,
+                            litert::support::Tokenizer::TokenIdsToTensorBuffer(
+                                special_tokens_.eos_token_ids));
     new_contents.push_back(InputText(std::move(eos_tensor)));
   }
   return new_contents;
@@ -594,9 +593,8 @@ absl::StatusOr<ExecutorInputs> EmbeddingEngineImpl::ProcessAndCombineContents(
           LITERT_ASSIGN_OR_RETURN(
               auto tensor_buffer_map,
               preprocessed_image.GetPreprocessedImageTensorMap());
-          LITERT_ASSIGN_OR_RETURN(
-              single_image_data,
-              vision_executor_->Encode(*tensor_buffer_map));
+          LITERT_ASSIGN_OR_RETURN(single_image_data,
+                                  vision_executor_->Encode(*tensor_buffer_map));
         } else {
           return absl::InternalError(
               "Failed to get tensor buffer from preprocessed image.");
@@ -813,6 +811,61 @@ BenchmarkInfo* EmbeddingEngineImpl::GetMutableBenchmarkInfo() {
 const std::optional<proto::EmbeddingMetadata>&
 EmbeddingEngineImpl::GetEmbeddingMetadata() const {
   return metadata_;
+}
+
+absl::Status EmbeddingEngineImpl::StartProfiling() {
+  if (embedding_executor_ != nullptr) {
+    auto status = embedding_executor_->StartProfiling();
+    if (!status.ok() && !absl::IsUnimplemented(status)) {
+      return status;
+    }
+  }
+  if (vision_executor_ != nullptr) {
+    auto status = vision_executor_->StartProfiling();
+    if (!status.ok() && !absl::IsUnimplemented(status)) {
+      return status;
+    }
+  }
+  if (audio_executor_ != nullptr) {
+    auto status = audio_executor_->StartProfiling();
+    if (!status.ok() && !absl::IsUnimplemented(status)) {
+      return status;
+    }
+  }
+  is_profiling_ = true;
+  return absl::OkStatus();
+}
+
+absl::StatusOr<ExecutorStats> EmbeddingEngineImpl::StopProfiling() {
+  if (!is_profiling_) {
+    return absl::FailedPreconditionError("Profiling has not been started.");
+  }
+  is_profiling_ = false;
+  ExecutorStats stats;
+  stats.module_name = kEmbeddingModuleName;
+
+  if (embedding_executor_ != nullptr) {
+    auto executor_stats = embedding_executor_->StopProfiling();
+    if (executor_stats.ok()) {
+      stats = *std::move(executor_stats);
+    }
+  }
+
+  if (vision_executor_ != nullptr) {
+    auto vision_stats = vision_executor_->StopProfiling();
+    if (vision_stats.ok() && !vision_stats->latencies.empty()) {
+      stats.substats.push_back(*std::move(vision_stats));
+    }
+  }
+
+  if (audio_executor_ != nullptr) {
+    auto audio_stats = audio_executor_->StopProfiling();
+    if (audio_stats.ok() && !audio_stats->latencies.empty()) {
+      stats.substats.push_back(*std::move(audio_stats));
+    }
+  }
+
+  return stats;
 }
 
 }  // namespace litert::lm

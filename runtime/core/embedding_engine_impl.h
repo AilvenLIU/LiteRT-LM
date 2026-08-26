@@ -27,6 +27,7 @@
 #include "runtime/engine/io_types.h"
 #include "runtime/executor/audio_executor.h"
 #include "runtime/executor/embedding_executor_base.h"
+#include "runtime/executor/executor_stats.h"
 #include "runtime/executor/llm_executor_io_types.h"
 #include "runtime/executor/vision_executor.h"
 #include "runtime/proto/embedding_metadata.pb.h"
@@ -140,6 +141,12 @@ class EmbeddingEngineImpl : public EmbeddingEngine {
     return selected_vision_signature_info_;
   }
 
+  // Starts profiling the engine and underlying executors.
+  absl::Status StartProfiling() override;
+
+  // Stops profiling and returns the collected latency statistics.
+  absl::StatusOr<ExecutorStats> StopProfiling() override;
+
  private:
   absl::StatusOr<std::vector<InputData>> InsertSpecialTokens(
       const std::vector<InputData>& contents) const;
@@ -164,6 +171,7 @@ class EmbeddingEngineImpl : public EmbeddingEngine {
   std::optional<proto::EmbeddingMetadata> metadata_;
   std::optional<SelectedTextSignaturesInfo> selected_text_signatures_info_;
   std::optional<SelectedVisionSignatureInfo> selected_vision_signature_info_;
+  bool is_profiling_ = false;
 };
 
 }  // namespace litert::lm

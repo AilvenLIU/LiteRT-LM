@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -32,9 +33,34 @@
 #include "runtime/components/model_resources.h"
 #include "runtime/executor/embedding_executor_base.h"
 #include "runtime/executor/embedding_executor_settings.h"
+#include "runtime/executor/executor_stats.h"
 #include "runtime/executor/llm_executor_io_types.h"
 
 namespace litert::lm {
+
+inline constexpr absl::string_view kEmbeddingModuleName = "Embedding";
+
+inline constexpr absl::string_view kEmbedderLookupLatency = "Embedder lookup";
+inline constexpr absl::string_view kMaskPreparationLatency = "Mask preparation";
+inline constexpr absl::string_view kPerLayerEmbedderLookupLatency =
+    "Per-layer embedder lookup";
+inline constexpr absl::string_view kTextEncoderInferenceLatency =
+    "Text encoder inference";
+inline constexpr absl::string_view kOutputCopyLatency = "Output copy";
+
+inline constexpr absl::string_view kEmbeddingNumTokensMetric =
+    "(e2e) Embedding num tokens";
+inline constexpr absl::string_view kEmbeddingNumPaddedTokensMetric =
+    "(e2e) Embedding num padded tokens";
+inline constexpr absl::string_view kEmbeddingE2eTokensPerSecondMetric =
+    "(e2e) Embedding tokens per second";
+inline constexpr absl::string_view kEmbeddingE2ePaddedTokensPerSecondMetric =
+    "(e2e) Embedding tokens per second (padded)";
+inline constexpr absl::string_view kEmbeddingEncoderStackTokensPerSecondMetric =
+    "(EncoderStackOnly) Embedding tokens per second";
+inline constexpr absl::string_view
+    kEmbeddingEncoderStackPaddedTokensPerSecondMetric =
+        "(EncoderStackOnly) Embedding tokens per second (padded)";
 
 // The EmbeddingLiteRtCompiledModelExecutor runs the two-stage embedding
 // pipeline:
@@ -58,6 +84,9 @@ class EmbeddingLiteRtCompiledModelExecutor : public EmbeddingExecutorBase {
   Create(EmbeddingExecutorSettings executor_settings, litert::Environment& env);
 
   ~EmbeddingLiteRtCompiledModelExecutor() override = default;
+
+  absl::Status StartProfiling() override;
+  absl::StatusOr<ExecutorStats> StopProfiling() override;
 
   using EmbeddingExecutorBase::ComputeEmbedding;
   using EmbeddingExecutorBase::ComputeEmbeddingBatch;
@@ -119,6 +148,8 @@ class EmbeddingLiteRtCompiledModelExecutor : public EmbeddingExecutorBase {
   // Output buffer map: Signature Index -> Output Buffers
   absl::flat_hash_map<size_t, std::vector<litert::TensorBuffer>>
       output_buffers_cache_;
+
+  std::optional<ExecutorStats> latency_stats_;
 };
 
 }  // namespace litert::lm
