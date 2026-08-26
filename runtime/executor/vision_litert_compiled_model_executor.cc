@@ -33,13 +33,13 @@
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
-#include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_common.h"  // from @litert
 #include "litert/cc/litert_element_type.h"  // from @litert
 #include "litert/cc/litert_layout.h"  // from @litert
+#include "litert/cc/litert_model_types.h"  // from @litert
 #include "litert/cc/litert_ranked_tensor_type.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer_types.h"  // from @litert
 #include "runtime/engine/io_types.h"
@@ -90,6 +90,31 @@ absl::Status SetCpuOptions(const VisionExecutorSettings& executor_settings,
   return ::litert::lm::SetCpuOptions(cpu_options, 4);
 }
 
+// Extracts the visual token length / capacity from the signature's output
+// tensor dimensions.
+absl::StatusOr<int> GetSignatureTokenLength(
+    const ::litert::SimpleSignature& signature) {
+  std::optional<::litert::RankedTensorType> output_tensor_type;
+  auto features_output = signature.OutputTensorType(kFeatures);
+  if (features_output.HasValue()) {
+    output_tensor_type = features_output.Value();
+  } else if (!signature.OutputNames().empty()) {
+    LITERT_ASSIGN_OR_RETURN(output_tensor_type, signature.OutputTensorType(0));
+  }
+
+  if (output_tensor_type.has_value()) {
+    const auto& dims = output_tensor_type->Layout().Dimensions();
+    if (dims.size() >= 2 && dims[dims.size() - 2] > 0) {
+      return dims[dims.size() - 2];
+    }
+  }
+
+  return absl::InvalidArgumentError(absl::StrCat(
+      "Failed to determine token length from output tensor dimensions for "
+      "signature: ",
+      signature.Key()));
+}
+
 // Returns the index of the signature that should be used for the given number
 // of patches. The signature is guaranteed to have at least as many tokens as
 // the given number of patches, or an error status if failed.
@@ -104,10 +129,10 @@ absl::Status SetCpuOptions(const VisionExecutorSettings& executor_settings,
 //   The index of the signature that should be used for the given number of
 //   patches, or an error status if failed.
 absl::StatusOr<int> GetVitSignatureIndex(
-    const Model& model,
+    const ::litert::Model& model,
     const VisionExecutorProperties& vision_executor_properties,
     const int num_patches,
-    const std::vector<std::string>& selected_signatures = {}) {
+    const std::vector<std::string>& selected_signatures) {
   if (model.GetNumSignatures() == 1) {
     return 0;
   }
@@ -125,22 +150,15 @@ absl::StatusOr<int> GetVitSignatureIndex(
       num_patches / vision_executor_properties.patch_num_shrink_factor.value();
 
   for (int i = 0; i < model.GetNumSignatures(); ++i) {
-    LITERT_ASSIGN_OR_RETURN(auto signature_name, model.GetSignature(i));
-    if (absl::StartsWith(signature_name.Key(), kVisionLengthPrefix)) {
+    LITERT_ASSIGN_OR_RETURN(auto signature, model.GetSignature(i));
+    if (absl::StartsWith(signature.Key(), kVisionLengthPrefix)) {
       if (!selected_signatures.empty() &&
-          !absl::c_linear_search(selected_signatures, signature_name.Key())) {
+          !absl::c_linear_search(selected_signatures, signature.Key())) {
         continue;
       }
       found_any_signature = true;
-      int current_length = 0;
-      size_t last_underscore = signature_name.Key().find_last_of('_');
-      if (last_underscore == absl::string_view::npos ||
-          !absl::SimpleAtoi(signature_name.Key().substr(last_underscore + 1),
-                            &current_length)) {
-        return absl::InvalidArgumentError(
-            absl::StrCat("Failed to parse signature name ",
-                         signature_name.Key(), " to integer."));
-      }
+      LITERT_ASSIGN_OR_RETURN(int current_length,
+                              GetSignatureTokenLength(signature));
 
       max_available_length = std::max(max_available_length, current_length);
 
@@ -366,22 +384,20 @@ absl::Status VisionLiteRtCompiledModelExecutor::VisionAdapter::Initialize(
 
   LITERT_ASSIGN_OR_RETURN(compiled_model_,
                           CompiledModel::Create(env_, model_.Get(), options));
-  // This check verifies if signature 0 of the adapter model contains any
-  // inputs. This is used to infer whether input buffers should be created at
-  // initialization time (for single-signature models that use signature 0 by
-  // default) or skipped (for multi-signature models like ViT that create
-  // input buffers on-demand in `Encode` for a specific signature). This is a
-  // more direct check than relying on `patch_num_shrink_factor` which was
-  // previously used to detect multi-signature models.
-  auto signature_or = model_.GetSignature(0);
-  if (signature_or.HasValue() && !signature_or->InputNames().empty()) {
-    LITERT_ASSIGN_OR_RETURN(input_buffers_,
-                            compiled_model_.CreateInputBuffers(0));
-    if (input_buffers_.size() != 1) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("The Vision Adapter model must have exactly one input "
-                       "buffer but got ",
-                       input_buffers_.size()));
+  // For single-signature models that use signature 0 by default, create
+  // input buffers at initialization time. For multi-signature models like ViT,
+  // input buffers are created on-demand in `Encode` for the selected signature.
+  if (model_.GetNumSignatures() == 1) {
+    auto signature = model_.GetSignature(0);
+    if (signature.HasValue() && !signature->InputNames().empty()) {
+      LITERT_ASSIGN_OR_RETURN(input_buffers_,
+                              compiled_model_.CreateInputBuffers(0));
+      if (input_buffers_.size() != 1) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("The Vision Adapter model must have exactly one input "
+                         "buffer but got ",
+                         input_buffers_.size()));
+      }
     }
   }
 
@@ -539,6 +555,7 @@ absl::StatusOr<ExecutorVisionData> VisionLiteRtCompiledModelExecutor::Encode(
             num_patches_from_input,
             vision_executor_settings_.GetAdapterSelectedSignatures()));
   }
+
   LITERT_ASSIGN_OR_RETURN(
       auto encoder_input_buffers,
       vision_encoder_->GetCompiledModel().CreateInputBuffers(
