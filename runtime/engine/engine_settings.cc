@@ -537,11 +537,23 @@ std::ostream& operator<<(std::ostream& os, const EngineSettings& settings) {
   } else {
     os << "  AudioExecutorSettings: Not set" << std::endl;
   }
+  if (settings.GetMaxVisionTokenPerImage().has_value()) {
+    os << "  MaxVisionTokenPerImage: "
+       << settings.GetMaxVisionTokenPerImage().value() << std::endl;
+  }
   os << "  ParallelFileSectionLoading: "
      << settings.GetParallelFileSectionLoading() << std::endl;
   os << "  SingleThreadedExecution: " << settings.GetSingleThreadedExecution()
      << std::endl;
   return os;
+}
+
+std::optional<int> EngineSettings::GetMaxVisionTokenPerImage() const {
+  return max_vision_token_per_image_;
+}
+
+void EngineSettings::SetMaxVisionTokenPerImage(int max_vision_token_per_image) {
+  max_vision_token_per_image_ = max_vision_token_per_image;
 }
 
 proto::LlmMetadata& EngineSettings::GetMutableLlmMetadata() {
@@ -666,6 +678,7 @@ absl::Status SessionConfig::MaybeUpdateAndValidate(
           llm_metadata.suppress_tokens().ids().cend()));
     }
   }
+
 
   // Validating the required fields are set correctly.
   if (stop_token_ids_.empty()) {

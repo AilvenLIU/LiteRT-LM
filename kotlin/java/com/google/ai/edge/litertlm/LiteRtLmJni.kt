@@ -47,6 +47,8 @@ internal object LiteRtLmJni {
    * @param audioNpuNativeLibraryDir The directory for the audio backend NPU libraries.
    * @param mainBackendNumThreads The number of threads for the main backend (CPU).
    * @param audioBackendNumThreads The number of threads for the audio backend (CPU).
+   * @param maxVisionTokenPerImage The maximum vision tokens per image. When non-positive, use
+   *   the engine's default.
    * @return A pointer to the native engine instance.
    */
   external fun nativeCreateEngine(
@@ -64,6 +66,7 @@ internal object LiteRtLmJni {
     audioNpuNativeLibraryDir: String,
     mainBackendNumThreads: Int,
     audioBackendNumThreads: Int,
+    maxVisionTokenPerImage: Int,
   ): Long
 
   /**
