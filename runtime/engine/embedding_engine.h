@@ -40,6 +40,11 @@ struct EmbeddingOptions {
   // length.
   InputOverflowStrategy input_overflow_strategy =
       InputOverflowStrategy::kChunkAndAverage;
+
+  // The output embedding size to truncate the embedding to. If not set, uses
+  // the default output embedding size. Must be non-negative and not exceed the
+  // default output embedding size.
+  std::optional<int> output_size = std::nullopt;
 };
 
 // Represents the result of an embedding computation.
