@@ -120,6 +120,9 @@ public actor Engine {
     if let enableSpeculativeDecoding = ExperimentalFlags.enableSpeculativeDecoding {
       litert_lm_engine_settings_set_enable_speculative_decoding(settings, enableSpeculativeDecoding)
     }
+    if let visualTokenBudget = ExperimentalFlags.visualTokenBudget {
+      litert_lm_engine_settings_set_max_vision_token_per_image(settings, visualTokenBudget)
+    }
 
     guard let engine = litert_lm_engine_create(settings) else {
       throw LiteRTLMError.engine(.failedToCreateEngine)

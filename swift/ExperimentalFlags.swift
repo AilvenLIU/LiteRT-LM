@@ -155,8 +155,9 @@ public struct ExperimentalFlags {
   /// will result in a no-ops. The Gemma4 budget options are 70, 140, 280, 560, or 1120 tokens. See
   /// https://ai.google.dev/gemma/docs/capabilities/vision#variable-resolution for more details.
   ///
-  /// Note: This flag takes effect immediately and change alter the behaivor of created
-  /// [Conversation].
+  /// Note: When set before [Engine] initialization, this flag configures the vision
+  /// model signature selection during engine creation. It can also alter the per-message behavior
+  /// of [Conversation].
   public static var visualTokenBudget: Int32? {
     get { return _visualTokenBudget }
     set {

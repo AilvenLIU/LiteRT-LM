@@ -151,6 +151,13 @@ class EngineSettings {
   // false.
   void SetSingleThreadedExecution(bool single_threaded_execution);
 
+  // Desired maximum number of vision tokens generated per image. If set,
+  // the engine will automatically select vision encoder (and adapter)
+  // signatures with capacity up to this length, and configure patch metadata
+  // accordingly.
+  std::optional<int> GetMaxVisionTokenPerImage() const;
+  void SetMaxVisionTokenPerImage(int max_vision_token_per_image);
+
  private:
   explicit EngineSettings(
       LlmExecutorSettings executor_settings,
@@ -180,6 +187,9 @@ class EngineSettings {
 
   // Whether the advanced engine should run tasks in a single thread.
   bool single_threaded_execution_ = false;
+
+  // Desired maximum number of vision tokens generated per image.
+  std::optional<int> max_vision_token_per_image_;
 };
 std::ostream& operator<<(std::ostream& os, const EngineSettings& settings);
 
@@ -297,7 +307,6 @@ class SessionConfig {
   // CreateDefault() method to create a SessionConfig.
   explicit SessionConfig(const proto::SamplerParameters& sampler_params);
 
-  // Whether to enable audio modality in the session.
   bool audio_modality_enabled_ = false;
 
   // Whether to enable vision modality in the session.

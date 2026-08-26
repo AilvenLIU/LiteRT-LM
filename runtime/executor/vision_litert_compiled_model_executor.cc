@@ -366,22 +366,24 @@ absl::Status VisionLiteRtCompiledModelExecutor::VisionAdapter::Initialize(
 
   LITERT_ASSIGN_OR_RETURN(compiled_model_,
                           CompiledModel::Create(env_, model_.Get(), options));
-  // This check verifies if signature 0 of the adapter model contains any
-  // inputs. This is used to infer whether input buffers should be created at
-  // initialization time (for single-signature models that use signature 0 by
-  // default) or skipped (for multi-signature models like ViT that create
-  // input buffers on-demand in `Encode` for a specific signature). This is a
-  // more direct check than relying on `patch_num_shrink_factor` which was
-  // previously used to detect multi-signature models.
-  auto signature_or = model_.GetSignature(0);
-  if (signature_or.HasValue() && !signature_or->InputNames().empty()) {
-    LITERT_ASSIGN_OR_RETURN(input_buffers_,
-                            compiled_model_.CreateInputBuffers(0));
-    if (input_buffers_.size() != 1) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("The Vision Adapter model must have exactly one input "
-                       "buffer but got ",
-                       input_buffers_.size()));
+  if (vision_executor_settings_.GetAdapterSelectedSignatures().empty()) {
+    // This check verifies if signature 0 of the adapter model contains any
+    // inputs. This is used to infer whether input buffers should be created at
+    // initialization time (for single-signature models that use signature 0 by
+    // default) or skipped (for multi-signature models like ViT that create
+    // input buffers on-demand in `Encode` for a specific signature). This is a
+    // more direct check than relying on `patch_num_shrink_factor` which was
+    // previously used to detect multi-signature models.
+    auto signature_or = model_.GetSignature(0);
+    if (signature_or.HasValue() && !signature_or->InputNames().empty()) {
+      LITERT_ASSIGN_OR_RETURN(input_buffers_,
+                              compiled_model_.CreateInputBuffers(0));
+      if (input_buffers_.size() != 1) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("The Vision Adapter model must have exactly one input "
+                         "buffer but got ",
+                         input_buffers_.size()));
+      }
     }
   }
 

@@ -562,6 +562,13 @@ void litert_lm_engine_settings_set_max_num_images(
   }
 }
 
+void litert_lm_engine_settings_set_max_vision_token_per_image(
+    LiteRtLmEngineSettings* settings, int max_vision_token_per_image) {
+  if (settings && settings->settings) {
+    settings->settings->SetMaxVisionTokenPerImage(max_vision_token_per_image);
+  }
+}
+
 void litert_lm_engine_settings_set_cache_dir(LiteRtLmEngineSettings* settings,
                                              const char* cache_dir) {
   if (settings && settings->settings) {

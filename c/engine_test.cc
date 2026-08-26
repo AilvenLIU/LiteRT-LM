@@ -185,6 +185,21 @@ TEST(EngineCTest, SetMaxNumImages) {
             10);
 }
 
+TEST(EngineCTest, SetMaxVisionTokenPerImage) {
+  const std::string task_path = "test_model_path_1";
+  EngineSettingsPtr settings(
+      litert_lm_engine_settings_create(task_path.c_str(), "cpu",
+                                       /* vision_backend_str */ nullptr,
+                                       /* audio_backend_str */ nullptr),
+      &litert_lm_engine_settings_delete);
+  ASSERT_NE(settings, nullptr);
+  EXPECT_FALSE(settings->settings->GetMaxVisionTokenPerImage().has_value());
+
+  litert_lm_engine_settings_set_max_vision_token_per_image(settings.get(), 280);
+  EXPECT_TRUE(settings->settings->GetMaxVisionTokenPerImage().has_value());
+  EXPECT_EQ(settings->settings->GetMaxVisionTokenPerImage().value(), 280);
+}
+
 TEST(EngineCTest, SetPrefillChunkSize) {
   const std::string task_path = "test_model_path_1";
   EngineSettingsPtr settings(
