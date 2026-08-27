@@ -653,14 +653,24 @@ absl::Status Conversation::SendMessageAsync(
                             optional_args.args.value_or(std::monostate())));
 
   if (is_appending_message_) {
+    absl::AnyInvocable<void()> cancel_callback = [this]() {
+      absl::MutexLock lock(this->history_mutex_);
+      if (!this->history_.empty()) {
+        this->history_.pop_back();
+      }
+    };
     ABSL_ASSIGN_OR_RETURN(
         auto task_controller,
         session_->RunPrefillAsync(
-            session_inputs, [callback = std::move(user_callback)](
+            session_inputs, [callback = std::move(user_callback),
+                             cancel_callback = std::move(cancel_callback)](
                                 absl::StatusOr<Responses> responses) mutable {
               if (!responses.ok()) {
                 auto status = IgnoreEmptyInputError(responses.status());
                 if (!status.ok()) {
+                  if (cancel_callback && absl::IsCancelled(status)) {
+                    cancel_callback();
+                  }
                   callback(status);
                 } else {
                   callback(Message());
@@ -669,6 +679,13 @@ absl::Status Conversation::SendMessageAsync(
               }
               if (responses->GetTaskState() == TaskState::kDone) {
                 callback(Message());
+              } else if (responses->GetTaskState() == TaskState::kCancelled ||
+                         responses->GetTaskState() ==
+                             TaskState::kDependentTaskCancelled) {
+                if (cancel_callback) {
+                  cancel_callback();
+                }
+                callback(absl::CancelledError("Task cancelled"));
               } else if (IsTaskEndState(responses->GetTaskState())) {
                 callback(absl::InternalError(absl::StrCat(
                     "Prefill failed with task state: ",
