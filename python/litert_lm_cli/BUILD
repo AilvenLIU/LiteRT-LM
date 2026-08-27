@@ -221,6 +221,7 @@ pytype_strict_library(
         "//python/litert_lm_cli/commands:convert",
         "//python/litert_lm_cli/commands:delete",
         "//python/litert_lm_cli/commands:import",  # fixdeps: keep
+        "//python/litert_lm_cli/commands:inspect",
         "//python/litert_lm_cli/commands:list",
         "//python/litert_lm_cli/commands:pack",
         "//python/litert_lm_cli/commands:rename",

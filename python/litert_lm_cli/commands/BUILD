@@ -81,6 +81,21 @@ pytype_strict_library(
 )
 
 pytype_strict_library(
+    name = "inspect",
+    srcs = ["inspect.py"],
+    imports = [".."],
+    deps = [
+        "//python/litert_lm",
+        "//python/litert_lm_cli:cli_helpers",
+        "//python/litert_lm_cli:common",
+        "//python/litert_lm_cli:help_formatter",
+        "//python/litert_lm_cli:huggingface_download",
+        "//python/litert_lm_cli:model",
+        requirement("click"),
+    ],
+)
+
+pytype_strict_library(
     name = "delete",
     srcs = ["delete.py"],
     imports = [".."],
@@ -189,6 +204,24 @@ py_test(
     ],
     deps = [
         ":import",
+        "//python/litert_lm_cli:cli_helpers",
+        "//python/litert_lm_cli:huggingface_download",
+        "//python/litert_lm_cli:model",
+        "@absl_py//absl/testing:absltest",
+        requirement("click"),
+    ],
+)
+
+py_test(
+    name = "inspect_test",
+    srcs = ["inspect_test.py"],
+    tags = [
+        "nomacos",
+        "nowindows",
+    ],
+    deps = [
+        ":inspect",
+        "//python/litert_lm",
         "//python/litert_lm_cli:cli_helpers",
         "//python/litert_lm_cli:huggingface_download",
         "//python/litert_lm_cli:model",
