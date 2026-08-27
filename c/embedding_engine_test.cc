@@ -33,6 +33,16 @@ TEST(EmbeddingEngineCTest, CreateSettingsSuccess) {
   litert_lm_embedding_engine_settings_delete(settings);
 }
 
+TEST(EmbeddingEngineCTest, CreateSettingsWithMaxInputLengthAndVisionTokens) {
+  auto* settings = litert_lm_embedding_engine_settings_create(
+      kTestEmbeddingModelPath, "cpu", nullptr, nullptr);
+  ASSERT_NE(settings, nullptr);
+  litert_lm_embedding_engine_settings_set_max_input_length(settings, 512);
+  litert_lm_embedding_engine_settings_set_vision_tokens_per_image(settings,
+                                                                  280);
+  litert_lm_embedding_engine_settings_delete(settings);
+}
+
 TEST(EmbeddingEngineCTest, CreateSettingsInvalidBackend) {
   auto* settings = litert_lm_embedding_engine_settings_create(
       kTestEmbeddingModelPath, "invalid_backend", nullptr, nullptr);

@@ -406,6 +406,8 @@ internal object LiteRtLmJni {
     audioNpuNativeLibraryDir: String,
     mainBackendNumThreads: Int,
     audioBackendNumThreads: Int,
+    maxInputLength: Int,
+    visionTokensPerImage: Int,
   ): Long
 
   /** Deletes the LiteRT-LM embedding engine. */

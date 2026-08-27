@@ -214,6 +214,20 @@ void litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir(
   }
 }
 
+void litert_lm_embedding_engine_settings_set_max_input_length(
+    LiteRtLmEmbeddingEngineSettings* settings, int max_input_length) {
+  if (settings && settings->settings && max_input_length > 0) {
+    settings->settings->SetMaxInputLength(max_input_length);
+  }
+}
+
+void litert_lm_embedding_engine_settings_set_vision_tokens_per_image(
+    LiteRtLmEmbeddingEngineSettings* settings, int vision_tokens_per_image) {
+  if (settings && settings->settings && vision_tokens_per_image > 0) {
+    settings->settings->SetVisionTokensPerImage(vision_tokens_per_image);
+  }
+}
+
 LiteRtLmEmbeddingOptions* litert_lm_embedding_options_create(void) {
   return new LiteRtLmEmbeddingOptions{litert::lm::EmbeddingOptions{}};
 }
