@@ -456,6 +456,7 @@ internal object LiteRtLmJni {
    * @return The sampler top_p.
    */
   external fun nativeSamplerTopP(capabilitiesPointer: Long): Float
+
   /**
    * Returns true if the model supports the given input modality.
    *
@@ -489,6 +490,7 @@ internal object LiteRtLmJni {
     inputData: Array<InputData>,
     normalize: Boolean?,
     insertSpecialTokens: Boolean?,
+    outputSize: Int?,
   ): EmbeddingResponse
 
   /** Computes embeddings for a batch of input data requests. */
@@ -497,5 +499,6 @@ internal object LiteRtLmJni {
     inputDataBatch: Array<Array<InputData>>,
     normalize: Boolean?,
     insertSpecialTokens: Boolean?,
+    outputSize: Int?,
   ): Array<EmbeddingResponse>
 }

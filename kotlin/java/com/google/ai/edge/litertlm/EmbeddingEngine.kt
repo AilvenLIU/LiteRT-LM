@@ -93,6 +93,7 @@ class EmbeddingEngine(val config: EmbeddingEngineConfig) : AutoCloseable {
         contents.toTypedArray(),
         options.normalize,
         options.insertSpecialTokens,
+        options.outputSize,
       )
     }
   }
@@ -118,6 +119,7 @@ class EmbeddingEngine(val config: EmbeddingEngineConfig) : AutoCloseable {
           nativeBatch,
           options.normalize,
           options.insertSpecialTokens,
+          options.outputSize,
         )
         .toList()
     }
