@@ -25,12 +25,7 @@
                 {%- endif -%}
                 }
                 {%- if value['required'] -%}
-                    ,required:[
-                    {%- for item in value['required'] | default([]) -%}
-                        <|"|>{{- item -}}<|"|>
-                        {%- if not loop.last %},{% endif -%}
-                    {%- endfor -%}
-                    ]
+                    ,required:{{ format_argument(value['required']) }}
                 {%- endif -%}
             {%- elif value['type'] | upper == 'ARRAY' -%}
                 {%- if value['items'] is mapping and value['items'] -%}
@@ -43,13 +38,6 @@
                                 {{- format_parameters(item_value) -}}
                             {%- endif -%}
                             }
-                        {%- elif item_key == 'required' -%}
-                            required:[
-                            {%- for req_item in item_value -%}
-                                <|"|>{{- req_item -}}<|"|>
-                                {%- if not loop.last %},{% endif -%}
-                            {%- endfor -%}
-                            ]
                         {%- elif item_key == 'type' -%}
                             {%- if item_value is string -%}
                                 type:{{ format_argument(item_value | upper) }}
@@ -77,12 +65,7 @@
             properties:{ {{- format_parameters(params['properties']) -}} },
         {%- endif -%}
         {%- if params['required'] -%}
-            required:[
-            {%- for item in params['required'] -%}
-                <|"|>{{- item -}}<|"|>
-                {{- ',' if not loop.last -}}
-            {%- endfor -%}
-            ],
+            required:{{ format_argument(params['required']) }},
         {%- endif -%}
         {%- if params['type'] -%}
             type:<|"|>{{- params['type'] | upper -}}<|"|>}
@@ -110,12 +93,7 @@
         {{- '{' -}}
         {%- for key, value in argument | dictsort -%}
             {%- if not loop.first %},{% endif -%}
-            {%- if escape_keys -%}
-                {{- '<|"|>' + key + '<|"|>' -}}
-            {%- else -%}
-                {{- key -}}
-            {%- endif -%}
-            :{{- format_argument(value, escape_keys=escape_keys) -}}
+            {{- ('<|"|>' + key + '<|"|>') if escape_keys else key -}}:{{- format_argument(value, escape_keys=escape_keys) -}}
         {%- endfor -%}
         {{- '}' -}}
     {%- elif argument is sequence -%}
@@ -130,28 +108,37 @@
     {%- endif -%}
 {%- endmacro -%}
 
+{%- macro format_content(content) -%}
+    {%- if content is string -%}
+        {{- content | trim -}}
+    {%- elif content is sequence -%}
+        {%- for item in content -%}
+            {%- if item['type'] == 'text' -%}
+                {{- item['text'] | trim -}}
+            {%- elif item['type'] == 'image' -%}
+                {{- '\n\n<|image|>\n\n' -}}
+            {%- elif item['type'] == 'audio' -%}
+                {{- '<|audio|>' -}}
+            {%- endif -%}
+        {%- endfor -%}
+    {%- endif -%}
+{%- endmacro -%}
+
+{%- set thinking = enable_thinking | default(false) -%}
 {%- set ns = namespace(prev_message_type=None) -%}
 {%- set loop_messages = messages -%}
 {{ bos_token }}
 {#- Handle System/Tool Definitions Block -#}
-{%- if (enable_thinking is defined and enable_thinking) or tools or messages[0]['role'] in ['system', 'developer'] -%}
+{%- if thinking or tools or messages[0]['role'] in ['system', 'developer'] -%}
     {{- '<|turn>system\n' -}}
 
     {#- Inject Thinking token at the very top of the FIRST system turn -#}
-    {%- if enable_thinking is defined and enable_thinking -%}
+    {%- if thinking -%}
         {{- '<|think|>\n' -}}
     {%- endif -%}
 
     {%- if messages[0]['role'] in ['system', 'developer'] -%}
-        {%- if messages[0]['content'] is string -%}
-            {{- messages[0]['content'] | trim -}}
-        {%- elif messages[0]['content'] is sequence -%}
-            {%- for item in messages[0]['content'] -%}
-                {%- if item['type'] == 'text' -%}
-                    {{- item['text'] | trim -}}
-                {%- endif -%}
-            {%- endfor -%}
-        {%- endif -%}
+        {{- format_content(messages[0]['content']) -}}
         {%- set loop_messages = messages[1:] -%}
     {%- endif -%}
 
@@ -179,16 +166,11 @@
             {%- if message['tool_calls'] -%}
                 {%- for tool_call in message['tool_calls'] -%}
                     {%- set function = tool_call['function'] -%}
-                    {{- '<|tool_call>call:' + function['name'] + '{' -}}
                     {%- if function['arguments'] is mapping -%}
-                        {%- for key, value in function['arguments'] | dictsort -%}
-                            {%- if not loop.first %},{% endif -%}
-                            {{- key -}}:{{- format_argument(value, escape_keys=False) -}}
-                        {%- endfor -%}
+                        {{- '<|tool_call>call:' + function['name'] + format_argument(function['arguments'], escape_keys=False) + '<tool_call|>' -}}
                     {%- elif function['arguments'] is string -%}
-                        {{- function['arguments'] -}}
+                        {{- '<|tool_call>call:' + function['name'] + '{' + function['arguments'] + '}<tool_call|>' -}}
                     {%- endif -%}
-                    {{- '}<tool_call|>' -}}
                 {%- endfor -%}
                 {%- set ns.prev_message_type = 'tool_call' -%}
             {%- endif -%}
@@ -196,34 +178,17 @@
             {%- if role == 'tool' and message['content'] is sequence -%}
                 {#- Tool Response handling -#}
                 {%- for item in message['content'] -%}
-                    {{- '<|tool_response>' -}}
+                    {{- '<|tool_response>response:' + item['name'] | default('unknown') -}}
                     {%- if item['response'] is mapping -%}
-                        {{- 'response:' + item['name'] | default('unknown') + '{' -}}
-                        {%- for key, value in item['response'] | dictsort -%}
-                            {{- key -}}:{{- format_argument(value, escape_keys=False) -}}
-                            {%- if not loop.last %},{% endif -%}
-                        {%- endfor -%}
-                        {{- '}' -}}
+                        {{- format_argument(item['response'], escape_keys=False) -}}
                     {%- else -%}
-                        {{- 'response:' + item['name'] | default('unknown') + '{value:' + format_argument(item['response'], escape_keys=False) + '}' -}}
+                        {{- '{value:' + format_argument(item['response'], escape_keys=False) + '}' -}}
                     {%- endif -%}
                     {{- '<tool_response|>' -}}
                 {%- endfor -%}
                 {%- set ns.prev_message_type = 'tool_response' -%}
             {%- else -%}
-                {%- if message['content'] is string -%}
-                    {{- message['content'] | trim -}}
-                {%- elif message['content'] is sequence -%}
-                    {%- for item in message['content'] -%}
-                        {%- if item['type'] == 'text' -%}
-                            {{- item['text'] | trim -}}
-                        {%- elif item['type'] == 'image' -%}
-                            {{- '\n\n<|image|>\n\n' -}}
-                        {%- elif item['type'] == 'audio' -%}
-                            {{- '<|audio|>' -}}
-                        {%- endif -%}
-                    {%- endfor -%}
-                {%- endif -%}
+                {{- format_content(message['content']) -}}
                 {%- if not message['tool_calls'] -%}
                     {%- set ns.prev_message_type = None -%} 
                 {%- endif -%}
@@ -236,10 +201,10 @@
 {%- if add_generation_prompt -%}
     {%- if ns.prev_message_type != 'tool_response' and ns.prev_message_type != 'tool_call' -%}
         {{- '<|turn>model\n' -}}
-    {%- if not (enable_thinking is defined and enable_thinking) -%}
+    {%- if not thinking -%}
         {{- '<|channel>thought\n<channel|>' -}}
         {%- endif -%}
-    {%- elif ns.prev_message_type == 'tool_response' and (enable_thinking is defined and enable_thinking) -%}
+    {%- elif ns.prev_message_type == 'tool_response' and thinking -%}
         {{- '<|channel>thought\n' -}}
     {%- endif -%}
 {%- endif -%}
