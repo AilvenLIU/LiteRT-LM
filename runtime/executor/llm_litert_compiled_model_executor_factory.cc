@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "absl/algorithm/container.h"  // from @com_google_absl
@@ -148,17 +149,27 @@ absl::StatusOr<bool> IsDynamicModel(ModelResources& resources) {
       return false;
     }
 
-    std::string first_kv_cache_k_input_name = kv_cache_k_root_name + "0";
-    LITERT_ASSIGN_OR_RETURN(
-        SimpleTensor k_tensor,
-        prefill_signature.InputTensor(first_kv_cache_k_input_name));
-    ABSL_ASSIGN_OR_RETURN(bool is_k_dynamic, IsDynamicTensor(k_tensor));
+    std::optional<SimpleTensor> k_tensor;
+    for (auto input_name : prefill_signature.InputNames()) {
+      if (absl::StartsWith(input_name, kv_cache_k_root_name)) {
+        LITERT_ASSIGN_OR_RETURN(k_tensor,
+                                prefill_signature.InputTensor(input_name));
+        break;
+      }
+    }
+    RET_CHECK(k_tensor.has_value()) << "No K cache input tensor found";
+    ABSL_ASSIGN_OR_RETURN(bool is_k_dynamic, IsDynamicTensor(*k_tensor));
 
-    std::string first_kv_cache_v_input_name = kv_cache_v_root_name + "0";
-    LITERT_ASSIGN_OR_RETURN(
-        SimpleTensor v_tensor,
-        prefill_signature.InputTensor(first_kv_cache_v_input_name));
-    ABSL_ASSIGN_OR_RETURN(bool is_v_dynamic, IsDynamicTensor(v_tensor));
+    std::optional<SimpleTensor> v_tensor;
+    for (auto input_name : prefill_signature.InputNames()) {
+      if (absl::StartsWith(input_name, kv_cache_v_root_name)) {
+        LITERT_ASSIGN_OR_RETURN(v_tensor,
+                                prefill_signature.InputTensor(input_name));
+        break;
+      }
+    }
+    RET_CHECK(v_tensor.has_value()) << "No V cache input tensor found";
+    ABSL_ASSIGN_OR_RETURN(bool is_v_dynamic, IsDynamicTensor(*v_tensor));
 
     RET_CHECK(is_k_dynamic == is_v_dynamic)
         << "KV cache k and v need to be dynamic or static at the same time.";
