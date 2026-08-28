@@ -108,33 +108,42 @@
     {%- endif -%}
 {%- endmacro -%}
 
+{%- macro format_content(content) -%}
+    {%- if content is string -%}
+        {{- content | trim -}}
+    {%- elif content is sequence -%}
+        {%- for item in content -%}
+            {%- if item['type'] == 'text' -%}
+                {{- item['text'] | trim -}}
+            {%- elif item['type'] == 'image' -%}
+                {{- '\n\n<|image|>\n\n' -}}
+            {%- elif item['type'] == 'audio' -%}
+                {{- '<|audio|>' -}}
+            {%- endif -%}
+        {%- endfor -%}
+    {%- endif -%}
+{%- endmacro -%}
+
+{%- set thinking = enable_thinking | default(false) -%}
 {%- set ns = namespace(prev_message_type=None) -%}
 {%- set loop_messages = messages -%}
 {{ bos_token }}
 {#- Handle System/Tool Definitions Block -#}
-{%- if (enable_thinking is defined and enable_thinking) or tools or messages[0]['role'] in ['system', 'developer'] -%}
-    {{- '<|turn>system\n' -}}
+{%- if thinking or tools or messages[0]['role'] == 'system' -%}
+    {{- '<|turn>system' -}}
 
     {#- Inject Thinking token at the very top of the FIRST system turn -#}
-    {%- if enable_thinking is defined and enable_thinking -%}
-        {{- '<|think|>\n' -}}
+    {%- if thinking -%}
+        {{- '\n<|think|>' -}}
     {%- endif -%}
 
-    {%- if messages[0]['role'] in ['system', 'developer'] -%}
-        {%- if messages[0]['content'] is string -%}
-            {{- messages[0]['content'] | trim -}}
-        {%- elif messages[0]['content'] is sequence -%}
-            {%- for item in messages[0]['content'] -%}
-                {%- if item['type'] == 'text' -%}
-                    {{- item['text'] | trim -}}
-                {%- endif -%}
-            {%- endfor -%}
-        {%- endif -%}
+    {%- if messages[0]['role'] == 'system' -%}
+        {{- '\n' + format_content(messages[0]['content']) -}}
         {%- set loop_messages = messages[1:] -%}
     {%- endif -%}
 
     {%- if tools -%}
-        {%- if messages[0]['role'] in ['system', 'developer'] and messages[0]['content'] %}{{- '\n' -}}{% endif -%}
+        {{- '\n' -}}
         {%- for tool in tools %}
             {{- '<|tool>' -}}
             {{- format_function_declaration(tool) | trim -}}
@@ -179,21 +188,9 @@
                 {%- endfor -%}
                 {%- set ns.prev_message_type = 'tool_response' -%}
             {%- else -%}
-                {%- if message['content'] is string -%}
-                    {{- message['content'] | trim -}}
-                {%- elif message['content'] is sequence -%}
-                    {%- for item in message['content'] -%}
-                        {%- if item['type'] == 'text' -%}
-                            {{- item['text'] | trim -}}
-                        {%- elif item['type'] == 'image' -%}
-                            {{- '\n\n<|image|>\n\n' -}}
-                        {%- elif item['type'] == 'audio' -%}
-                            {{- '<|audio|>' -}}
-                        {%- endif -%}
-                    {%- endfor -%}
-                {%- endif -%}
+                {{- format_content(message['content']) -}}
                 {%- if not message['tool_calls'] -%}
-                    {%- set ns.prev_message_type = None -%} 
+                    {%- set ns.prev_message_type = None -%}
                 {%- endif -%}
             {%- endif -%}
         {%- if ns.prev_message_type == None -%}
@@ -204,10 +201,10 @@
 {%- if add_generation_prompt -%}
     {%- if ns.prev_message_type != 'tool_response' and ns.prev_message_type != 'tool_call' -%}
         {{- '<|turn>model\n' -}}
-    {%- if not (enable_thinking is defined and enable_thinking) -%}
+    {%- if not thinking -%}
         {{- '<|channel>thought\n<channel|>' -}}
         {%- endif -%}
-    {%- elif ns.prev_message_type == 'tool_response' and (enable_thinking is defined and enable_thinking) -%}
+    {%- elif ns.prev_message_type == 'tool_response' and thinking -%}
         {{- '<|channel>thought\n' -}}
     {%- endif -%}
 {%- endif -%}
