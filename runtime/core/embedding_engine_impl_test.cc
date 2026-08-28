@@ -49,6 +49,7 @@
 #include "runtime/executor/audio_executor.h"
 #include "runtime/executor/embedding_executor_base.h"
 #include "runtime/executor/executor_settings_base.h"
+#include "runtime/executor/executor_stats.h"
 #include "runtime/executor/llm_executor_io_types.h"
 #include "runtime/executor/vision_executor.h"
 #include "runtime/proto/embedding_metadata.pb.h"
@@ -814,6 +815,15 @@ class FakeEmbeddingExecutor : public EmbeddingExecutorBase {
     return last_options_;
   }
 
+  absl::Status StartProfiling() override { return absl::OkStatus(); }
+
+  absl::StatusOr<ExecutorStats> StopProfiling() override {
+    ExecutorStats stats;
+    stats.module_name = "Embedding";
+    stats.Accumulate(kTotalLatency, absl::Milliseconds(10));
+    return stats;
+  }
+
  private:
   std::vector<int> last_token_ids_;
   ComputeEmbeddingOptions last_options_;
@@ -847,6 +857,15 @@ class FakeVisionExecutor : public VisionExecutor {
   absl::StatusOr<std::vector<int>> GetExpectedInputDimension() const override {
     return std::vector<int>{1, 224, 224, 3};
   }
+
+  absl::Status StartProfiling() override { return absl::OkStatus(); }
+
+  absl::StatusOr<ExecutorStats> StopProfiling() override {
+    ExecutorStats stats;
+    stats.module_name = "Vision";
+    stats.Accumulate(kTotalLatency, absl::Milliseconds(5));
+    return stats;
+  }
 };
 
 class FakeAudioExecutor : public AudioExecutor {
@@ -866,6 +885,15 @@ class FakeAudioExecutor : public AudioExecutor {
     }
     return ExecutorAudioData(std::move(*tensor), std::nullopt,
                              /*valid_tokens=*/3);
+  }
+
+  absl::Status StartProfiling() override { return absl::OkStatus(); }
+
+  absl::StatusOr<ExecutorStats> StopProfiling() override {
+    ExecutorStats stats;
+    stats.module_name = "Audio";
+    stats.Accumulate(kTotalLatency, absl::Milliseconds(3));
+    return stats;
   }
 };
 

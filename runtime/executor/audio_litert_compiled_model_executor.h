@@ -38,9 +38,18 @@
 #include "runtime/executor/audio_executor.h"
 #include "runtime/executor/audio_executor_settings.h"
 #include "runtime/executor/executor_settings_base.h"
+#include "runtime/executor/executor_stats.h"
 #include "runtime/executor/llm_executor_io_types.h"
 
 namespace litert::lm {
+
+inline constexpr absl::string_view kAudioModuleName = "Audio";
+inline constexpr absl::string_view kAudioNumClipsMetric = "Audio num clips";
+inline constexpr absl::string_view kAudioNumTokensMetric = "Audio num tokens";
+inline constexpr absl::string_view kAudioEncoderInferenceLatency =
+    "Audio encoder inference";
+inline constexpr absl::string_view kAudioAdapterInferenceLatency =
+    "Audio adapter inference";
 
 // The context for streaming audio encoder model, which contains
 // the state buffers of the audio encoder model.
@@ -152,6 +161,9 @@ class AudioLiteRtCompiledModelExecutor : public AudioExecutor {
   absl::Status UseLoRA(std::optional<uint32_t> lora_id) override {
     return audio_encoder_->UseLoRA(lora_id);
   }
+
+  absl::Status StartProfiling() override;
+  absl::StatusOr<ExecutorStats> StopProfiling() override;
 
  private:
   // The Audio Encoder LiteRT CompiledModel wrapper manage the input and
@@ -552,6 +564,8 @@ class AudioLiteRtCompiledModelExecutor : public AudioExecutor {
   std::unique_ptr<ModelResources> resources_;
   std::unique_ptr<AudioEncoder> audio_encoder_;
   std::unique_ptr<AudioAdapter> audio_adapter_;
+
+  std::optional<ExecutorStats> latency_stats_;
 };
 
 }  // namespace litert::lm

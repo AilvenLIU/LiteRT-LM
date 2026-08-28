@@ -18,10 +18,12 @@
 #include <optional>
 #include <vector>
 
+#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/types/optional.h"  // from @com_google_absl
 #include "runtime/engine/io_types.h"
 #include "runtime/executor/embedding_executor_base.h"
+#include "runtime/executor/executor_stats.h"
 #include "runtime/executor/model_signature_utils.h"
 #include "runtime/proto/embedding_metadata.pb.h"
 
@@ -97,7 +99,6 @@ class EmbeddingEngine {
   // Returns the embedding metadata of the engine.
   virtual const std::optional<proto::EmbeddingMetadata>& GetEmbeddingMetadata()
       const = 0;
-
   // Returns the selected text encoder signatures info if auto-selection was
   // performed during engine creation, or nullopt otherwise.
   virtual const std::optional<SelectedTextSignaturesInfo>&
@@ -107,6 +108,19 @@ class EmbeddingEngine {
   // during engine creation, or nullopt otherwise.
   virtual const std::optional<SelectedVisionSignatureInfo>&
   GetSelectedVisionSignatureInfo() const = 0;
+
+  // Starts profiling the embedding engine and underlying executors.
+  // Note: Reading internal NPU/hardware stats is expensive and cannot be
+  // enabled always, so profiling should be explicitly started before the
+  // inferences to measure.
+  virtual absl::Status StartProfiling() {
+    return absl::UnimplementedError("StartProfiling is not implemented.");
+  }
+
+  // Stops profiling and returns the collected latency statistics.
+  virtual absl::StatusOr<ExecutorStats> StopProfiling() {
+    return absl::UnimplementedError("StopProfiling is not implemented.");
+  }
 };
 
 }  // namespace litert::lm
