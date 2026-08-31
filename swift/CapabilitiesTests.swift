@@ -59,6 +59,7 @@ class CapabilitiesTests: XCTestCase {
     XCTAssertFalse(capabilities.supportsThinking())
     XCTAssertFalse(capabilities.supportsFunctionCalling())
     XCTAssertEqual(capabilities.maxVisionTokenBudget(), -1)
+    XCTAssertNil(capabilities.visionSignatureSelection())
 
     // Verify modalities
     XCTAssertTrue(capabilities.inputModalities.text)
@@ -72,9 +73,19 @@ class CapabilitiesTests: XCTestCase {
     XCTAssertEqual(defaultSamplerParams.temperature, 0.0)
     XCTAssertEqual(defaultSamplerParams.topK, 1)
     XCTAssertEqual(defaultSamplerParams.topP, 0.7)
-
     // Verify context capabilities (128 from TFLite graph and static context for test model)
     XCTAssertEqual(capabilities.maxContextTokens(), 128)
     XCTAssertFalse(capabilities.isDynamicContext())
+
+    // Verify minRuntimeVersion is nil for legacy model
+    XCTAssertNil(capabilities.minRuntimeVersion)
+
+    // Verify modality-specific backends for text (defaults to CPU and GPU)
+    XCTAssertEqual(capabilities.supportedBackends(for: .text), [.cpu, .gpu])
+    // Verify modality-specific backends for vision (not present -> empty)
+    XCTAssertEqual(capabilities.supportedBackends(for: .vision), [])
+
+    XCTAssertEqual(capabilities.npuBrand(for: .text), .unknown)
+  }
   }
 }
