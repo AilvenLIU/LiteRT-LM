@@ -44,6 +44,7 @@ import dataclasses
 import datetime
 import enum
 import io
+import logging
 import os
 import pathlib
 import shutil
@@ -237,7 +238,14 @@ class TfLiteModelType(enum.Enum):
   @classmethod
   def get_enum_from_tf_free_value(cls, tf_free_value: str) -> "TfLiteModelType":
     """A helper method to get the enum value from the TF-free value."""
-    value = "tf_lite_" + tf_free_value.lower()
+    tf_free_value_lower = tf_free_value.lower()
+    if tf_free_value_lower.startswith("tf_lite_"):
+      logging.warning(
+          "Input '%s' already starts with 'tf_lite_'.", tf_free_value
+      )
+      value = tf_free_value_lower
+    else:
+      value = "tf_lite_" + tf_free_value_lower
     return cls(value)
 
 
