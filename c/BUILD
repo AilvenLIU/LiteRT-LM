@@ -32,6 +32,8 @@ exports_files([
     "embedding_engine.h",
     "engine.cc",
     "engine.h",
+    "error_reporter.cc",
+    "error_reporter.h",
     "experimental.cc",
     "experimental.h",
     "model_info.cc",
@@ -40,8 +42,11 @@ exports_files([
 
 ENGINE_LITE_COMMON_DEPS = [
     ":engine_internal",
+    ":error_reporter_headers",
+    ":error_reporter_internal",
     "@com_google_absl//absl/base:core_headers",
     "@com_google_absl//absl/base:log_severity",
+    "@com_google_absl//absl/base:no_destructor",
     "@com_google_absl//absl/container:flat_hash_set",
     "@com_google_absl//absl/functional:any_invocable",
     "@com_google_absl//absl/log:absl_log",
@@ -118,11 +123,31 @@ LITERT_LM_DEBUGGER_DEFINES = select({
     "//conditions:default": [],
 })
 
+# Header library for error reporter C API.
+cc_library(
+    name = "error_reporter_headers",
+    hdrs = ["error_reporter.h"],
+    visibility = ["//visibility:public"],
+)
+
+# Header library for internal error reporter helper.
+cc_library(
+    name = "error_reporter_internal",
+    hdrs = ["error_reporter_internal.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":error_reporter_headers",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
 # Header library for engine + session C API.
 cc_library(
     name = "engine_headers",
     hdrs = ["engine.h"],
     visibility = ["//visibility:public"],
+    deps = [":error_reporter_headers"],
 )
 
 # Header library for engine + session + conversation C API.
@@ -216,8 +241,14 @@ cc_library(
 # are required, avoiding expensive conversation dependencies (prompt templates, JSON handling, etc.).
 cc_library(
     name = "engine_lite",
-    srcs = ["engine.cc"],
-    hdrs = ["engine.h"],
+    srcs = [
+        "engine.cc",
+        "error_reporter.cc",
+    ],
+    hdrs = [
+        "engine.h",
+        "error_reporter.h",
+    ],
     defines = LITERT_LM_DEBUGGER_DEFINES,
     visibility = ["//visibility:public"],
     deps = ENGINE_LITE_COMMON_DEPS + [
@@ -229,8 +260,14 @@ cc_library(
 # CPU-only variant of :engine_lite for Engine + Session functionality.
 cc_library(
     name = "engine_lite_cpu",
-    srcs = ["engine.cc"],
-    hdrs = ["engine.h"],
+    srcs = [
+        "engine.cc",
+        "error_reporter.cc",
+    ],
+    hdrs = [
+        "engine.h",
+        "error_reporter.h",
+    ],
     defines = LITERT_LM_DEBUGGER_DEFINES,
     visibility = ["//visibility:public"],
     deps = ENGINE_LITE_COMMON_DEPS + [
@@ -271,6 +308,7 @@ cc_library(
         "conversation.cc",
         "embedding_engine.cc",
         "engine.cc",
+        "error_reporter.cc",
         "experimental.cc",
         "model_info.cc",
     ],
@@ -278,6 +316,7 @@ cc_library(
         "conversation.h",
         "embedding_engine.h",
         "engine.h",
+        "error_reporter.h",
         "experimental.h",
         "model_info.h",
     ],
@@ -296,6 +335,7 @@ cc_library(
         "conversation.cc",
         "embedding_engine.cc",
         "engine.cc",
+        "error_reporter.cc",
         "experimental.cc",
         "model_info.cc",
     ],
@@ -303,6 +343,7 @@ cc_library(
         "conversation.h",
         "embedding_engine.h",
         "engine.h",
+        "error_reporter.h",
         "experimental.h",
         "model_info.h",
     ],
@@ -389,12 +430,37 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "error_reporter_test",
+    srcs = ["error_reporter_test.cc"],
+    data = [
+        "//runtime/testdata",
+    ],
+    tags = ["requires-mac-inputs:hard"],
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:linux": [],
+        "@platforms//os:osx": [],
+        "@platforms//os:windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":engine",
+        ":engine_headers",
+        ":error_reporter_headers",
+        ":error_reporter_internal",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/status",
+    ],
+)
+
 cc_binary(
     name = "litert-lm",
     srcs = [
         "conversation.cc",
         "embedding_engine.cc",
         "engine.cc",
+        "error_reporter.cc",
         "experimental.cc",
         "model_info.cc",
     ],
