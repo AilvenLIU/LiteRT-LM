@@ -99,10 +99,10 @@ cc_test(
         "@litert//litert/cc:litert_element_type",
         "@litert//litert/cc:litert_environment",
         "@litert//litert/cc:litert_layout",
-        "@litert//litert/cc:litert_model",
         "@litert//litert/cc:litert_ranked_tensor_type",
         "@litert//litert/cc:litert_tensor_buffer",
         "@litert//litert/cc:litert_tensor_buffer_types",
+        "//runtime/executor:executor_settings_base",
         "//support/util:test_utils",
     ],
 )
@@ -276,6 +276,7 @@ cc_test(
     name = "stateful_litert_runner_test",
     srcs = ["stateful_litert_runner_test.cc"],
     deps = [
+        ":litert_runner",
         ":mock_litert_runner",
         ":stateful_litert_runner",
         "@com_google_googletest//:gtest_main",
@@ -287,7 +288,6 @@ cc_test(
         "@litert//litert/cc:litert_environment",
         "@litert//litert/cc:litert_layout",
         "@litert//litert/cc:litert_macros",
-        "@litert//litert/cc:litert_model_types",
         "@litert//litert/cc:litert_ranked_tensor_type",
         "@litert//litert/cc:litert_tensor_buffer",
         "@litert//litert/cc:litert_tensor_buffer_types",

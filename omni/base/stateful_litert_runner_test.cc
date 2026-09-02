@@ -32,6 +32,7 @@
 #include "litert/cc/litert_ranked_tensor_type.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer_types.h"  // from @litert
+#include "omni/base/litert_runner.h"
 #include "omni/base/mock_litert_runner.h"
 
 namespace litert::omni {
@@ -185,6 +186,45 @@ TEST_F(StatefulLiteRtRunnerTest, ManualCommitAndReset) {
 
   // Reset
   EXPECT_THAT(runner->Reset(), IsOk());
+}
+
+TEST_F(StatefulLiteRtRunnerTest, CreateWithOwnedRunner) {
+  auto mock_runner = std::make_unique<MockLiteRtRunner>();
+
+  EXPECT_CALL(*mock_runner, CreateInputBuffers(absl::string_view("main")))
+      .WillRepeatedly([this](absl::string_view) {
+        std::vector<TensorBuffer> bufs;
+        auto b1 = CreateFloatBuffer({1, 4});
+        auto b2 = CreateFloatBuffer({1, 4});
+        if (b1.ok()) bufs.push_back(std::move(*b1));
+        if (b2.ok()) bufs.push_back(std::move(*b2));
+        return bufs;
+      });
+
+  EXPECT_CALL(*mock_runner, CreateOutputBuffers(absl::string_view("main")))
+      .WillRepeatedly([this](absl::string_view) {
+        std::vector<TensorBuffer> bufs;
+        auto b1 = CreateFloatBuffer({1, 4});
+        auto b2 = CreateFloatBuffer({1, 4});
+        if (b1.ok()) bufs.push_back(std::move(*b1));
+        if (b2.ok()) bufs.push_back(std::move(*b2));
+        return bufs;
+      });
+
+  auto runner_or = StatefulLiteRtRunnerImpl::Create(
+      std::move(mock_runner), "main", /*num_non_state_inputs=*/1,
+      /*num_non_state_outputs=*/1);
+  ASSERT_THAT(runner_or, IsOk());
+  EXPECT_NE(*runner_or, nullptr);
+}
+
+TEST_F(StatefulLiteRtRunnerTest, CreateWithNullOwnedRunner) {
+  std::unique_ptr<LiteRtRunner> null_runner;
+  auto runner_or = StatefulLiteRtRunnerImpl::Create(
+      std::move(null_runner), "main", /*num_non_state_inputs=*/1,
+      /*num_non_state_outputs=*/1);
+  EXPECT_THAT(runner_or,
+              ::absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 }  // namespace

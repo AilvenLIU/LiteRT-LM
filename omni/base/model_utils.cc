@@ -147,6 +147,34 @@ absl::StatusOr<std::unique_ptr<lm::ModelResources>> CreateModelResources(
   return lm::ModelResourcesLitertLm::Create(std::move(loader));
 }
 
+absl::StatusOr<std::vector<std::string>> GetStateTensorPatterns(
+    const Model& model, absl::string_view signature_name,
+    size_t num_non_state_inputs, size_t num_non_state_outputs) {
+  std::vector<std::string> patterns;
+  auto in_names_res = model.GetSignatureInputNames(signature_name);
+  if (!in_names_res.HasValue()) {
+    return absl::InternalError(
+        absl::StrCat("Failed to get signature input names: ",
+                     in_names_res.Error().Message()));
+  }
+  const auto& in_names = in_names_res.Value();
+  for (size_t i = num_non_state_inputs; i < in_names.size(); ++i) {
+    patterns.push_back(std::string(in_names[i]));
+  }
+
+  auto out_names_res = model.GetSignatureOutputNames(signature_name);
+  if (!out_names_res.HasValue()) {
+    return absl::InternalError(
+        absl::StrCat("Failed to get signature output names: ",
+                     out_names_res.Error().Message()));
+  }
+  const auto& out_names = out_names_res.Value();
+  for (size_t i = num_non_state_outputs; i < out_names.size(); ++i) {
+    patterns.push_back(std::string(out_names[i]));
+  }
+  return patterns;
+}
+
 }  // namespace
 
 absl::Status CheckFileReadable(absl::string_view path) {
@@ -200,6 +228,10 @@ absl::StatusOr<CompiledModel> CreateCompiledModel(
     gpu_compilation_options.SetMadviseOriginalSharedTensors(true);
     gpu_compilation_options.SetConvertWeightsOnGpu(true);
     gpu_compilation_options.SetHintFullyDelegatedToSingleDelegate(true);
+    for (const auto& pattern : options.external_tensor_patterns) {
+      gpu_compilation_options.AddExternalTensorPattern(pattern.c_str());
+      gpu_compilation_options.AddBufferStorageTensorPattern(pattern.c_str());
+    }
     comp_options.SetHardwareAccelerators(HwAccelerators::kGpu);
   } else {
     comp_options.SetHardwareAccelerators(HwAccelerators::kCpu);
@@ -223,6 +255,31 @@ absl::StatusOr<CompiledModel> CreateCompiledModel(
   ABSL_VLOG(2) << absl::StrCat("Compiled model created successfully with ",
                                target_gpu ? "GPU" : "CPU", " backend");
   return std::move(compiled_model);
+}
+
+absl::StatusOr<CompiledModel> CreateCompiledModelForStatefulRunner(
+    Environment& env, const ModelOptions& options,
+    absl::string_view model_filename, absl::string_view signature_name,
+    size_t num_non_state_inputs, size_t num_non_state_outputs) {
+  if (options.backend != lm::Backend::GPU) {
+    return CreateCompiledModel(env, options, model_filename);
+  }
+
+  std::string path = absl::StrCat(options.model_dir, "/", model_filename);
+  ABSL_RETURN_IF_ERROR(CheckFileReadable(path));
+
+  LITERT_ASSIGN_OR_RETURN(auto model, Model::CreateFromFile(path));
+  LITERT_ASSIGN_OR_RETURN(
+      auto state_patterns,
+      GetStateTensorPatterns(model, signature_name, num_non_state_inputs,
+                             num_non_state_outputs));
+
+  ModelOptions stateful_options = options;
+  stateful_options.external_tensor_patterns.insert(
+      stateful_options.external_tensor_patterns.end(), state_patterns.begin(),
+      state_patterns.end());
+
+  return CreateCompiledModel(env, stateful_options, model_filename);
 }
 
 absl::StatusOr<std::unique_ptr<LiteRtLmRunner>> CreateLmRunner(
