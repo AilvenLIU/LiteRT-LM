@@ -33,6 +33,9 @@ struct ToolFormatConfig {
       generate_value_rule;
 };
 
+const nlohmann::ordered_json* GetToolsArray(
+    const nlohmann::ordered_json& tools);
+
 void ExtractToolProperties(const nlohmann::ordered_json& tool,
                            const std::string& tool_name,
                            const ToolFormatConfig& config,

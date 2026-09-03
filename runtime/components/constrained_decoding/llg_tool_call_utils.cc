@@ -27,6 +27,25 @@
 
 namespace litert::lm {
 
+const nlohmann::ordered_json* GetToolsArray(
+    const nlohmann::ordered_json& tools) {
+  const nlohmann::ordered_json* tools_array = &tools;
+  if (tools.is_object()) {
+    if (tools.contains("oneOf") && tools["oneOf"].is_array()) {
+      tools_array = &tools["oneOf"];
+    } else if (tools.contains("one_of") && tools["one_of"].is_array()) {
+      tools_array = &tools["one_of"];
+    } else if (tools.contains("anyOf") && tools["anyOf"].is_array()) {
+      tools_array = &tools["anyOf"];
+    } else if (tools.contains("any_of") && tools["any_of"].is_array()) {
+      tools_array = &tools["any_of"];
+    } else if (tools.contains("tools") && tools["tools"].is_array()) {
+      tools_array = &tools["tools"];
+    }
+  }
+  return tools_array;
+}
+
 void ExtractToolProperties(const nlohmann::ordered_json& tool,
                            const std::string& tool_name,
                            const ToolFormatConfig& config,

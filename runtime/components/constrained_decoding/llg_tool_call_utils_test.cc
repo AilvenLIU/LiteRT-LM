@@ -120,5 +120,23 @@ TEST(LlgToolCallUtilsTest, GetTextOnlyBlock) {
   EXPECT_THAT(block, testing::HasSubstr("SAFE_TEXT"));
 }
 
+TEST(LlgToolCallUtilsTest, GetToolsArray) {
+  nlohmann::ordered_json tool = nlohmann::ordered_json::parse(R"json({
+    "name": "test_tool"
+  })json");
+  nlohmann::ordered_json direct_array = nlohmann::ordered_json::array({tool});
+  EXPECT_EQ(GetToolsArray(direct_array)->size(), 1);
+
+  for (const std::string& key :
+       {"oneOf", "one_of", "anyOf", "any_of", "tools"}) {
+    nlohmann::ordered_json wrapped_obj =
+        nlohmann::ordered_json::object({{key, direct_array}});
+    const auto* unwrapped = GetToolsArray(wrapped_obj);
+    EXPECT_TRUE(unwrapped->is_array());
+    EXPECT_EQ(unwrapped->size(), 1);
+    EXPECT_EQ((*unwrapped)[0]["name"], "test_tool");
+  }
+}
+
 }  // namespace
 }  // namespace litert::lm
