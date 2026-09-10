@@ -58,28 +58,30 @@ The `role` string specifies the author of the turn:
 
 ### Content Types
 
-The `content` field can be either:
+The `content` field is strictly a **list of multimodal parts**. Plain text
+prompts are wrapped in a text part object:
 
-1.  **Plain text string**:
+```json
+{
+  "role": "user",
+  "content": [
+    {"type": "text", "text": "What is the capital of France?"}
+  ]
+}
+```
 
-    ```json
-    {
-      "role": "user",
-      "content": "What is the capital of France?"
-    }
-    ```
+Multimodal prompts with images, audio, or video include the corresponding part
+objects alongside text parts:
 
-2.  **List of multimodal parts**:
-
-    ```json
-    {
-      "role": "user",
-      "content": [
-        {"type": "text", "text": "What is in this image?"},
-        {"type": "image"}
-      ]
-    }
-    ```
+```json
+{
+  "role": "user",
+  "content": [
+    {"type": "text", "text": "What is in this image?"},
+    {"type": "image"}
+  ]
+}
+```
 
 ### Tool Calls
 
@@ -233,15 +235,21 @@ filter:
   "messages": [
     {
       "role": "system",
-      "content": "You are a concise, helpful assistant."
+      "content": [
+        {"type": "text", "text": "You are a concise, helpful assistant."}
+      ]
     },
     {
       "role": "user",
-      "content": "Hello!"
+      "content": [
+        {"type": "text", "text": "Hello!"}
+      ]
     },
     {
       "role": "assistant",
-      "content": "Hi! How can I help you today?"
+      "content": [
+        {"type": "text", "text": "Hi! How can I help you today?"}
+      ]
     }
   ],
   "add_generation_prompt": true
@@ -288,7 +296,9 @@ filter:
   "messages": [
     {
       "role": "user",
-      "content": "What is the price of GOOG?"
+      "content": [
+        {"type": "text", "text": "What is the price of GOOG?"}
+      ]
     },
     {
       "role": "assistant",

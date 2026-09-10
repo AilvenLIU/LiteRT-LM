@@ -23,7 +23,12 @@
   "messages": [
     {
       "role": "user",
-      "content": "What is the weather in London and Paris?"
+      "content": [
+        {
+          "type": "text",
+          "text": "What is the weather in London and Paris?"
+        }
+      ]
     },
     {
       "role": "assistant",

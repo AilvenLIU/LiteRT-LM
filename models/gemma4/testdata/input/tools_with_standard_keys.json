@@ -44,7 +44,12 @@
   "messages": [
     {
       "role": "user",
-      "content": "Create a string field called username."
+      "content": [
+        {
+          "type": "text",
+          "text": "Create a string field called username."
+        }
+      ]
     },
     {
       "role": "assistant",

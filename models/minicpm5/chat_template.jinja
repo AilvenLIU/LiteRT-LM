@@ -1,13 +1,9 @@
 {%- macro format_content(content) -%}
-    {%- if content is string -%}
-        {{- content -}}
-    {%- elif content is sequence -%}
-        {%- for item in content -%}
-            {%- if item['type'] == 'text' -%}
-                {{- item['text'] -}}
-            {%- endif -%}
-        {%- endfor -%}
-    {%- endif -%}
+    {%- for item in content -%}
+        {%- if item['type'] == 'text' -%}
+            {{- item['text'] -}}
+        {%- endif -%}
+    {%- endfor -%}
 {%- endmacro -%}
 
 {%- set is_first_system = messages[0]['role'] == 'system' -%}
