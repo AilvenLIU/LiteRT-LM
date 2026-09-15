@@ -63,6 +63,8 @@ ABSL_FLAG(std::string, input_prompt, "",
           "Input string to compute the embedding for.");
 ABSL_FLAG(std::string, image_path, "",
           "Optional path to an image file to compute the embedding for.");
+ABSL_FLAG(std::string, audio_path, "",
+          "Optional path to an audio file to compute the embedding for.");
 ABSL_FLAG(bool, normalize, true,
           "Whether to L2-normalize the output embedding vector.");
 ABSL_FLAG(bool, use_mmap, true,
@@ -87,6 +89,7 @@ using ::litert::lm::EmbeddingEngineImpl;
 using ::litert::lm::EmbeddingEngineSettings;
 using ::litert::lm::EmbeddingOptions;
 using ::litert::lm::EmbeddingResponse;
+using ::litert::lm::InputAudio;
 using ::litert::lm::InputData;
 using ::litert::lm::InputImage;
 using ::litert::lm::InputOverflowStrategy;
@@ -237,16 +240,19 @@ absl::Status MainHelper(int argc, char** argv) {
 
   std::string prompt = absl::GetFlag(FLAGS_input_prompt);
   const std::string image_path = absl::GetFlag(FLAGS_image_path);
+  const std::string audio_path = absl::GetFlag(FLAGS_audio_path);
   const int benchmark_prefill_tokens =
       is_benchmark ? absl::GetFlag(FLAGS_benchmark_prefill_tokens) : 0;
 
-  if (prompt.empty() && image_path.empty()) {
+  if (prompt.empty() && image_path.empty() && audio_path.empty()) {
     if (!is_benchmark || benchmark_prefill_tokens <= 0) {
       return absl::InvalidArgumentError(
           is_benchmark
-              ? "At least one of --input_prompt, --image_path, or "
+              ? "At least one of --input_prompt, --image_path, --audio_path, "
+                "or "
                 "--benchmark_prefill_tokens must be provided in benchmark mode."
-              : "At least one of --input_prompt or --image_path must be "
+              : "At least one of --input_prompt, --image_path, or --audio_path "
+                "must be "
                 "provided.");
     }
   }
@@ -277,6 +283,18 @@ absl::Status MainHelper(int argc, char** argv) {
     std::string image_bytes((std::istreambuf_iterator<char>(file)),
                             std::istreambuf_iterator<char>());
     contents.emplace_back(InputImage(std::move(image_bytes)));
+  }
+
+  if (!audio_path.empty()) {
+    std::cout << "Loading audio from: " << audio_path << std::endl;
+    std::ifstream file(audio_path, std::ios::binary);
+    if (!file.is_open()) {
+      return absl::NotFoundError(
+          absl::StrCat("Failed to open audio file: ", audio_path));
+    }
+    std::string audio_bytes((std::istreambuf_iterator<char>(file)),
+                            std::istreambuf_iterator<char>());
+    contents.emplace_back(InputAudio(std::move(audio_bytes)));
   }
 
   LITERT_ASSIGN_OR_RETURN(
