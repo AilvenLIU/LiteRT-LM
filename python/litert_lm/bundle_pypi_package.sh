@@ -47,6 +47,55 @@ for arg in "$@"; do
     exit 0
   fi
 done
+
+# Dump everything needed to explain why an Nvidia GPU was not usable. Kokoro GPU
+# pools attach the device at the VM level, so the accelerator itself is normally
+# present; the usual culprits are a kernel module that does not match the
+# userspace NVML library, or a driver that never loaded.
+print_nvidia_diagnostics() {
+  echo "--- Nvidia GPU diagnostics ---"
+  echo "nvidia-smi output:"
+  nvidia-smi 2>&1 | head -n 20
+  echo "Kernel driver version:"
+  cat /proc/driver/nvidia/version 2>/dev/null || echo "  (/proc/driver/nvidia/version not present)"
+  echo "PCI devices:"
+  lspci 2>/dev/null | grep -i nvidia || echo "  (no Nvidia PCI device found)"
+  echo "Kernel modules:"
+  lsmod 2>/dev/null | grep -i nvidia || echo "  (nvidia kernel module not loaded)"
+  echo "Device nodes:"
+  ls -la /dev/nvidia* 2>/dev/null || echo "  (no /dev/nvidia* device nodes)"
+  echo "------------------------------"
+}
+
+# Select the accelerator suites once up front: the result is identical for every
+# Python version, and detection failures only need to be reported a single time.
+TEST_ARGS=""
+if [[ "$(uname)" == "Darwin" ]]; then
+  echo "🍎 macOS detected! Enabling Apple Silicon CPU and GPU tests."
+  TEST_ARGS="--test-gpu"
+elif [[ "${OS}" == "Windows_NT" ]]; then
+  TEST_ARGS="--test-npu"
+  if where nvidia-smi >/dev/null 2>&1 || (command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null); then
+    echo "🪟 Windows detected with Nvidia GPU! Enabling CPU, GPU, and NPU verification suites."
+    TEST_ARGS="--test-gpu --test-npu"
+  else
+    echo "🪟 Windows detected! Enabling CPU and NPU verification suites."
+  fi
+elif command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
+  echo "🎮 Nvidia GPU detected on Linux! Enabling GPU verification suite."
+  TEST_ARGS="--test-gpu"
+else
+  echo "⚠️ No usable Nvidia GPU detected on Linux. Falling back to CPU-only verification."
+  print_nvidia_diagnostics
+fi
+
+# Jobs that run on a GPU pool set REQUIRE_GPU=1 so that a silent CPU-only
+# fallback fails the build instead of masking a broken GPU runner.
+if [[ "${REQUIRE_GPU:-0}" == "1" && "${TEST_ARGS}" != *"--test-gpu"* ]]; then
+  echo "❌ REQUIRE_GPU=1 was set but no GPU was detected. Failing the build."
+  exit 1
+fi
+
 # Run this Verification Suite isolated inside every target Python version
 for PY_VER in "3.10" "3.11" "3.12" "3.13" "3.14"; do
   echo "------------------------------------------------"
@@ -73,24 +122,6 @@ for PY_VER in "3.10" "3.11" "3.12" "3.13" "3.14"; do
   # This entirely prevents the classic Python sys.path gotcha where Python accidentally imports your
   # uncompiled ./python/litert_lm Source Code instead of the actual built wheel we just installed.
   cd "${TEST_VENV}"
-
-  # Automatically enable GPU tests if running on an Apple Silicon Mac VM or if Nvidia GPU detected
-  TEST_ARGS=""
-  if [[ "$(uname)" == "Darwin" ]]; then
-    echo "🍎 macOS detected! Enabling Apple Silicon CPU and GPU tests."
-    TEST_ARGS="--test-gpu"
-  elif [[ "$OS" == "Windows_NT" ]]; then
-    TEST_ARGS="--test-npu"
-    if where nvidia-smi >/dev/null 2>&1 || (command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null); then
-      echo "🪟 Windows detected with Nvidia GPU! Enabling CPU, GPU, and NPU verification suites."
-      TEST_ARGS="--test-gpu --test-npu"
-    else
-      echo "🪟 Windows detected! Enabling CPU and NPU verification suites."
-    fi
-  elif command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
-    echo "🎮 Nvidia GPU detected on Linux! Enabling GPU verification suite."
-    TEST_ARGS="--test-gpu"
-  fi
 
   # Execute our standalone checked-in verification script directly
   ${PY_EXE} "${WORKSPACE_ROOT}/python/litert_lm/api_test.py" ${TEST_ARGS}
