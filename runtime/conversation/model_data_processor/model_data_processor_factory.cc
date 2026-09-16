@@ -644,7 +644,7 @@ absl::StatusOr<std::unique_ptr<ModelDataProcessor>> CreateModelDataProcessor(
     const DataProcessorConfig& config, std::optional<Preface> preface,
     const Tokenizer* tokenizer,
     const std::vector<std::vector<int>>& stop_token_ids,
-    bool enable_constrained_decoding, PromptTemplateCapabilities capabilities) {
+    bool enable_constrained_decoding) {
   if (std::holds_alternative<Gemma3DataProcessorConfig>(config)) {
     ABSL_VLOG(1) << "Creating Gemma3DataProcessor";
     return Gemma3DataProcessor::Create(
@@ -666,7 +666,7 @@ absl::StatusOr<std::unique_ptr<ModelDataProcessor>> CreateModelDataProcessor(
   } else if (std::holds_alternative<GenericDataProcessorConfig>(config)) {
     ABSL_VLOG(1) << "Creating GenericDataProcessor";
     return GenericDataProcessor::Create(
-        std::get<GenericDataProcessorConfig>(config), capabilities);
+        std::get<GenericDataProcessorConfig>(config));
   } else if (std::holds_alternative<FunctionGemmaDataProcessorConfig>(config)) {
     ABSL_VLOG(1) << "Creating FunctionGemmaDataProcessor";
     return FunctionGemmaDataProcessor::Create(
@@ -680,11 +680,11 @@ absl::StatusOr<std::unique_ptr<ModelDataProcessor>> CreateModelDataProcessor(
   } else if (std::holds_alternative<FastVlmDataProcessorConfig>(config)) {
     ABSL_VLOG(1) << "Creating FastVlmDataProcessor";
     return FastVlmDataProcessor::Create(
-        std::get<FastVlmDataProcessorConfig>(config), capabilities);
+        std::get<FastVlmDataProcessorConfig>(config));
   } else if (std::holds_alternative<MiniCpmVDataProcessorConfig>(config)) {
     ABSL_VLOG(1) << "Creating MiniCpmVDataProcessor";
     return MiniCpmVDataProcessor::Create(
-        std::get<MiniCpmVDataProcessorConfig>(config), capabilities);
+        std::get<MiniCpmVDataProcessorConfig>(config));
   } else {
     return absl::InvalidArgumentError("Unsupported data processor config type");
   }

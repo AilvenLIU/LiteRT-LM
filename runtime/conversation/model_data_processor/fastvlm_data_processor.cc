@@ -40,10 +40,9 @@ using ::nlohmann::ordered_json;
 }  // namespace
 
 absl::StatusOr<std::unique_ptr<FastVlmDataProcessor>>
-FastVlmDataProcessor::Create(FastVlmDataProcessorConfig config,
-                             const PromptTemplateCapabilities& capabilities) {
+FastVlmDataProcessor::Create(FastVlmDataProcessorConfig config) {
   return absl::WrapUnique(new FastVlmDataProcessor(
-      config, capabilities, std::make_unique<StbImagePreprocessor>()));
+      config, std::make_unique<StbImagePreprocessor>()));
 }
 
 absl::StatusOr<ordered_json> FastVlmDataProcessor::FormatTools(

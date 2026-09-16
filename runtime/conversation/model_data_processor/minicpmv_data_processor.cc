@@ -196,9 +196,8 @@ void AppendText(absl::string_view text, std::vector<InputData>& output) {
 }  // namespace
 
 absl::StatusOr<std::unique_ptr<MiniCpmVDataProcessor>>
-MiniCpmVDataProcessor::Create(MiniCpmVDataProcessorConfig config,
-                              const PromptTemplateCapabilities& capabilities) {
-  return absl::WrapUnique(new MiniCpmVDataProcessor(config, capabilities));
+MiniCpmVDataProcessor::Create(MiniCpmVDataProcessorConfig config) {
+  return absl::WrapUnique(new MiniCpmVDataProcessor(config));
 }
 
 absl::StatusOr<ordered_json> MiniCpmVDataProcessor::FormatTools(

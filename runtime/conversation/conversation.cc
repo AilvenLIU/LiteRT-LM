@@ -434,8 +434,7 @@ absl::StatusOr<std::unique_ptr<Conversation>> Conversation::Create(
       CreateModelDataProcessor(config.GetProcessorConfig(), config.GetPreface(),
                                &engine.GetTokenizer(),
                                session->GetSessionConfig().GetStopTokenIds(),
-                               config.constrained_decoding_enabled(),
-                               config.GetPromptTemplate().GetCapabilities()));
+                               config.constrained_decoding_enabled()));
   std::unique_ptr<ConstraintProvider> constraint_provider;
   if (config.constraint_provider_config().has_value()) {
     ABSL_ASSIGN_OR_RETURN(
@@ -909,8 +908,7 @@ absl::StatusOr<std::unique_ptr<Conversation>> Conversation::Clone() {
       CreateModelDataProcessor(config_.GetProcessorConfig(),
                                config_.GetPreface(), &engine_.GetTokenizer(),
                                session->GetSessionConfig().GetStopTokenIds(),
-                               config_.constrained_decoding_enabled(),
-                               config_.GetPromptTemplate().GetCapabilities()));
+                               config_.constrained_decoding_enabled()));
   auto status = model_data_processor->CloneState(*model_data_processor_);
   if (!status.ok() && !absl::IsUnimplemented(status)) {
     return status;

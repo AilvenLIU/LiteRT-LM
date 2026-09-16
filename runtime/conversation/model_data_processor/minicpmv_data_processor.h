@@ -44,8 +44,7 @@ class MiniCpmVDataProcessor
  public:
   // Creates a MiniCpmVDataProcessor instance.
   static absl::StatusOr<std::unique_ptr<MiniCpmVDataProcessor>> Create(
-      MiniCpmVDataProcessorConfig config,
-      const PromptTemplateCapabilities& capabilities);
+      MiniCpmVDataProcessorConfig config);
 
   // Returns the config of the MiniCpmVDataProcessor.
   const MiniCpmVDataProcessorConfig& GetConfig() const override {
@@ -63,9 +62,8 @@ class MiniCpmVDataProcessor
   absl::string_view CodeFenceEnd() const override { return ""; }
 
  private:
-  explicit MiniCpmVDataProcessor(MiniCpmVDataProcessorConfig config,
-                                 const PromptTemplateCapabilities& capabilities)
-      : config_(config), capabilities_(capabilities) {}
+  explicit MiniCpmVDataProcessor(MiniCpmVDataProcessorConfig config)
+      : config_(config) {}
 
   absl::StatusOr<std::vector<InputData>> ToInputDataVectorImpl(
       const std::string& rendered_template_prompt,
@@ -82,7 +80,6 @@ class MiniCpmVDataProcessor
       override;
 
   MiniCpmVDataProcessorConfig config_;
-  PromptTemplateCapabilities capabilities_;
 };
 
 }  // namespace litert::lm
