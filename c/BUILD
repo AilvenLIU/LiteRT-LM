@@ -26,6 +26,7 @@ package(
 licenses(["notice"])
 
 exports_files([
+    "api_export.h",
     "conversation.cc",
     "conversation.h",
     "embedding_engine.cc",
@@ -122,11 +123,19 @@ LITERT_LM_DEBUGGER_DEFINES = select({
     "//conditions:default": [],
 })
 
+# Header library defining the LiteRT LM C API export macro.
+cc_library(
+    name = "api_export_headers",
+    hdrs = ["api_export.h"],
+    visibility = ["//visibility:public"],
+)
+
 # Header library for error reporter C API.
 cc_library(
     name = "error_reporter_headers",
     hdrs = ["error_reporter.h"],
     visibility = ["//visibility:public"],
+    deps = [":api_export_headers"],
 )
 
 # Header library for internal error reporter helper.
@@ -146,7 +155,10 @@ cc_library(
     name = "engine_headers",
     hdrs = ["engine.h"],
     visibility = ["//visibility:public"],
-    deps = [":error_reporter_headers"],
+    deps = [
+        ":api_export_headers",
+        ":error_reporter_headers",
+    ],
 )
 
 # Header library for engine + session + conversation C API.
@@ -245,6 +257,7 @@ cc_library(
         "error_reporter.cc",
     ],
     hdrs = [
+        "api_export.h",
         "engine.h",
         "error_reporter.h",
     ],
@@ -264,6 +277,7 @@ cc_library(
         "error_reporter.cc",
     ],
     hdrs = [
+        "api_export.h",
         "engine.h",
         "error_reporter.h",
     ],
@@ -312,6 +326,7 @@ cc_library(
         "model_info.cc",
     ],
     hdrs = [
+        "api_export.h",
         "conversation.h",
         "embedding_engine.h",
         "engine.h",
@@ -339,6 +354,7 @@ cc_library(
         "model_info.cc",
     ],
     hdrs = [
+        "api_export.h",
         "conversation.h",
         "embedding_engine.h",
         "engine.h",

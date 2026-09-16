@@ -70,6 +70,10 @@ typedef struct LiteRtLmSessionDebugInfo LiteRtLmSessionDebugInfo;
 //
 // @return 1 if debugger is enabled at compile-time, 0 otherwise.
 //
+// NOTE: this is a boolean predicate, NOT a `LiteRtLmStatusCode`. Unlike the
+// status-returning functions in this API, 0 here means "debugger disabled",
+// not "success".
+//
 // Added in version 0.2.0.
 LITERT_LM_C_API_EXPORT
 int litert_lm_experimental_is_debugger_enabled(void);
