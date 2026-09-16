@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LM_SUPPORT_PREPROCESSOR_IMAGE_PREPROCESSOR_H_
 #define THIRD_PARTY_ODML_LITERT_LM_SUPPORT_PREPROCESSOR_IMAGE_PREPROCESSOR_H_
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -22,6 +23,7 @@
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_layout.h"  // from @litert
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "support/util/io_types.h"
@@ -88,6 +90,17 @@ class ImagePreprocessParameter {
   std::optional<NormalizationConfig> normalization_config_;
 };
 
+// A decoded image in 8-bit RGB, HWC (row-major, 3 interleaved channels)
+// layout. This is the lowest common denominator every image backend can
+// produce, and is what model-specific preprocessors that implement their own
+// resampling operate on.
+struct DecodedImage {
+  // `width` * `height` * 3 bytes.
+  std::vector<uint8_t> pixels;
+  int width = 0;
+  int height = 0;
+};
+
 // Preprocessor for image.
 // Main purpose is to process raw image bytes into a resized image TensorBuffer.
 class ImagePreprocessor {
@@ -118,6 +131,19 @@ class ImagePreprocessor {
     }
     return absl::UnimplementedError("Image preprocessor is not implemented.");
   };
+
+  // Decodes encoded image bytes (PNG, JPEG, BMP, ...) into 8-bit RGB pixels,
+  // without resizing or normalizing them. Images with an alpha channel have it
+  // dropped.
+  //
+  // This exists for model-specific preprocessors that cannot use Preprocess()
+  // because they must reproduce a reference Python implementation's resampling
+  // bit-for-bit, or because they fan a single image out into several tensors.
+  // Going through this method keeps them free of any direct image codec
+  // dependency, so the codec stays swappable per platform.
+  virtual absl::StatusOr<DecodedImage> Decode(absl::string_view image_bytes) {
+    return absl::UnimplementedError("Image decoding is not implemented.");
+  }
 };
 
 }  // namespace litert::support

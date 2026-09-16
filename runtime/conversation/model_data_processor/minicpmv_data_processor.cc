@@ -33,6 +33,7 @@
 #include "nlohmann/json.hpp"  // from @nlohmann_json
 #include "litert/cc/litert_layout.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
+#include "runtime/components/preprocessor/image_preprocessor.h"
 #include "runtime/components/preprocessor/minicpmv_image_preprocess.h"
 #include "runtime/components/prompt_template.h"
 #include "runtime/conversation/io_types.h"
@@ -198,7 +199,8 @@ void AppendText(absl::string_view text, std::vector<InputData>& output) {
 absl::StatusOr<std::unique_ptr<MiniCpmVDataProcessor>>
 MiniCpmVDataProcessor::Create(MiniCpmVDataProcessorConfig config,
                               const PromptTemplateCapabilities& capabilities) {
-  return absl::WrapUnique(new MiniCpmVDataProcessor(config, capabilities));
+  return absl::WrapUnique(new MiniCpmVDataProcessor(
+      config, capabilities, ImagePreprocessor::Create()));
 }
 
 absl::StatusOr<ordered_json> MiniCpmVDataProcessor::FormatTools(
@@ -253,7 +255,8 @@ MiniCpmVDataProcessor::ToInputDataVectorImpl(
     // 64 soft tokens.
     ABSL_ASSIGN_OR_RETURN(
         MiniCpmVSliced sliced,
-        PreprocessImageSliced(image_bytes_list[img_idx], slice_config));
+        PreprocessImageSliced(image_bytes_list[img_idx], *image_preprocessor_,
+                              slice_config));
     const int grid_x = sliced.grid_x;
     const int grid_y = sliced.grid_y;
     for (auto& slice : sliced.slices) {
