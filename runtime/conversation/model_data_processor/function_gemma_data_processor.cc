@@ -19,7 +19,6 @@
 #include <optional>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "absl/log/absl_log.h"  // from @com_google_absl
@@ -293,42 +292,15 @@ FunctionGemmaDataProcessor::MessageToTemplateInput(
   return template_input;
 }
 
-absl::StatusOr<std::vector<InputData>>
-FunctionGemmaDataProcessor::ToInputDataVectorImpl(
-    const std::string& rendered_template_prompt,
-    const nlohmann::ordered_json& messages,
-    const FunctionGemmaDataProcessorArguments& args) const {
-  std::vector<InputData> input_data;
-  input_data.push_back(InputText(rendered_template_prompt));
-  return input_data;
-}
-
 absl::StatusOr<Message> FunctionGemmaDataProcessor::ToMessageImpl(
     const Responses& responses,
     const FunctionGemmaDataProcessorArguments& args) const {
-  absl::string_view response_text = responses.GetTexts()[0];
-  nlohmann::ordered_json message = {{"role", "assistant"}};
-  if (preface_.has_value() && std::holds_alternative<JsonPreface>(*preface_) &&
-      !std::get<JsonPreface>(*preface_).tools.empty()) {
-    ABSL_ASSIGN_OR_RETURN(
-        nlohmann::ordered_json content_and_tool_calls,
-        ParseTextAndToolCalls(
-            response_text, config_.code_fence_start, config_.code_fence_end,
-            GetSyntaxType(config_.syntax_type),
-            {.escape_fence_strings = config_.escape_fence_strings,
-             .tool_code_regex = config_.tool_code_regex,
-             .return_error_on_parse_failure = ReturnErrorOnParseFailure()}));
-    if (content_and_tool_calls.contains("content")) {
-      message["content"] = content_and_tool_calls["content"];
-    }
-    if (content_and_tool_calls.contains("tool_calls")) {
-      message["tool_calls"] = content_and_tool_calls["tool_calls"];
-    }
-  } else {
-    message["content"] = nlohmann::ordered_json::array(
-        {{{"type", "text"}, {"text", std::string(response_text)}}});
-  }
-  return message;
+  return ResponseTextToMessage(
+      responses.GetTexts()[0], preface_, config_.code_fence_start,
+      config_.code_fence_end, GetSyntaxType(config_.syntax_type),
+      {.escape_fence_strings = config_.escape_fence_strings,
+       .tool_code_regex = config_.tool_code_regex,
+       .return_error_on_parse_failure = ReturnErrorOnParseFailure()});
 }
 
 absl::StatusOr<nlohmann::ordered_json> FunctionGemmaDataProcessor::FormatTools(
