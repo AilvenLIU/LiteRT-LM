@@ -216,10 +216,9 @@ class ServeTest(parameterized.TestCase):
   @parameterized.named_parameters(
       dict(
           testcase_name="assistant_text",
-          litertlm_response={
-              "role": "assistant",
-              "content": [{"type": "text", "text": "Response text"}],
-          },
+          litertlm_response=mock_litert_lm.Message.model(
+              mock_litert_lm.Contents.of("Response text")
+          ),
           finish_reason="STOP",
           expected={
               "candidates": [{
@@ -234,15 +233,14 @@ class ServeTest(parameterized.TestCase):
       ),
       dict(
           testcase_name="tool_calls",
-          litertlm_response={
-              "role": "assistant",
-              "tool_calls": [{
-                  "function": {
-                      "name": "get_weather",
-                      "arguments": {"location": "London"},
-                  }
-              }],
-          },
+          litertlm_response=mock_litert_lm.Message.model(
+              tool_calls=[
+                  mock_litert_lm.ToolCall(
+                      name="get_weather",
+                      arguments={"location": "London"},
+                  )
+              ]
+          ),
           finish_reason="STOP",
           expected={
               "candidates": [{
@@ -262,7 +260,9 @@ class ServeTest(parameterized.TestCase):
       ),
       dict(
           testcase_name="streaming",
-          litertlm_response={"content": [{"type": "text", "text": "Chunk"}]},
+          litertlm_response=mock_litert_lm.Message.model(
+              mock_litert_lm.Contents.of("Chunk")
+          ),
           finish_reason="",
           expected={
               "candidates": [{
@@ -276,7 +276,9 @@ class ServeTest(parameterized.TestCase):
       ),
       dict(
           testcase_name="custom_finish_reason",
-          litertlm_response={"content": [{"type": "text", "text": "Text"}]},
+          litertlm_response=mock_litert_lm.Message.model(
+              mock_litert_lm.Contents.of("Text")
+          ),
           finish_reason="MAX_TOKENS",
           expected={
               "candidates": [{
