@@ -133,12 +133,15 @@ TEST(KokoroFactoryTest, CreateKokoroComponentsRejectsMissingModels) {
 }
 
 TEST(KokoroFactoryTest, GetAvailableKokoroVoicesSkipsNonVoiceSections) {
-  FakeSectionNames lm_resources(
-      {"af_heart", std::string(kokoro::kEspeakNgSectionName), "ef_dora.bin"});
+  FakeSectionNames lm_resources({"af_heart",
+                                 std::string(kokoro::kEspeakNgSectionName),
+                                 "ja-lexicon", "zh-lexicon", "zh-textnorm",
+                                 "ef_dora.bin"});
 
   EXPECT_THAT(GetAvailableKokoroVoices(/*model_folder=*/"", &lm_resources),
               ElementsAre("af_heart", "ef_dora"));
 }
+
 
 }  // namespace
 }  // namespace litert::omni::tts

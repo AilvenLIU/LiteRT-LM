@@ -24,6 +24,7 @@ cc_library(
     hdrs = ["kokoro_model_config.h"],
     deps = [
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings",
         "//runtime/executor:executor_settings_base",
     ],
 )
@@ -65,6 +66,8 @@ cc_library(
     srcs = ["phonemizer.cc"],
     hdrs = ["phonemizer.h"],
     deps = [
+        ":chinese_g2p",
+        ":cjk_blob",
         ":common",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/base:no_destructor",
@@ -79,6 +82,7 @@ cc_library(
         "@espeak_ng//:espeak_ng_speak_lib_header",
         "@espeak_ng//:libespeak_ng_la_sources",  # buildcleaner: keep
         "@litert//litert/cc:litert_macros",
+        "//omni/tts:text_normalizer",
     ],
 )
 
@@ -91,8 +95,12 @@ cc_test(
         "@espeak_ng//:espeak_ng_data",
         "@espeak_ng//:fr_dictionary",
         "@espeak_ng//:hi_dictionary",
+        "@espeak_ng//:it_dictionary",
+        "@espeak_ng//:pt_dictionary",
+        "//omni/tts:text_normalizer_rule_tables",
     ],
     deps = [
+        ":cjk_test_blobs",
         ":phonemizer",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -241,6 +249,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@litert//litert/cc:litert_compiled_model",
@@ -275,6 +284,66 @@ cc_test(
         "//runtime/components:model_resources",
         "//runtime/executor:executor_settings_base",
         "//runtime/util:scoped_file",
+        "//support/util:test_utils",
+    ],
+)
+
+cc_library(
+    name = "cjk_blob",
+    srcs = ["cjk_blob.cc"],
+    hdrs = ["cjk_blob.h"],
+    deps = [
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@litert//litert/cc:litert_macros",
+    ],
+)
+
+cc_test(
+    name = "cjk_blob_test",
+    srcs = ["cjk_blob_test.cc"],
+    deps = [
+        ":cjk_blob",
+        ":cjk_test_blobs",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "//support/util:test_utils",
+    ],
+)
+
+cc_library(
+    name = "cjk_test_blobs",
+    testonly = True,
+    srcs = ["cjk_test_blobs.cc"],
+    hdrs = ["cjk_test_blobs.h"],
+)
+
+cc_library(
+    name = "chinese_g2p",
+    srcs = ["chinese_g2p.cc"],
+    hdrs = ["chinese_g2p.h"],
+    deps = [
+        ":cjk_blob",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "//third_party/libcppjieba:cppjieba",
+        "@litert//litert/cc:litert_macros",
+    ],
+)
+
+cc_test(
+    name = "chinese_g2p_test",
+    srcs = ["chinese_g2p_test.cc"],
+    deps = [
+        ":chinese_g2p",
+        ":cjk_blob",
+        ":cjk_test_blobs",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/status",
         "//support/util:test_utils",
     ],
 )
